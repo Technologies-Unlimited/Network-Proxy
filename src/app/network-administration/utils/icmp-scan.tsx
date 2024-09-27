@@ -2,7 +2,7 @@ import { ExtendedSubnetFields } from '../../schema/network-administration/ipam/s
 import { ExtendedPoolFields } from '../../schema/network-administration/ipam/pool/schema'
 import { performIcmpPing } from './icmp-ping'
 import { getIpAddressesInRange, isValidIpAddress, isIpInCidr } from './ip-utils'
-import { DeviceStatus } from '../../types/network-administration/icmp/polling/status/types'
+import { DeviceStatus } from '../../../types/network-administration/icmp/polling/status/types'
 
 interface IPAddressScanResult {
   address: string

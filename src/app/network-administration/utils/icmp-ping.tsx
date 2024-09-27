@@ -1,6 +1,6 @@
 import { promisify } from 'util'
 import { exec } from 'child_process'
-import { ICMPPollingStatusFields } from '../../types/network-administration/icmp/polling/status/types'
+import { ICMPPollingStatusFields } from '../../../types/network-administration/icmp/polling/status/types'
 
 const execAsync = promisify(exec)
 
