@@ -1,32 +1,48 @@
-import mongoose from 'mongoose'
-import { CompanyNetworkInventoryFields } from '../../../../types/network-administration/inventory/company/types'
-import { ObjectId } from 'mongodb'
+/**
+ * Company Network Inventory Schema
+ * Defines the structure for company network inventory data with SQLite
+ */
 
+import { CompanyNetworkInventoryFields } from '../../../../types/network-administration/inventory/company/types'
+
+/**
+ * Extended interface for company network inventory that includes all fields needed for storage
+ */
 export interface ExtendedCompanyNetworkInventoryFields
   extends CompanyNetworkInventoryFields {
-  _id: ObjectId
-  companyId: ObjectId
-  productId: ObjectId
-  stockId: ObjectId
-  manufacturerId: ObjectId
-  modelId: ObjectId
+  _id: string
+  companyId: string
+  productId: string
+  stockId: string
+  manufacturerId: string
+  modelId: string
+  createdAt: number
+  updatedAt: number
 }
 
-const companyNetworkInventorySchema =
-  new mongoose.Schema<ExtendedCompanyNetworkInventoryFields>({
-    _id: { type: mongoose.Schema.Types.ObjectId, required: true, auto: true },
-    companyId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    productId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    macAddress: { type: String, required: true },
-    stockId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    manufacturerId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    modelId: { type: mongoose.Schema.Types.ObjectId, required: true },
-  })
+/**
+ * SQLite table schema for company network inventory
+ * This is implemented in the database/index.ts file
+ */
+export const companyNetworkInventoryTableSchema = `
+  CREATE TABLE IF NOT EXISTS company_network_inventory (
+    _id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    mac_address TEXT NOT NULL,
+    stock_id TEXT NOT NULL,
+    manufacturer_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (company_id) REFERENCES companies(_id) ON DELETE CASCADE
+  );
+`
 
-export const CompanyNetworkInventoryModel =
-  mongoose.model<ExtendedCompanyNetworkInventoryFields>(
-    'CompanyNetworkInventory',
-    companyNetworkInventorySchema
-  )
-
-export default companyNetworkInventorySchema
+/**
+ * Create indexes for faster lookups
+ */
+export const companyNetworkInventoryIndexes = `
+  CREATE INDEX IF NOT EXISTS idx_company_network_inventory_company ON company_network_inventory(company_id);
+  CREATE INDEX IF NOT EXISTS idx_company_network_inventory_mac ON company_network_inventory(mac_address);
+`

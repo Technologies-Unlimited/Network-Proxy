@@ -1,45 +1,74 @@
-import mongoose from 'mongoose'
+/**
+ * ICMP Polling Template Schema
+ * Defines the structure for ICMP polling template data with SQLite
+ */
+
 import {
   ICMPPollingTemplateFields,
   TimeInterval,
 } from '../../../../../types/network-administration/icmp/polling/template/types'
-import { ObjectId } from 'mongodb'
 
+/**
+ * Extended interface for ICMP polling template that includes all fields needed for storage
+ */
 export interface ExtendedICMPPollingTemplateFields
   extends ICMPPollingTemplateFields {
-  _id: ObjectId
-  companyId: ObjectId
-  icmpTemplateId: ObjectId
+  _id: string
+  companyId: string
+  createdAt: number
 }
 
-const timeIntervalSchema = new mongoose.Schema<TimeInterval>(
-  {
-    days: { type: Number, required: true },
-    hours: { type: Number, required: true },
-    minutes: { type: Number, required: true },
-    seconds: { type: Number, required: true },
-  },
-  { _id: false }
-)
+/**
+ * SQLite table schema for ICMP polling templates
+ * This is implemented in the database/index.ts file
+ */
+export const icmpPollingTemplateTableSchema = `
+  CREATE TABLE IF NOT EXISTS icmp_polling_templates (
+    _id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    frequency INTEGER NOT NULL,
+    timeout INTEGER NOT NULL,
+    retries INTEGER NOT NULL,
+    polling_frequency_days INTEGER NOT NULL,
+    polling_frequency_hours INTEGER NOT NULL,
+    polling_frequency_minutes INTEGER NOT NULL,
+    polling_frequency_seconds INTEGER NOT NULL,
+    downtime_trigger_days INTEGER NOT NULL,
+    downtime_trigger_hours INTEGER NOT NULL,
+    downtime_trigger_minutes INTEGER NOT NULL,
+    downtime_trigger_seconds INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (company_id) REFERENCES companies(_id) ON DELETE CASCADE
+  );
+`
 
-const icmpPollingTemplateSchema =
-  new mongoose.Schema<ExtendedICMPPollingTemplateFields>({
-    _id: { type: mongoose.Schema.Types.ObjectId, required: true, auto: true },
-    companyId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    icmpTemplateId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    name: { type: String, required: true },
-    description: { type: String, required: true },
-    frequency: { type: Number, required: true },
-    timeout: { type: Number, required: true },
-    retries: { type: Number, required: true },
-    pollingFrequency: { type: timeIntervalSchema, required: true },
-    downtimeTrigger: { type: timeIntervalSchema, required: true },
-  })
+/**
+ * Helper function to convert a time interval to individual columns
+ */
+export function timeIntervalToColumns(interval: TimeInterval): {
+  days: number
+  hours: number
+  minutes: number
+  seconds: number
+} {
+  return {
+    days: interval.days,
+    hours: interval.hours,
+    minutes: interval.minutes,
+    seconds: interval.seconds,
+  }
+}
 
-export const ICMPPollingTemplateModel =
-  mongoose.model<ExtendedICMPPollingTemplateFields>(
-    'ICMPPollingTemplate',
-    icmpPollingTemplateSchema
-  )
-
-export default icmpPollingTemplateSchema
+/**
+ * Helper function to convert columns back to a TimeInterval object
+ */
+export function columnsToTimeInterval(
+  days: number,
+  hours: number,
+  minutes: number,
+  seconds: number
+): TimeInterval {
+  return { days, hours, minutes, seconds }
+}
