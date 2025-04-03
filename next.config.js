@@ -2,9 +2,7 @@
 
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: [
-    'goobs-frontend',
-  ],
+  transpilePackages: ['goobs-frontend'],
 }
 
 export default nextConfig
