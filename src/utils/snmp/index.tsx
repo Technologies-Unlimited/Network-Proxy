@@ -5,7 +5,7 @@ import { ExtendedSNMPv2Fields } from '@/schema/network-administration/snmp/snmpv
 import { ExtendedSNMPv3Fields } from '@/schema/network-administration/snmp/snmpv3/schema'
 import { ExtendedIPAddressFields } from '@/schema/network-administration/ipam/ipaddress/schema'
 import { ExtendedCompanyNetworkInventoryFields } from '@/schema/network-administration/inventory/company/schema'
-import { getIpAddressesInRange, isIpInCidr } from './ip-utils'
+import { getIpAddressesInRange, isIpInCidr } from '../ip-utils'
 
 export interface SnmpScanResult {
   ipAddress: string
