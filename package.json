@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"next dev\" \"npm run dev:server\"",
+    "dev": "concurrently \"next dev\" \"bun run dev:server\"",
     "build": "next build",
-    "start": "concurrently \"next start\" \"npm run start:server\"",
+    "start": "concurrently \"next start\" \"bun run start:server\"",
     "lint": "next lint",
     "test": "jest",
-    "dev:server": "nodemon --exec node --loader ts-node/esm src/server.ts",
-    "start:server": "node --loader ts-node/esm src/server.ts"
+    "dev:server": "bun --watch src/server.ts",
+    "start:server": "bun src/server.ts"
   },
   "dependencies": {
     "@emotion/cache": "^11",
@@ -23,11 +23,11 @@
     "@types/react": "19",
     "@types/react-dom": "19",
     "@types/snmp-native": "^1.2.5",
+    "bun": "^1.2.8",
     "formik": "^2",
     "goobs-frontend": "^0",
     "graphql": "^16",
     "jotai": "^2",
-    "mongoose": "^8",
     "next": "^15.2.4",
     "react": "^19",
     "react-dom": "^19",
@@ -37,8 +37,10 @@
     "zod-formik-adapter": "^1"
   },
   "devDependencies": {
+    "@types/bun": "^1.0.0",
     "@typescript-eslint/eslint-plugin": "^8",
     "@typescript-eslint/parser": "^8",
+    "concurrently": "^8",
     "dotenv": "^16",
     "eslint": "9",
     "eslint-config-prettier": "^10",
