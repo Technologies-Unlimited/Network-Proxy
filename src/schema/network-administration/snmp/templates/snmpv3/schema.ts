@@ -15,6 +15,7 @@ export interface SNMPv3TemplateFields extends SNMPMonitoringFields {
   modelNameId?: string
   snmpv3SettingId: string
   productId?: string
+  oidIds?: string[]
   stockIds?: string[]
   networkInventoryIds?: string[]
   createdAt: number
