@@ -30,7 +30,9 @@ export class ICMPPollingTemplateRepository {
   /**
    * Get all ICMP polling templates for a company
    */
-  async getForCompany(companyId: string): Promise<ExtendedICMPPollingTemplateFields[]> {
+  async getForCompany(
+    companyId: string
+  ): Promise<ExtendedICMPPollingTemplateFields[]> {
     // Create a prepared statement to get all templates for a company
     const stmt = this.db.query(`
       SELECT 
@@ -86,7 +88,7 @@ export class ICMPPollingTemplateRepository {
           template.downtime_trigger_minutes,
           template.downtime_trigger_seconds
         ),
-        createdAt: template.created_at
+        createdAt: template.created_at,
       }
     })
   }
@@ -94,7 +96,10 @@ export class ICMPPollingTemplateRepository {
   /**
    * Get a single ICMP polling template by ID
    */
-  getById(_id: string, companyId: string): ExtendedICMPPollingTemplateFields | null {
+  getById(
+    _id: string,
+    companyId: string
+  ): ExtendedICMPPollingTemplateFields | null {
     // Create a prepared statement to get a template by ID and company ID
     const stmt = this.db.query(`
       SELECT 
@@ -154,14 +159,17 @@ export class ICMPPollingTemplateRepository {
         template.downtime_trigger_minutes,
         template.downtime_trigger_seconds
       ),
-      createdAt: template.created_at
+      createdAt: template.created_at,
     }
   }
 
   /**
    * Get a ICMP polling template by name
    */
-  getByName(name: string, companyId: string): ExtendedICMPPollingTemplateFields | null {
+  getByName(
+    name: string,
+    companyId: string
+  ): ExtendedICMPPollingTemplateFields | null {
     // Create a prepared statement to get a template by name and company ID
     const stmt = this.db.query(`
       SELECT 
@@ -221,14 +229,17 @@ export class ICMPPollingTemplateRepository {
         template.downtime_trigger_minutes,
         template.downtime_trigger_seconds
       ),
-      createdAt: template.created_at
+      createdAt: template.created_at,
     }
   }
 
   /**
    * Create a new ICMP polling template
    */
-  create(companyId: string, input: Partial<ExtendedICMPPollingTemplateFields>): ExtendedICMPPollingTemplateFields {
+  create(
+    companyId: string,
+    input: Partial<ExtendedICMPPollingTemplateFields>
+  ): ExtendedICMPPollingTemplateFields {
     const _id = generateId()
     const now = Date.now()
 
@@ -255,18 +266,30 @@ export class ICMPPollingTemplateRepository {
     // Check if a template with the same name already exists
     const existingTemplate = this.getByName(input.name, companyId)
     if (existingTemplate) {
-      throw new Error(`A polling template with the name ${input.name} already exists`)
+      throw new Error(
+        `A polling template with the name ${input.name} already exists`
+      )
     }
 
     // Convert TimeInterval objects to individual columns
-    const { days: pfDays, hours: pfHours, minutes: pfMinutes, seconds: pfSeconds } = 
-      timeIntervalToColumns(input.pollingFrequency)
-    
-    const { days: dtDays, hours: dtHours, minutes: dtMinutes, seconds: dtSeconds } = 
-      timeIntervalToColumns(input.downtimeTrigger)
+    const {
+      days: pfDays,
+      hours: pfHours,
+      minutes: pfMinutes,
+      seconds: pfSeconds,
+    } = timeIntervalToColumns(input.pollingFrequency)
+
+    const {
+      days: dtDays,
+      hours: dtHours,
+      minutes: dtMinutes,
+      seconds: dtSeconds,
+    } = timeIntervalToColumns(input.downtimeTrigger)
 
     // Insert the ICMP polling template
-    this.db.query(`
+    this.db
+      .query(
+        `
       INSERT INTO icmp_polling_templates (
         _id, company_id, name, description, frequency, timeout, retries,
         polling_frequency_days, polling_frequency_hours, 
@@ -275,24 +298,26 @@ export class ICMPPollingTemplateRepository {
         downtime_trigger_minutes, downtime_trigger_seconds,
         created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      _id,
-      companyId,
-      input.name,
-      input.description || '',
-      input.frequency,
-      input.timeout,
-      input.retries,
-      pfDays,
-      pfHours,
-      pfMinutes,
-      pfSeconds,
-      dtDays,
-      dtHours,
-      dtMinutes,
-      dtSeconds,
-      now
-    )
+    `
+      )
+      .run(
+        _id,
+        companyId,
+        input.name,
+        input.description || '',
+        input.frequency,
+        input.timeout,
+        input.retries,
+        pfDays,
+        pfHours,
+        pfMinutes,
+        pfSeconds,
+        dtDays,
+        dtHours,
+        dtMinutes,
+        dtSeconds,
+        now
+      )
 
     // Return the newly created template
     return this.getById(_id, companyId)!
@@ -316,13 +341,21 @@ export class ICMPPollingTemplateRepository {
     if (input.name && input.name !== existingTemplate.name) {
       const duplicateTemplate = this.getByName(input.name, companyId)
       if (duplicateTemplate && duplicateTemplate._id !== _id) {
-        throw new Error(`A polling template with the name ${input.name} already exists`)
+        throw new Error(
+          `A polling template with the name ${input.name} already exists`
+        )
       }
     }
 
     // Initialize time interval variables with null as default
-    let pfDays = null, pfHours = null, pfMinutes = null, pfSeconds = null
-    let dtDays = null, dtHours = null, dtMinutes = null, dtSeconds = null
+    let pfDays = null,
+      pfHours = null,
+      pfMinutes = null,
+      pfSeconds = null
+    let dtDays = null,
+      dtHours = null,
+      dtMinutes = null,
+      dtSeconds = null
 
     // If polling frequency is provided, convert to columns
     if (input.pollingFrequency) {
@@ -375,13 +408,13 @@ export class ICMPPollingTemplateRepository {
     if (input.pollingFrequency) {
       setClauses.push('polling_frequency_days = ?')
       params.push(pfDays)
-      
+
       setClauses.push('polling_frequency_hours = ?')
       params.push(pfHours)
-      
+
       setClauses.push('polling_frequency_minutes = ?')
       params.push(pfMinutes)
-      
+
       setClauses.push('polling_frequency_seconds = ?')
       params.push(pfSeconds)
     }
@@ -389,13 +422,13 @@ export class ICMPPollingTemplateRepository {
     if (input.downtimeTrigger) {
       setClauses.push('downtime_trigger_days = ?')
       params.push(dtDays)
-      
+
       setClauses.push('downtime_trigger_hours = ?')
       params.push(dtHours)
-      
+
       setClauses.push('downtime_trigger_minutes = ?')
       params.push(dtMinutes)
-      
+
       setClauses.push('downtime_trigger_seconds = ?')
       params.push(dtSeconds)
     }
@@ -428,10 +461,14 @@ export class ICMPPollingTemplateRepository {
     }
 
     // Delete the template
-    this.db.query(`
+    this.db
+      .query(
+        `
       DELETE FROM icmp_polling_templates
       WHERE _id = ? AND company_id = ?
-    `).run(_id, companyId)
+    `
+      )
+      .run(_id, companyId)
 
     return true
   }

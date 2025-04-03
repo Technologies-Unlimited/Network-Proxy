@@ -75,7 +75,7 @@ export class SNMPv3Repository {
         authPassword: setting.auth_password,
         encryptionMethod: setting.encryption_method,
         encryptionPassword: setting.encryption_password,
-        description: '',  // Description not stored in database
+        description: '', // Description not stored in database
         createdAt: setting.created_at,
         updatedAt: setting.updated_at,
       }
@@ -134,7 +134,7 @@ export class SNMPv3Repository {
       authPassword: setting.auth_password,
       encryptionMethod: setting.encryption_method,
       encryptionPassword: setting.encryption_password,
-      description: '',  // Description not stored in database
+      description: '', // Description not stored in database
       createdAt: setting.created_at,
       updatedAt: setting.updated_at,
     }
@@ -143,7 +143,10 @@ export class SNMPv3Repository {
   /**
    * Get a SNMPv3 setting by username
    */
-  getByUsername(userName: string, companyId: string): ExtendedSNMPv3Fields | null {
+  getByUsername(
+    userName: string,
+    companyId: string
+  ): ExtendedSNMPv3Fields | null {
     // Create a prepared statement to get a SNMPv3 setting by username and company ID
     const stmt = this.db.query(`
       SELECT 
@@ -190,7 +193,7 @@ export class SNMPv3Repository {
       authPassword: setting.auth_password,
       encryptionMethod: setting.encryption_method,
       encryptionPassword: setting.encryption_password,
-      description: '',  // Description not stored in database
+      description: '', // Description not stored in database
       createdAt: setting.created_at,
       updatedAt: setting.updated_at,
     }
@@ -199,7 +202,10 @@ export class SNMPv3Repository {
   /**
    * Create a new SNMPv3 setting
    */
-  create(companyId: string, input: Partial<ExtendedSNMPv3Fields>): ExtendedSNMPv3Fields {
+  create(
+    companyId: string,
+    input: Partial<ExtendedSNMPv3Fields>
+  ): ExtendedSNMPv3Fields {
     const _id = generateId()
     const now = Date.now()
 
@@ -226,7 +232,9 @@ export class SNMPv3Repository {
     // Check if a setting with the same username already exists
     const existingSetting = this.getByUsername(input.userName, companyId)
     if (existingSetting) {
-      throw new Error(`A SNMPv3 setting with the username ${input.userName} already exists`)
+      throw new Error(
+        `A SNMPv3 setting with the username ${input.userName} already exists`
+      )
     }
 
     // Prepare parameters
@@ -290,7 +298,9 @@ export class SNMPv3Repository {
     if (input.userName && input.userName !== existingSetting.userName) {
       const duplicateSetting = this.getByUsername(input.userName, companyId)
       if (duplicateSetting && duplicateSetting._id !== _id) {
-        throw new Error(`A SNMPv3 setting with the username ${input.userName} already exists`)
+        throw new Error(
+          `A SNMPv3 setting with the username ${input.userName} already exists`
+        )
       }
     }
 
@@ -372,11 +382,13 @@ export class SNMPv3Repository {
         FROM snmpv3_templates
         WHERE snmpv3_setting_id = ?
       `)
-      
+
       const templateResult = templateStmt.get(_id) as { count: number }
-      
+
       if (templateResult.count > 0) {
-        throw new Error(`Cannot delete SNMPv3 setting: ${templateResult.count} templates are using this setting.`)
+        throw new Error(
+          `Cannot delete SNMPv3 setting: ${templateResult.count} templates are using this setting.`
+        )
       }
 
       // Delete the setting

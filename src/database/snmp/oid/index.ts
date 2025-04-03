@@ -219,7 +219,10 @@ export class SNMPOIDRepository {
   /**
    * Create a new SNMP OID
    */
-  create(companyId: string, input: Partial<ExtendedOIDFields>): ExtendedOIDFields {
+  create(
+    companyId: string,
+    input: Partial<ExtendedOIDFields>
+  ): ExtendedOIDFields {
     const _id = generateId()
     const now = Date.now()
 
@@ -371,11 +374,13 @@ export class SNMPOIDRepository {
         FROM snmpv2_template_oids
         WHERE oid_id = ?
       `)
-      
+
       const v2Result = v2Stmt.get(_id) as { count: number }
-      
+
       if (v2Result.count > 0) {
-        throw new Error(`Cannot delete OID: ${v2Result.count} SNMPv2 templates are using this OID.`)
+        throw new Error(
+          `Cannot delete OID: ${v2Result.count} SNMPv2 templates are using this OID.`
+        )
       }
 
       // Check if any SNMPv3 templates are using this OID
@@ -384,11 +389,13 @@ export class SNMPOIDRepository {
         FROM snmpv3_template_oids
         WHERE oid_id = ?
       `)
-      
+
       const v3Result = v3Stmt.get(_id) as { count: number }
-      
+
       if (v3Result.count > 0) {
-        throw new Error(`Cannot delete OID: ${v3Result.count} SNMPv3 templates are using this OID.`)
+        throw new Error(
+          `Cannot delete OID: ${v3Result.count} SNMPv3 templates are using this OID.`
+        )
       }
 
       // Delete the OID

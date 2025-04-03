@@ -68,7 +68,7 @@ export class SNMPv2Repository {
         communityName: setting.community_name,
         readCommunity: setting.read_community,
         writeCommunity: setting.write_community,
-        description: '',  // Description not stored in database
+        description: '', // Description not stored in database
         createdAt: setting.created_at,
         updatedAt: setting.updated_at,
       }
@@ -120,7 +120,7 @@ export class SNMPv2Repository {
       communityName: setting.community_name,
       readCommunity: setting.read_community,
       writeCommunity: setting.write_community,
-      description: '',  // Description not stored in database
+      description: '', // Description not stored in database
       createdAt: setting.created_at,
       updatedAt: setting.updated_at,
     }
@@ -129,7 +129,10 @@ export class SNMPv2Repository {
   /**
    * Get a SNMPv2 setting by community name
    */
-  getByCommunityName(name: string, companyId: string): ExtendedSNMPv2Fields | null {
+  getByCommunityName(
+    name: string,
+    companyId: string
+  ): ExtendedSNMPv2Fields | null {
     // Create a prepared statement to get a SNMPv2 setting by community name and company ID
     const stmt = this.db.query(`
       SELECT 
@@ -169,7 +172,7 @@ export class SNMPv2Repository {
       communityName: setting.community_name,
       readCommunity: setting.read_community,
       writeCommunity: setting.write_community,
-      description: '',  // Description not stored in database
+      description: '', // Description not stored in database
       createdAt: setting.created_at,
       updatedAt: setting.updated_at,
     }
@@ -178,7 +181,10 @@ export class SNMPv2Repository {
   /**
    * Create a new SNMPv2 setting
    */
-  create(companyId: string, input: Partial<ExtendedSNMPv2Fields>): ExtendedSNMPv2Fields {
+  create(
+    companyId: string,
+    input: Partial<ExtendedSNMPv2Fields>
+  ): ExtendedSNMPv2Fields {
     const _id = generateId()
     const now = Date.now()
 
@@ -194,9 +200,14 @@ export class SNMPv2Repository {
     }
 
     // Check if a setting with the same community name already exists
-    const existingSetting = this.getByCommunityName(input.communityName, companyId)
+    const existingSetting = this.getByCommunityName(
+      input.communityName,
+      companyId
+    )
     if (existingSetting) {
-      throw new Error(`A SNMPv2 setting with the community name ${input.communityName} already exists`)
+      throw new Error(
+        `A SNMPv2 setting with the community name ${input.communityName} already exists`
+      )
     }
 
     // Prepare parameters
@@ -250,10 +261,18 @@ export class SNMPv2Repository {
     }
 
     // If updating the community name, check for duplicates
-    if (input.communityName && input.communityName !== existingSetting.communityName) {
-      const duplicateSetting = this.getByCommunityName(input.communityName, companyId)
+    if (
+      input.communityName &&
+      input.communityName !== existingSetting.communityName
+    ) {
+      const duplicateSetting = this.getByCommunityName(
+        input.communityName,
+        companyId
+      )
       if (duplicateSetting && duplicateSetting._id !== _id) {
-        throw new Error(`A SNMPv2 setting with the community name ${input.communityName} already exists`)
+        throw new Error(
+          `A SNMPv2 setting with the community name ${input.communityName} already exists`
+        )
       }
     }
 
@@ -320,11 +339,13 @@ export class SNMPv2Repository {
         FROM snmpv2_templates
         WHERE snmpv2_setting_id = ?
       `)
-      
+
       const templateResult = templateStmt.get(_id) as { count: number }
-      
+
       if (templateResult.count > 0) {
-        throw new Error(`Cannot delete SNMPv2 setting: ${templateResult.count} templates are using this setting.`)
+        throw new Error(
+          `Cannot delete SNMPv2 setting: ${templateResult.count} templates are using this setting.`
+        )
       }
 
       // Delete the setting

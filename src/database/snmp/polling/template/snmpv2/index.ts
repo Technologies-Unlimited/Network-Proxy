@@ -30,7 +30,9 @@ export class SNMPv2PollingTemplateRepository {
   /**
    * Get all SNMPv2 polling templates for a company
    */
-  async getForCompany(companyId: string): Promise<ExtendedSNMPv2PollingTemplateFields[]> {
+  async getForCompany(
+    companyId: string
+  ): Promise<ExtendedSNMPv2PollingTemplateFields[]> {
     // Create a prepared statement to get all templates for a company
     const stmt = this.db.query(`
       SELECT 
@@ -86,7 +88,7 @@ export class SNMPv2PollingTemplateRepository {
           template.downtime_trigger_minutes,
           template.downtime_trigger_seconds
         ),
-        createdAt: template.created_at
+        createdAt: template.created_at,
       }
     })
 
@@ -96,7 +98,10 @@ export class SNMPv2PollingTemplateRepository {
   /**
    * Get a single SNMPv2 polling template by ID
    */
-  getById(_id: string, companyId: string): ExtendedSNMPv2PollingTemplateFields | null {
+  getById(
+    _id: string,
+    companyId: string
+  ): ExtendedSNMPv2PollingTemplateFields | null {
     // Create a prepared statement to get a template by ID and company ID
     const stmt = this.db.query(`
       SELECT 
@@ -156,14 +161,17 @@ export class SNMPv2PollingTemplateRepository {
         template.downtime_trigger_minutes,
         template.downtime_trigger_seconds
       ),
-      createdAt: template.created_at
+      createdAt: template.created_at,
     }
   }
 
   /**
    * Get a SNMPv2 polling template by name
    */
-  getByName(name: string, companyId: string): ExtendedSNMPv2PollingTemplateFields | null {
+  getByName(
+    name: string,
+    companyId: string
+  ): ExtendedSNMPv2PollingTemplateFields | null {
     // Create a prepared statement to get a template by name and company ID
     const stmt = this.db.query(`
       SELECT 
@@ -223,14 +231,17 @@ export class SNMPv2PollingTemplateRepository {
         template.downtime_trigger_minutes,
         template.downtime_trigger_seconds
       ),
-      createdAt: template.created_at
+      createdAt: template.created_at,
     }
   }
 
   /**
    * Create a new SNMPv2 polling template
    */
-  create(companyId: string, input: Partial<ExtendedSNMPv2PollingTemplateFields>): ExtendedSNMPv2PollingTemplateFields {
+  create(
+    companyId: string,
+    input: Partial<ExtendedSNMPv2PollingTemplateFields>
+  ): ExtendedSNMPv2PollingTemplateFields {
     const _id = generateId()
     const now = Date.now()
 
@@ -257,18 +268,30 @@ export class SNMPv2PollingTemplateRepository {
     // Check if a template with the same name already exists
     const existingTemplate = this.getByName(input.name, companyId)
     if (existingTemplate) {
-      throw new Error(`A polling template with the name ${input.name} already exists`)
+      throw new Error(
+        `A polling template with the name ${input.name} already exists`
+      )
     }
 
     // Convert TimeInterval objects to individual columns
-    const { days: pfDays, hours: pfHours, minutes: pfMinutes, seconds: pfSeconds } = 
-      timeIntervalToColumns(input.pollingFrequency)
-    
-    const { days: dtDays, hours: dtHours, minutes: dtMinutes, seconds: dtSeconds } = 
-      timeIntervalToColumns(input.downtimeTrigger)
+    const {
+      days: pfDays,
+      hours: pfHours,
+      minutes: pfMinutes,
+      seconds: pfSeconds,
+    } = timeIntervalToColumns(input.pollingFrequency)
+
+    const {
+      days: dtDays,
+      hours: dtHours,
+      minutes: dtMinutes,
+      seconds: dtSeconds,
+    } = timeIntervalToColumns(input.downtimeTrigger)
 
     // Insert the SNMPv2 polling template
-    this.db.query(`
+    this.db
+      .query(
+        `
       INSERT INTO snmpv2_polling_templates (
         _id, company_id, name, description, frequency, timeout, retries,
         polling_frequency_days, polling_frequency_hours, 
@@ -277,24 +300,26 @@ export class SNMPv2PollingTemplateRepository {
         downtime_trigger_minutes, downtime_trigger_seconds,
         created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      _id,
-      companyId,
-      input.name,
-      input.description || '',
-      input.frequency,
-      input.timeout,
-      input.retries,
-      pfDays,
-      pfHours,
-      pfMinutes,
-      pfSeconds,
-      dtDays,
-      dtHours,
-      dtMinutes,
-      dtSeconds,
-      now
-    )
+    `
+      )
+      .run(
+        _id,
+        companyId,
+        input.name,
+        input.description || '',
+        input.frequency,
+        input.timeout,
+        input.retries,
+        pfDays,
+        pfHours,
+        pfMinutes,
+        pfSeconds,
+        dtDays,
+        dtHours,
+        dtMinutes,
+        dtSeconds,
+        now
+      )
 
     // Return the newly created template
     return this.getById(_id, companyId)!
@@ -318,7 +343,9 @@ export class SNMPv2PollingTemplateRepository {
     if (input.name && input.name !== existingTemplate.name) {
       const duplicateTemplate = this.getByName(input.name, companyId)
       if (duplicateTemplate && duplicateTemplate._id !== _id) {
-        throw new Error(`A polling template with the name ${input.name} already exists`)
+        throw new Error(
+          `A polling template with the name ${input.name} already exists`
+        )
       }
     }
 
@@ -377,13 +404,13 @@ export class SNMPv2PollingTemplateRepository {
     if (input.pollingFrequency) {
       setClauses.push('polling_frequency_days = ?')
       params.push(pfDays)
-      
+
       setClauses.push('polling_frequency_hours = ?')
       params.push(pfHours)
-      
+
       setClauses.push('polling_frequency_minutes = ?')
       params.push(pfMinutes)
-      
+
       setClauses.push('polling_frequency_seconds = ?')
       params.push(pfSeconds)
     }
@@ -391,13 +418,13 @@ export class SNMPv2PollingTemplateRepository {
     if (input.downtimeTrigger) {
       setClauses.push('downtime_trigger_days = ?')
       params.push(dtDays)
-      
+
       setClauses.push('downtime_trigger_hours = ?')
       params.push(dtHours)
-      
+
       setClauses.push('downtime_trigger_minutes = ?')
       params.push(dtMinutes)
-      
+
       setClauses.push('downtime_trigger_seconds = ?')
       params.push(dtSeconds)
     }
@@ -430,10 +457,14 @@ export class SNMPv2PollingTemplateRepository {
     }
 
     // Delete the template
-    this.db.query(`
+    this.db
+      .query(
+        `
       DELETE FROM snmpv2_polling_templates
       WHERE _id = ? AND company_id = ?
-    `).run(_id, companyId)
+    `
+      )
+      .run(_id, companyId)
 
     return true
   }

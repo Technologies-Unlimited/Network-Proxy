@@ -95,7 +95,8 @@ export class SNMPv2TemplateRepository {
           description: template.description,
           oidIds: oidIds.length > 0 ? oidIds : undefined,
           stockIds: stockIds.length > 0 ? stockIds : undefined,
-          networkInventoryIds: networkInventoryIds.length > 0 ? networkInventoryIds : undefined,
+          networkInventoryIds:
+            networkInventoryIds.length > 0 ? networkInventoryIds : undefined,
           createdAt: template.created_at,
           updatedAt: template.updated_at,
         }
@@ -174,7 +175,8 @@ export class SNMPv2TemplateRepository {
       description: template.description,
       oidIds: oidIds.length > 0 ? oidIds : undefined,
       stockIds: stockIds.length > 0 ? stockIds : undefined,
-      networkInventoryIds: networkInventoryIds.length > 0 ? networkInventoryIds : undefined,
+      networkInventoryIds:
+        networkInventoryIds.length > 0 ? networkInventoryIds : undefined,
       createdAt: template.created_at,
       updatedAt: template.updated_at,
     }
@@ -249,7 +251,8 @@ export class SNMPv2TemplateRepository {
       description: template.description,
       oidIds: oidIds.length > 0 ? oidIds : undefined,
       stockIds: stockIds.length > 0 ? stockIds : undefined,
-      networkInventoryIds: networkInventoryIds.length > 0 ? networkInventoryIds : undefined,
+      networkInventoryIds:
+        networkInventoryIds.length > 0 ? networkInventoryIds : undefined,
       createdAt: template.created_at,
       updatedAt: template.updated_at,
     }
@@ -258,7 +261,10 @@ export class SNMPv2TemplateRepository {
   /**
    * Create a new SNMPv2 template
    */
-  create(companyId: string, input: Partial<SNMPv2TemplateFields>): SNMPv2TemplateFields {
+  create(
+    companyId: string,
+    input: Partial<SNMPv2TemplateFields>
+  ): SNMPv2TemplateFields {
     const _id = generateId()
     const now = Date.now()
 
@@ -276,30 +282,36 @@ export class SNMPv2TemplateRepository {
     // Check if a template with the same name already exists
     const existingTemplate = this.getByName(input.templateName, companyId)
     if (existingTemplate) {
-      throw new Error(`A template with the name ${input.templateName} already exists`)
+      throw new Error(
+        `A template with the name ${input.templateName} already exists`
+      )
     }
 
     // Start a transaction to ensure all operations succeed or fail together
     const createTemplate = this.db.transaction(() => {
       // Insert the main template record
-      this.db.query(`
+      this.db
+        .query(
+          `
         INSERT INTO snmpv2_templates (
           _id, company_id, manufacturer_id, model_name_id, product_id,
           snmpv2_setting_id, template_name, description, 
           created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        _id,
-        companyId,
-        input.manufacturerId || null,
-        input.modelNameId || null,
-        input.productId || null,
-        input.snmpv2SettingId || null,
-        input.templateName || null,
-        input.description || null,
-        now,
-        now
-      )
+      `
+        )
+        .run(
+          _id,
+          companyId,
+          input.manufacturerId || null,
+          input.modelNameId || null,
+          input.productId || null,
+          input.snmpv2SettingId || null,
+          input.templateName || null,
+          input.description || null,
+          now,
+          now
+        )
 
       // Insert OID IDs if provided
       if (input.oidIds && input.oidIds.length > 0) {
@@ -351,7 +363,11 @@ export class SNMPv2TemplateRepository {
   /**
    * Update an existing SNMPv2 template
    */
-  update(_id: string, companyId: string, input: Partial<SNMPv2TemplateFields>): SNMPv2TemplateFields | null {
+  update(
+    _id: string,
+    companyId: string,
+    input: Partial<SNMPv2TemplateFields>
+  ): SNMPv2TemplateFields | null {
     // Check if the template exists
     const existingTemplate = this.getById(_id, companyId)
     if (!existingTemplate) {
@@ -359,10 +375,15 @@ export class SNMPv2TemplateRepository {
     }
 
     // If updating the name, check for duplicates
-    if (input.templateName && input.templateName !== existingTemplate.templateName) {
+    if (
+      input.templateName &&
+      input.templateName !== existingTemplate.templateName
+    ) {
       const duplicateTemplate = this.getByName(input.templateName, companyId)
       if (duplicateTemplate && duplicateTemplate._id !== _id) {
-        throw new Error(`A template with the name ${input.templateName} already exists`)
+        throw new Error(
+          `A template with the name ${input.templateName} already exists`
+        )
       }
     }
 
@@ -412,10 +433,14 @@ export class SNMPv2TemplateRepository {
       // Update OID IDs if provided
       if (input.oidIds !== undefined) {
         // Delete existing OID IDs
-        this.db.query(`
+        this.db
+          .query(
+            `
           DELETE FROM snmpv2_template_oids
           WHERE snmpv2_template_id = ?
-        `).run(_id)
+        `
+          )
+          .run(_id)
 
         // Insert new OID IDs
         if (input.oidIds.length > 0) {
@@ -434,10 +459,14 @@ export class SNMPv2TemplateRepository {
       // Update stock IDs if provided
       if (input.stockIds !== undefined) {
         // Delete existing stock IDs
-        this.db.query(`
+        this.db
+          .query(
+            `
           DELETE FROM snmpv2_template_stock
           WHERE snmpv2_template_id = ?
-        `).run(_id)
+        `
+          )
+          .run(_id)
 
         // Insert new stock IDs
         if (input.stockIds.length > 0) {
@@ -456,10 +485,14 @@ export class SNMPv2TemplateRepository {
       // Update network inventory IDs if provided
       if (input.networkInventoryIds !== undefined) {
         // Delete existing network inventory IDs
-        this.db.query(`
+        this.db
+          .query(
+            `
           DELETE FROM snmpv2_template_network_inventory
           WHERE snmpv2_template_id = ?
-        `).run(_id)
+        `
+          )
+          .run(_id)
 
         // Insert new network inventory IDs
         if (input.networkInventoryIds.length > 0) {
@@ -496,28 +529,44 @@ export class SNMPv2TemplateRepository {
     // Start a transaction to delete the template and all related data
     const deleteTemplate = this.db.transaction(() => {
       // Delete OID associations
-      this.db.query(`
+      this.db
+        .query(
+          `
         DELETE FROM snmpv2_template_oids
         WHERE snmpv2_template_id = ?
-      `).run(_id)
+      `
+        )
+        .run(_id)
 
       // Delete stock associations
-      this.db.query(`
+      this.db
+        .query(
+          `
         DELETE FROM snmpv2_template_stock
         WHERE snmpv2_template_id = ?
-      `).run(_id)
+      `
+        )
+        .run(_id)
 
       // Delete network inventory associations
-      this.db.query(`
+      this.db
+        .query(
+          `
         DELETE FROM snmpv2_template_network_inventory
         WHERE snmpv2_template_id = ?
-      `).run(_id)
+      `
+        )
+        .run(_id)
 
       // Delete the main template record
-      this.db.query(`
+      this.db
+        .query(
+          `
         DELETE FROM snmpv2_templates
         WHERE _id = ? AND company_id = ?
-      `).run(_id, companyId)
+      `
+        )
+        .run(_id, companyId)
     })
 
     // Execute the transaction
