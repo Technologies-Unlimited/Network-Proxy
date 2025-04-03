@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useCallback, useEffect, useMemo } from 'react'
-import FormDataGrid from '@/components/Form/DataGrid'
-import { GridColDef, GridRowParams, useGridApiRef } from '@mui/x-data-grid-pro'
+import { FormDataGrid } from 'goobs-frontend'
+import type { ColumnDef, RowData } from 'goobs-frontend'
 import AddNetworkInventory from '@/forms/Network/Inventory/company/AddNetworkDevice/client'
 import ManageNetworkInventory from '@/forms/Network/Inventory/company/ManageNetworkDevice/client'
 import { useNetworkInventoryAtom } from '@/apolloClient/network-administration/inventory/company/atom'
@@ -10,8 +10,10 @@ import { useCompanyInventoryStockAtom } from '@/apolloClient/inventory/items/com
 import { ExtendedCompanyNetworkInventoryFields } from '@/schema/network-administration/inventory/company/schema'
 import { ExtendedCompanyInventoryStockFields } from '@/schema/inventory/items/company/stock/schema'
 import { ObjectId } from 'mongodb'
-import { DatagridProps } from '@/components/DataGrid'
 
+/**
+ * Interface for Inventory props
+ */
 interface InventoryProps {
   companyId: ObjectId
 }
@@ -21,7 +23,7 @@ const Inventory: React.FC<InventoryProps> = ({ companyId }) => {
   const [manageOpen, setManageOpen] = useState(false)
   const [selectedInventory, setSelectedInventory] =
     useState<ExtendedCompanyNetworkInventoryFields | null>(null)
-  const apiRef = useGridApiRef()
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
 
   const { getNetworkInventory, refreshNetworkInventoryAtom } =
     useNetworkInventoryAtom(companyId)
@@ -62,28 +64,35 @@ const Inventory: React.FC<InventoryProps> = ({ companyId }) => {
     },
   ]
 
-  const columns: GridColDef[] = [
-    { field: 'id', headerName: 'ID', width: 60 },
-    { field: 'productName', headerName: 'Product Name', width: 180 },
-    { field: 'macAddress', headerName: 'MAC Address', width: 180 },
-    { field: 'serialNumber', headerName: 'Serial Number', width: 180 },
-    { field: 'skuNumber', headerName: 'SKU Number', width: 180 },
+  // Define columns for the data grid
+  const columns: ColumnDef[] = [
+    { field: 'id', headerName: 'ID' },
+    { field: 'productName', headerName: 'Product Name' },
+    { field: 'macAddress', headerName: 'MAC Address' },
+    { field: 'serialNumber', headerName: 'Serial Number' },
+    { field: 'skuNumber', headerName: 'SKU Number' },
   ]
 
-  const handleRowClick = useCallback((params: GridRowParams) => {
-    setSelectedInventory(params.row as ExtendedCompanyNetworkInventoryFields)
-  }, [])
+  // Handle row selection
+  function handleSelectionChange(selectedIds: string[]): void {
+    if (selectedIds.length > 0) {
+      setSelectedRowId(selectedIds[0])
 
-  useEffect(() => {
-    const unsubscribe = apiRef.current.subscribeEvent(
-      'rowClick',
-      handleRowClick
-    )
-    return () => {
-      unsubscribe()
+      const inventories = getNetworkInventory()
+      const selectedRow = inventories.find(
+        inventory => inventory._id.toString() === selectedIds[0]
+      )
+
+      if (selectedRow) {
+        setSelectedInventory(selectedRow)
+      }
+    } else {
+      setSelectedRowId(null)
+      setSelectedInventory(null)
     }
-  }, [apiRef, handleRowClick])
+  }
 
+  // Generate rows for the data grid
   const rows = useMemo(() => {
     const inventories = getNetworkInventory()
     const productIds = inventories.map(inventory => inventory.productId)
@@ -101,6 +110,7 @@ const Inventory: React.FC<InventoryProps> = ({ companyId }) => {
         : undefined
       return {
         id: inventory._id.toString(),
+        _id: inventory._id.toString(), // Add _id as string for RowData compatibility
         productName: productNames[index],
         macAddress: inventory.macAddress,
         serialNumber: stockItem?.serialNumber || 'N/A',
@@ -114,11 +124,12 @@ const Inventory: React.FC<InventoryProps> = ({ companyId }) => {
     companyId,
   ])
 
-  const datagrid: DatagridProps = {
+  // Assemble DataGrid props
+  const datagridProps = {
     columns,
     rows,
     buttons,
-    apiRef,
+    onSelectionChange: handleSelectionChange,
     onRefresh: refreshNetworkInventoryAtom,
   }
 
@@ -127,7 +138,7 @@ const Inventory: React.FC<InventoryProps> = ({ companyId }) => {
       <FormDataGrid
         title={`IPAM - ${viewTitle}`}
         description={description}
-        datagrid={datagrid}
+        datagrid={datagridProps}
       />
       <AddNetworkInventory
         companyId={companyId}

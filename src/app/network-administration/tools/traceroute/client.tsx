@@ -39,55 +39,24 @@ function Traceroute({ companyId }: TracerouteProps) {
 
   const contentSectionGrids: ContentSectionProps['grids'] = [
     {
-      grid: {
-        gridconfig: {
-          gridname: 'tracerouteGrid',
-          alignment: 'left',
-          gridwidth: '100%',
-        },
-      },
       typography: [
         {
           text: `${subnavTitle} - ${viewTitle}`,
           fontvariant: 'interh3',
           fontcolor: 'black',
-          columnconfig: {
-            row: 1,
-            column: 1,
-            gridname: 'tracerouteGrid',
-            alignment: 'left',
-            columnwidth: '100%',
-          },
         },
         {
           text: description,
           fontvariant: 'interparagraph',
           fontcolor: 'black',
-          columnconfig: {
-            row: 2,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'tracerouteGrid',
-            alignment: 'left',
-            columnwidth: '100%',
-          },
         },
       ],
       dropdown: [
         {
-          name: 'poolSubnets',
           label: 'Available Pool Subnets',
           options: poolSubnets.map(subnet => ({ value: subnet.poolName })),
           outlinecolor: 'black',
           fontcolor: 'black',
-          columnconfig: {
-            row: 3,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'tracerouteGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
         },
       ],
       textfield: [
@@ -95,40 +64,16 @@ function Traceroute({ companyId }: TracerouteProps) {
           name: 'maxHops',
           label: 'Traceroute Max Hops',
           placeholder: '20',
-          columnconfig: {
-            row: 3,
-            column: 2,
-            margintop: 0.5,
-            gridname: 'tracerouteGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
         },
         {
           name: 'ipAddress',
           label: 'IP Address',
           placeholder: '192.168.0.3',
-          columnconfig: {
-            row: 4,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'tracerouteGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
         },
         {
           name: 'hostname',
           label: 'Hostname',
           placeholder: 'host.ip.local',
-          columnconfig: {
-            row: 4,
-            column: 2,
-            margintop: 0.5,
-            gridname: 'tracerouteGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
         },
       ],
     },

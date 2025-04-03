@@ -28,6 +28,7 @@
     "graphql": "^16",
     "jotai": "^2",
     "mongoose": "^8",
+    "next": "^15.2.4",
     "react": "^19",
     "react-dom": "^19",
     "snmp-native": "^1.2.0",

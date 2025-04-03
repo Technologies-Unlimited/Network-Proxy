@@ -6,9 +6,10 @@ import {
   ContentSectionProps,
   CustomButtonProps,
   DropdownProps,
+  ColumnDef,
+  RowData,
 } from 'goobs-frontend'
 import { ObjectId } from 'mongodb'
-import { GridColDef, GridRowModel } from '@mui/x-data-grid-pro'
 import { usePoolAtom } from '@/apolloClient/network-administration/ipam/pool/atom'
 import { ExtendedPoolFields } from '@/schema/network-administration/ipam/pool/schema'
 import { DatagridProps } from '@/components/DataGrid'
@@ -28,12 +29,35 @@ import { reverseDnsLookup } from '@/utils/networking/reverse-dns-lookup'
 import { getArpTable } from '@/utils/networking/arp-lookup'
 import { useOIDAtom } from '@/apolloClient/network-administration/snmp/oid/atom'
 
+/**
+ * Interface for Discover Devices props
+ */
 type DiscoverDevicesProps = {
   companyId: ObjectId
 }
 
+/**
+ * Interface for MIB data row
+ */
+interface MibDataRow extends RowData {
+  id: string
+  oidName: string
+  oid: string
+  value: string
+}
+
+/**
+ * Interface for discovered device row
+ */
+interface DeviceRow extends RowData {
+  id: string
+  hostname: string
+  ipAddress: string
+  macAddress: string
+}
+
 // Define the Jotai atom for storing MIB data
-const mibDataAtom = atom<GridRowModel[]>([])
+const mibDataAtom = atom<MibDataRow[]>([])
 
 function DiscoverDevices({ companyId }: DiscoverDevicesProps) {
   const {
@@ -49,7 +73,7 @@ function DiscoverDevices({ companyId }: DiscoverDevicesProps) {
   const { updateOID } = useOIDAtom(companyId)
 
   const [poolsData, setPoolsData] = useState<ExtendedPoolFields[]>([])
-  const [discoveredDevices, setDiscoveredDevices] = useState<GridRowModel[]>([])
+  const [discoveredDevices, setDiscoveredDevices] = useState<DeviceRow[]>([])
   const [mibData, setMibData] = useAtom(mibDataAtom)
   const [selectedPool, setSelectedPool] = useState<ExtendedPoolFields | null>(
     null
@@ -67,7 +91,10 @@ function DiscoverDevices({ companyId }: DiscoverDevicesProps) {
     const fetchArpTable = async () => {
       const table = await getArpTable()
       const arpMap = table.reduce(
-        (acc, entry) => {
+        (
+          acc: { [ip: string]: string },
+          entry: { ipAddress: string; macAddress: string }
+        ) => {
           acc[entry.ipAddress] = entry.macAddress
           return acc
         },
@@ -127,7 +154,7 @@ function DiscoverDevices({ companyId }: DiscoverDevicesProps) {
             id: `${result.ipAddress}-${oid}`,
             oidName: '',
             oid,
-            value,
+            value: String(value),
           })),
         ])
       }
@@ -204,52 +231,32 @@ function DiscoverDevices({ companyId }: DiscoverDevicesProps) {
     },
   ]
 
-  const deviceColumns: GridColDef[] = [
-    { field: 'hostname', headerName: 'Hostname', width: 180 },
-    { field: 'ipAddress', headerName: 'IP Address', width: 180 },
-    { field: 'macAddress', headerName: 'MAC Address', width: 180 },
+  // Define columns for the device data grid
+  const deviceColumns: ColumnDef[] = [
+    { field: 'hostname', headerName: 'Hostname' },
+    { field: 'ipAddress', headerName: 'IP Address' },
+    { field: 'macAddress', headerName: 'MAC Address' },
   ]
 
-  const mibColumns: GridColDef[] = [
-    { field: 'oidName', headerName: 'OID Name', width: 180 },
-    { field: 'oid', headerName: 'OID', width: 180 },
-    { field: 'value', headerName: 'Value', width: 180 },
+  // Define columns for the MIB data grid
+  const mibColumns: ColumnDef[] = [
+    { field: 'oidName', headerName: 'OID Name' },
+    { field: 'oid', headerName: 'OID' },
+    { field: 'value', headerName: 'Value' },
   ]
 
   const contentSectionGrids: ContentSectionProps['grids'] = [
     {
-      grid: {
-        gridconfig: {
-          gridname: 'discoverDevicesGrid',
-          gridwidth: '100%',
-          alignment: 'left',
-        },
-      },
       typography: [
         {
           text: `Tools - ${viewTitle}`,
           fontvariant: 'interh3',
           fontcolor: 'black',
-          columnconfig: {
-            row: 1,
-            column: 1,
-            gridname: 'discoverDevicesGrid',
-            columnwidth: '100%',
-            alignment: 'left',
-          },
         },
         {
           text: description,
           fontvariant: 'interparagraph',
           fontcolor: 'black',
-          columnconfig: {
-            row: 2,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'discoverDevicesGrid',
-            columnwidth: '100%',
-            alignment: 'left',
-          },
         },
         {
           text: selectedPool
@@ -257,14 +264,6 @@ function DiscoverDevices({ companyId }: DiscoverDevicesProps) {
             : 'Select a pool to see IP range',
           fontvariant: 'interparagraph',
           fontcolor: 'black',
-          columnconfig: {
-            row: 4,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'discoverDevicesGrid',
-            columnwidth: '100%',
-            alignment: 'left',
-          },
         },
       ],
       dropdown: [

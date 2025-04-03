@@ -1,7 +1,7 @@
-import { createTheme } from '@mui/material/styles'
+import { createTheme, PaletteOptions } from '@mui/material/styles'
 import {
   moss,
-  greyborder,
+  grey,
   aqua,
   madder,
   woad,
@@ -28,40 +28,90 @@ import {
 
 declare module '@mui/material/styles' {
   interface Palette {
+    ocean: Palette['primary']
+    moss: Palette['primary']
+    aqua: Palette['primary']
+    madder: Palette['primary']
+    woad: Palette['primary']
+    marine: Palette['primary']
+    pansy: Palette['primary']
+    stainlessSteel: Palette['primary']
+    coal: Palette['primary']
+    sky: Palette['primary']
+    salmon: Palette['primary']
+    lightning: Palette['primary']
+    sage: Palette['primary']
+    lilac: Palette['primary']
+    gunpowder: Palette['primary']
+    lightMadder: Palette['primary']
+    none: Palette['primary']
+    semiTransparentWhite: Palette['primary']
+    semiTransparentBlack: Palette['primary']
     [key: string]: Palette['primary']
   }
   interface PaletteOptions {
+    ocean?: PaletteOptions['primary']
+    moss?: PaletteOptions['primary']
+    aqua?: PaletteOptions['primary']
+    madder?: PaletteOptions['primary']
+    woad?: PaletteOptions['primary']
+    marine?: PaletteOptions['primary']
+    pansy?: PaletteOptions['primary']
+    stainlessSteel?: PaletteOptions['primary']
+    coal?: PaletteOptions['primary']
+    sky?: PaletteOptions['primary']
+    salmon?: PaletteOptions['primary']
+    lightning?: PaletteOptions['primary']
+    sage?: PaletteOptions['primary']
+    lilac?: PaletteOptions['primary']
+    gunpowder?: PaletteOptions['primary']
+    lightMadder?: PaletteOptions['primary']
+    none?: PaletteOptions['primary']
+    semiTransparentWhite?: PaletteOptions['primary']
+    semiTransparentBlack?: PaletteOptions['primary']
     [key: string]: PaletteOptions['primary']
+  }
+}
+
+declare module '@mui/material/styles/createPalette' {
+  interface PaletteOptions {
+    ocean?: PaletteOptions['primary']
+  }
+}
+
+declare module '@mui/material' {
+  interface Color {
+    ocean?: string
   }
 }
 
 export const theme = createTheme({
   palette: {
-    moss: moss,
-    aqua: aqua,
-    madder: madder,
-    woad: woad,
-    marine: marine,
-    pansy: pansy,
-    stainlessSteel: stainlessSteel,
-    coal: coal,
-    ocean: ocean,
-    sky: sky,
-    salmon: salmon,
-    lightning: lightning,
-    sage: sage,
-    lilac: lilac,
-    gunpowder: gunpowder,
-    lightMadder: lightMadder,
-    black: black,
-    white: white,
-    none: none,
-    semiTransparentWhite: semiTransparentWhite,
-    semiTransparentBlack: semiTransparentBlack,
-    red: red,
-    green: green,
-    greyborder: greyborder,
-  },
+    moss,
+    aqua,
+    madder,
+    woad,
+    marine,
+    pansy,
+    stainlessSteel,
+    coal,
+    ocean,
+    sky,
+    salmon,
+    lightning,
+    sage,
+    lilac,
+    gunpowder,
+    lightMadder,
+    black,
+    white,
+    none,
+    semiTransparentWhite,
+    semiTransparentBlack,
+    red,
+    green,
+    grey,
+  } as PaletteOptions,
 })
 
 type ColorPaletteType = (typeof colorPalette)[number]
@@ -70,55 +120,27 @@ export type ColorPaletteKeys =
   | `${ColorPaletteType}`
   | `${ColorPaletteType}.${ColorVariant}`
 
-declare module '@mui/material/AppBar' {
+declare module '@mui/material' {
   interface AppBarPropsColorOverrides {
-    [key: string]: true
+    ocean: true
   }
-}
 
-declare module '@mui/material/SvgIcon' {
   interface SvgIconPropsColorOverrides {
     [key: string]: true
   }
-}
 
-declare module '@mui/material/IconButton' {
   interface IconButtonPropsColorOverrides {
     [key: string]: true
   }
-}
 
-declare module '@mui/material/Checkbox' {
   interface CheckboxPropsColorOverrides {
     [key: string]: true
   }
-}
 
-declare module '@mui/material/Pagination' {
-  interface PaginationPropsColorOverrides {
-    [key: string]: true
-  }
-}
-
-declare module '@mui/material/PaginationItem' {
-  interface PaginationItemPropsColorOverrides {
-    [key: string]: true
-  }
-}
-
-declare module '@mui/material/Chip' {
   interface ChipPropsColorOverrides {
     [key: string]: true
   }
-}
 
-declare module '@mui/material/ButtonGroup' {
-  interface ButtonGroupPropsColorOverrides {
-    [key: string]: true
-  }
-}
-
-declare module '@mui/material/Typography' {
   interface TypographyPropsColorOverrides {
     [key: string]: true
   }
@@ -126,7 +148,7 @@ declare module '@mui/material/Typography' {
 
 export const colorPalette = [
   'moss',
-  'greyborder',
+  'grey',
   'aqua',
   'madder',
   'woad',
