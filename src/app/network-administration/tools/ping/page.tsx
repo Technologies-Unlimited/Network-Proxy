@@ -1,20 +1,10 @@
 'use server'
+
 import React from 'react'
-import Ping from './client'
-import { withCompanyData, ReusableRSC } from '@/rsc/reusableRSC'
-import { SerializableCompanyData } from '@/mongo'
+import PingClient from './client'
 
 export default async function PingPage() {
-  return withCompanyData(ReusableRSC, {
-    requiredAccountType: 'employee',
-    children: (companyData: SerializableCompanyData) => {
-      try {
-        console.log('Retrieved company data:', companyData)
-        return <Ping companyData={companyData} />
-      } catch (error) {
-        console.error('Error rendering Ping:', error)
-        return null
-      }
-    },
-  })
+  // Server component that doesn't fetch data directly
+  // The client component will fetch data from the API
+  return <PingClient />
 }

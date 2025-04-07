@@ -1,220 +1,467 @@
 'use client'
-import React, { useEffect, useState } from 'react'
-import RenderContent from '@/components/Content'
-import {
-  ContentSection,
-  ContentSectionProps,
-  CustomButtonProps,
-  DropdownProps,
-} from 'goobs-frontend'
-import { ObjectId } from 'mongodb'
-import { usePoolAtom } from '@/apolloClient/network-administration/ipam/pool/atom'
-import { ExtendedPoolFields } from '@/schema/network-administration/ipam/pool/schema'
 
-type PingProps = {
-  companyId: ObjectId
+import React, { useEffect, useState } from 'react'
+import {
+  Box,
+  Typography,
+  Button,
+  Paper,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  TextField,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  CircularProgress,
+  Grid,
+  SelectChangeEvent,
+  Stack,
+} from '@mui/material'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import StopIcon from '@mui/icons-material/Stop'
+
+/**
+ * Interface for Pool data
+ */
+interface Pool {
+  id: string
+  companyId: string
+  subnetId: string
+  name: string
+  startIp: string
+  endIp: string
+  createdAt: number
 }
 
-function Ping({ companyId }: PingProps) {
-  const { getPools, loading, error } = usePoolAtom(companyId)
-  const [poolsData, setPoolsData] = useState<ExtendedPoolFields[]>([])
-  const [pingResults, setPingResults] = useState<string[]>([])
+/**
+ * Interface for Subnet data
+ */
+interface Subnet {
+  id: string
+  companyId: string
+  name: string
+  cidr: string
+  networkAddress: string
+  broadcastAddress: string
+  gateway: string
+  createdAt: number
+}
 
-  useEffect(() => {
-    if (!loading && !error) {
-      setPoolsData(getPools())
+/**
+ * Interface for ping request
+ */
+interface PingRequest {
+  target: string
+  duration: number
+}
+
+/**
+ * Interface for ping result
+ */
+interface PingResult {
+  id: string
+  timestamp: number
+  target: string
+  bytes: number
+  time: number
+  ttl: number
+  success: boolean
+  message?: string
+}
+
+/**
+ * Hook to fetch network pools and subnets data
+ */
+function useNetworkData(companyId: string = 'default-company-id') {
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
+  const [pools, setPools] = useState<Pool[]>([])
+  const [subnets, setSubnets] = useState<Subnet[]>([])
+
+  // Function to fetch data from API
+  const fetchData = async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Fetch pools
+      const poolsResponse = await fetch(
+        `/api/network-administration/ipam/pools?companyId=${companyId}`
+      )
+      if (!poolsResponse.ok) {
+        throw new Error(`Failed to fetch pools: ${poolsResponse.statusText}`)
+      }
+      const poolsData = await poolsResponse.json()
+      setPools(poolsData)
+
+      // Fetch subnets
+      const subnetsResponse = await fetch(
+        `/api/network-administration/ipam/subnets?companyId=${companyId}`
+      )
+      if (!subnetsResponse.ok) {
+        throw new Error(
+          `Failed to fetch subnets: ${subnetsResponse.statusText}`
+        )
+      }
+      const subnetsData = await subnetsResponse.json()
+      setSubnets(subnetsData)
+    } catch (err) {
+      console.error('Error fetching network data:', err)
+      setError(err instanceof Error ? err.message : 'Unknown error occurred')
+    } finally {
+      setLoading(false)
     }
-  }, [loading, error, getPools])
-
-  const viewTitle = 'Ping'
-  const description =
-    'Perform ping tests with pool subnet, ping duration, IP address, and hostname'
-  const subnavTitle = 'Tools'
-
-  const poolSubnets = poolsData.map(pool => ({
-    poolName: pool.name,
-    poolStart: pool.startIp,
-    poolEnd: pool.endIp,
-  }))
-
-  const contentSectionGrids: ContentSectionProps['grids'] = [
-    {
-      grid: {
-        gridconfig: {
-          gridname: 'pingGrid',
-          alignment: 'left',
-          gridwidth: '100%',
-        },
-      },
-      typography: [
-        {
-          text: `${subnavTitle} - ${viewTitle}`,
-          fontvariant: 'interh3',
-          fontcolor: 'black',
-          columnconfig: {
-            row: 1,
-            column: 1,
-            gridname: 'pingGrid',
-            alignment: 'left',
-            columnwidth: '100%',
-          },
-        },
-        {
-          text: description,
-          fontvariant: 'interparagraph',
-          fontcolor: 'black',
-          columnconfig: {
-            row: 2,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'pingGrid',
-            alignment: 'left',
-            columnwidth: '100%',
-          },
-        },
-      ],
-      dropdown: [
-        {
-          name: 'poolSubnets',
-          label: 'Available Pool Subnets',
-          options: poolSubnets.map(subnet => ({ value: subnet.poolName })),
-          outlinecolor: 'black',
-          fontcolor: 'black',
-          columnconfig: {
-            row: 3,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'pingGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
-        },
-      ],
-      textfield: [
-        {
-          name: 'pingDuration',
-          label: 'Ping Duration (seconds)',
-          placeholder: '5',
-          columnconfig: {
-            row: 3,
-            column: 2,
-            margintop: 0.5,
-            gridname: 'pingGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
-        },
-        {
-          name: 'ipAddress',
-          label: 'IP Address',
-          placeholder: '192.168.0.3',
-          columnconfig: {
-            row: 4,
-            column: 1,
-            margintop: 0.5,
-            gridname: 'pingGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
-        },
-        {
-          name: 'hostname',
-          label: 'Hostname',
-          placeholder: 'host.ip.local',
-          columnconfig: {
-            row: 4,
-            column: 2,
-            margintop: 0.5,
-            gridname: 'pingGrid',
-            alignment: 'left',
-            columnwidth: '50%',
-          },
-        },
-      ],
-    },
-  ]
-
-  const renderContentGrid = {
-    gridconfig: {
-      gridname: 'pingResultsGrid',
-      gridwidth: '100%',
-      alignment: 'left' as const,
-    },
-    typography: [
-      {
-        text: 'Pinging xxx.xxx.xxx.xxx with 32 bytes of data',
-        columnconfig: {
-          row: 5,
-          column: 1,
-          margintop: 0.5,
-          gridname: 'pingResultsGrid',
-          alignment: 'left',
-          columnwidth: '100%',
-        },
-        fontcolor: 'black',
-      },
-      ...pingResults.map((result, index) => ({
-        text: result,
-        columnconfig: {
-          row: 6 + index,
-          column: 1,
-          margintop: 0.5,
-          gridname: 'pingResultsGrid',
-          alignment: 'left',
-          columnwidth: '100%',
-        },
-        fontcolor: 'black',
-      })),
-    ],
-    button: [
-      {
-        type: 'submit',
-        text: 'Ping IP Address',
-        backgroundcolor: 'black',
-        variant: 'contained',
-        fontcolor: 'white',
-        columnconfig: {
-          row: 10,
-          column: 1,
-          margintop: 0.5,
-          gridname: 'pingResultsGrid',
-          alignment: 'left',
-          columnwidth: '50%',
-        },
-        onClick: () => {
-          // Ping IP Address action
-        },
-      } as CustomButtonProps,
-      {
-        type: 'submit',
-        text: 'Stop Ping on IP Address',
-        backgroundcolor: 'black',
-        variant: 'contained',
-        fontcolor: 'white',
-        columnconfig: {
-          row: 10,
-          column: 2,
-          margintop: 0.5,
-          gridname: 'pingResultsGrid',
-          alignment: 'left',
-          columnwidth: '50%',
-        },
-        onClick: () => {
-          // Stop Ping on IP Address action
-        },
-      } as CustomButtonProps,
-    ],
   }
 
-  if (loading) return <div>Loading...</div>
-  if (error) return <div>Error loading pools data</div>
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchData()
+
+    // Optional: Setup WebSocket connection for real-time updates
+    const ws = new WebSocket(
+      `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws?companyId=${companyId}`
+    )
+
+    ws.onopen = () => {
+      console.log('WebSocket connection established')
+    }
+
+    ws.onmessage = event => {
+      try {
+        const data = JSON.parse(event.data)
+
+        // Handle different message types for real-time updates
+        if (data.type === 'poolUpdate') {
+          setPools(prev => {
+            const index = prev.findIndex(p => p.id === data.pool.id)
+            if (index >= 0) {
+              const newPools = [...prev]
+              newPools[index] = data.pool
+              return newPools
+            }
+            return [...prev, data.pool]
+          })
+        } else if (data.type === 'subnetUpdate') {
+          setSubnets(prev => {
+            const index = prev.findIndex(s => s.id === data.subnet.id)
+            if (index >= 0) {
+              const newSubnets = [...prev]
+              newSubnets[index] = data.subnet
+              return newSubnets
+            }
+            return [...prev, data.subnet]
+          })
+        }
+      } catch (err) {
+        console.error('Error processing WebSocket message:', err)
+      }
+    }
+
+    ws.onerror = error => {
+      console.error('WebSocket error:', error)
+    }
+
+    ws.onclose = () => {
+      console.log('WebSocket connection closed')
+    }
+
+    // Clean up WebSocket connection
+    return () => {
+      ws.close()
+    }
+  }, [companyId])
+
+  return {
+    loading,
+    error,
+    pools,
+    subnets,
+    refreshData: fetchData,
+  }
+}
+
+/**
+ * Hook for ping functionality
+ */
+function usePing() {
+  const [isPinging, setIsPinging] = useState<boolean>(false)
+  const [pingResults, setPingResults] = useState<PingResult[]>([])
+  const [ws, setWs] = useState<WebSocket | null>(null)
+
+  useEffect(() => {
+    // Create WebSocket connection for ping data
+    const pingWs = new WebSocket(
+      `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ping`
+    )
+
+    pingWs.onopen = () => {
+      console.log('Ping WebSocket connection established')
+      setWs(pingWs)
+    }
+
+    pingWs.onmessage = event => {
+      try {
+        const result = JSON.parse(event.data) as PingResult
+        setPingResults(prev => [...prev, result])
+      } catch (err) {
+        console.error('Error processing ping WebSocket message:', err)
+      }
+    }
+
+    pingWs.onerror = error => {
+      console.error('Ping WebSocket error:', error)
+    }
+
+    pingWs.onclose = () => {
+      console.log('Ping WebSocket connection closed')
+      setWs(null)
+      setIsPinging(false)
+    }
+
+    // Clean up WebSocket connection
+    return () => {
+      pingWs.close()
+    }
+  }, [])
+
+  const startPing = (request: PingRequest) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error('WebSocket connection not available')
+      return false
+    }
+
+    setPingResults([])
+    setIsPinging(true)
+    ws.send(JSON.stringify({ type: 'start', ...request }))
+    return true
+  }
+
+  const stopPing = () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error('WebSocket connection not available')
+      return false
+    }
+
+    setIsPinging(false)
+    ws.send(JSON.stringify({ type: 'stop' }))
+    return true
+  }
+
+  return {
+    isPinging,
+    pingResults,
+    startPing,
+    stopPing,
+  }
+}
+
+/**
+ * Main PingClient component
+ */
+const PingClient: React.FC = () => {
+  // Use default company ID for demo purposes
+  const companyId = 'default-company-id'
+  const [selectedPool, setSelectedPool] = useState<Pool | null>(null)
+  const [ipAddress, setIpAddress] = useState<string>('')
+  const [hostname, setHostname] = useState<string>('')
+  const [duration, setDuration] = useState<string>('5')
+
+  // Get network data using our custom hook
+  const { loading, error, pools, subnets } = useNetworkData(companyId)
+
+  // Get ping functionality from our custom hook
+  const { isPinging, pingResults, startPing, stopPing } = usePing()
+
+  // Handle pool selection
+  const handlePoolChange = (event: SelectChangeEvent) => {
+    const poolId = event.target.value
+    const selectedPool = pools.find(p => p.id === poolId)
+    setSelectedPool(selectedPool || null)
+  }
+
+  // Handle start ping
+  const handleStartPing = () => {
+    const target = ipAddress || hostname
+    if (!target) {
+      alert('Please enter an IP address or hostname')
+      return
+    }
+
+    const durationNum = parseInt(duration, 10)
+    if (isNaN(durationNum) || durationNum <= 0) {
+      alert('Please enter a valid ping duration')
+      return
+    }
+
+    startPing({
+      target,
+      duration: durationNum,
+    })
+  }
+
+  // Handle stop ping
+  const handleStopPing = () => {
+    stopPing()
+  }
+
+  // Format ping result for display
+  const formatPingResult = (result: PingResult) => {
+    if (!result.success) {
+      return `${result.message || 'Request timed out.'}`
+    }
+
+    return `Reply from ${result.target}: bytes=${result.bytes} time=${result.time}ms TTL=${result.ttl}`
+  }
+
+  // Render loading state
+  if (loading) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          p: 3,
+        }}
+      >
+        <CircularProgress sx={{ mb: 2 }} />
+        <Typography>Loading network data...</Typography>
+      </Box>
+    )
+  }
+
+  // Render error state
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography color="error" variant="h6">
+          Error
+        </Typography>
+        <Typography>{error}</Typography>
+      </Box>
+    )
+  }
 
   return (
-    <>
-      <ContentSection grids={contentSectionGrids} />
-      <RenderContent grid={renderContentGrid} />
-    </>
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h5" gutterBottom>
+        Tools - Ping
+      </Typography>
+      <Typography color="text.secondary" paragraph>
+        Perform ping tests with pool subnet, ping duration, IP address, and
+        hostname
+      </Typography>
+
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <FormControl fullWidth>
+            <InputLabel id="pool-select-label">
+              Available Pool Subnets
+            </InputLabel>
+            <Select
+              labelId="pool-select-label"
+              id="pool-select"
+              value={selectedPool?.id || ''}
+              label="Available Pool Subnets"
+              onChange={handlePoolChange}
+            >
+              {pools.map(pool => (
+                <MenuItem key={pool.id} value={pool.id}>
+                  {pool.name} ({pool.startIp} - {pool.endIp})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label="Ping Duration (seconds)"
+            placeholder="5"
+            value={duration}
+            onChange={e => setDuration(e.target.value)}
+            type="number"
+            inputProps={{ min: 1 }}
+          />
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label="IP Address"
+            placeholder="192.168.0.3"
+            value={ipAddress}
+            onChange={e => setIpAddress(e.target.value)}
+          />
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <TextField
+            fullWidth
+            label="Hostname"
+            placeholder="host.ip.local"
+            value={hostname}
+            onChange={e => setHostname(e.target.value)}
+          />
+        </Grid>
+
+        <Grid item xs={12}>
+          <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+            <Button
+              variant="contained"
+              startIcon={<PlayArrowIcon />}
+              onClick={handleStartPing}
+              disabled={isPinging || (!ipAddress && !hostname)}
+            >
+              Start Ping
+            </Button>
+
+            <Button
+              variant="outlined"
+              startIcon={<StopIcon />}
+              onClick={handleStopPing}
+              disabled={!isPinging}
+            >
+              Stop Ping
+            </Button>
+          </Stack>
+        </Grid>
+
+        <Grid item xs={12}>
+          <Typography variant="h6" gutterBottom>
+            Ping Results
+          </Typography>
+          <Paper sx={{ p: 2 }}>
+            {pingResults.length === 0 ? (
+              <Typography color="text.secondary">
+                {isPinging ? 'Pinging...' : 'No ping results yet'}
+              </Typography>
+            ) : (
+              <>
+                <Typography sx={{ mb: 2 }}>
+                  Pinging {pingResults[0].target} with {pingResults[0].bytes}{' '}
+                  bytes of data:
+                </Typography>
+                <Box sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
+                  {pingResults.map((result, index) => (
+                    <Typography key={result.id || index}>
+                      {formatPingResult(result)}
+                    </Typography>
+                  ))}
+                </Box>
+              </>
+            )}
+          </Paper>
+        </Grid>
+      </Grid>
+    </Box>
   )
 }
 
-export default Ping
+export default PingClient

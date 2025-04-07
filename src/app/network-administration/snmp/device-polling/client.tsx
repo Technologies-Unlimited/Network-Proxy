@@ -1,247 +1,516 @@
 'use client'
-import React, { useState, useEffect, useMemo } from 'react'
-import { FormDataGrid } from 'goobs-frontend'
-import type { ColumnDef, RowData } from 'goobs-frontend'
-import { useSNMPPollingStatusAtom } from '@/apolloClient/network-administration/snmp/polling/status/atom'
-import { useSNMPv2PollingTemplateAtom } from '@/apolloClient/network-administration/snmp/polling/template/snmpv2/atom'
-import { useSNMPv3PollingTemplateAtom } from '@/apolloClient/network-administration/snmp/polling/template/snmpv3/atom'
-import { useSNMPv2TemplateAtom } from '@/apolloClient/network-administration/snmp/templates/snmpv2/atom'
-import { useSNMPv3TemplateAtom } from '@/apolloClient/network-administration/snmp/templates/snmpv3/atom'
-import { useNetworkInventoryAtom } from '@/apolloClient/network-administration/inventory/company/atom'
-import { useIPAddressAtom } from '@/apolloClient/network-administration/ipam/ipaddress/atom'
-import { ExtendedSNMPPollingStatusFields } from '@/schema/network-administration/snmp/polling/status/schema'
-import { ExtendedSNMPv2PollingTemplateFields } from '@/schema/network-administration/snmp/polling/template/snmpv2/schema'
-import { ExtendedSNMPv3PollingTemplateFields } from '@/schema/network-administration/snmp/polling/template/snmpv3/schema'
-import { SNMPv2TemplateFields } from '@/schema/network-administration/snmp/templates/snmpv2/schema'
-import { SNMPv3TemplateFields } from '@/schema/network-administration/snmp/templates/snmpv3/schema'
-import { ExtendedCompanyNetworkInventoryFields } from '@/schema/network-administration/inventory/company/schema'
-import { ExtendedIPAddressFields } from '@/schema/network-administration/ipam/ipaddress/schema'
-import { ObjectId } from 'mongodb'
+
+import React, { useState, useEffect } from 'react'
+import {
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+  Box,
+  CircularProgress,
+  Chip,
+} from '@mui/material'
 
 /**
- * Interface for Device Polling props
+ * Interface for SNMP polling status
  */
-interface DevicePollingProps {
-  companyId: ObjectId
+interface SNMPPollingStatus {
+  id: string
+  companyId: string
+  snmpPollingTemplateId: string
+  snmpTemplateId?: string
+  manufacturerId?: string
+  modelNameId?: string
+  productId?: string
+  stockIds?: string[]
+  networkInventoryIds?: string[]
+  uptime?: number
+  downtime?: number
+  deviceStatus: string
+  createdAt: number
+  updatedAt: number
 }
 
 /**
- * Interface for cell rendering params
+ * Interface for SNMP polling template
  */
-interface CellParams {
-  row: RowData
-  value: unknown
-  field: string
-  rowIndex: number
-  columnIndex: number
+interface SNMPPollingTemplate {
+  id: string
+  companyId: string
+  name: string
+  version: 'v2' | 'v3'
+  frequency?: number
+  timeout?: number
+  retries?: number
+  createdAt: number
 }
 
-const DevicePolling: React.FC<DevicePollingProps> = ({ companyId }) => {
+/**
+ * Interface for SNMP template
+ */
+interface SNMPTemplate {
+  id: string
+  companyId: string
+  templateName: string
+  version: 'v2' | 'v3'
+  community?: string // v2 only
+  username?: string // v3 only
+  securityLevel?: string // v3 only
+  authProtocol?: string // v3 only
+  authKey?: string // v3 only
+  privProtocol?: string // v3 only
+  privKey?: string // v3 only
+  createdAt: number
+}
+
+/**
+ * Interface for Network Inventory
+ */
+interface NetworkInventory {
+  id: string
+  companyId: string
+  productId: string
+  stockId: string
+  macAddress: string
+  ipAddress?: string
+  subnetMask?: string
+  gateway?: string
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * Interface for IP Address
+ */
+interface IPAddress {
+  id: string
+  companyId: string
+  address: string
+  subnetId: string
+  networkInventoryId?: string
+  status: string
+  createdAt: number
+}
+
+/**
+ * Hook to fetch SNMP polling data via WebSocket/REST API
+ */
+function useSNMPPollingData(companyId: string = 'default-company-id') {
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
+  const [snmpPollingStatuses, setSNMPPollingStatuses] = useState<
+    SNMPPollingStatus[]
+  >([])
+  const [snmpPollingTemplates, setSNMPPollingTemplates] = useState<
+    SNMPPollingTemplate[]
+  >([])
+  const [snmpTemplates, setSNMPTemplates] = useState<SNMPTemplate[]>([])
+  const [networkInventories, setNetworkInventories] = useState<
+    NetworkInventory[]
+  >([])
+  const [ipAddresses, setIPAddresses] = useState<IPAddress[]>([])
   const [selectedStatus, setSelectedStatus] =
-    useState<ExtendedSNMPPollingStatusFields | null>(null)
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+    useState<SNMPPollingStatus | null>(null)
 
-  const { getSNMPPollingStatuses, refreshSNMPPollingStatusAtom } =
-    useSNMPPollingStatusAtom(companyId)
-  const { getSNMPv2PollingTemplates, refreshSNMPv2PollingTemplateAtom } =
-    useSNMPv2PollingTemplateAtom(companyId)
-  const { getSNMPv3PollingTemplates, refreshSNMPv3PollingTemplateAtom } =
-    useSNMPv3PollingTemplateAtom(companyId)
-  const { getSNMPv2Templates, refreshSNMPv2TemplateAtom } =
-    useSNMPv2TemplateAtom(companyId)
-  const { getSNMPv3Templates, refreshSNMPv3TemplateAtom } =
-    useSNMPv3TemplateAtom(companyId)
-  const { getNetworkInventory, refreshNetworkInventoryAtom } =
-    useNetworkInventoryAtom(companyId)
-  const { getIPAddresses, refreshIPAddressAtom } = useIPAddressAtom(companyId)
+  // Function to refresh data
+  const refreshData = async () => {
+    setLoading(true)
+    setError(null)
 
-  const viewTitle = 'Device Polling Status'
-  const description =
-    'View SNMP device polling status with uptime, downtime, and device status'
-
-  // Get all polling templates
-  const pollingTemplates = useMemo(() => {
-    const v2Templates = getSNMPv2PollingTemplates()
-    const v3Templates = getSNMPv3PollingTemplates()
-    return [
-      ...(Array.isArray(v2Templates) ? v2Templates : []),
-      ...(Array.isArray(v3Templates) ? v3Templates : []),
-    ]
-  }, [getSNMPv2PollingTemplates, getSNMPv3PollingTemplates])
-
-  // Get all SNMP templates
-  const snmpTemplates = useMemo(() => {
-    const v2Templates = getSNMPv2Templates()
-    const v3Templates = getSNMPv3Templates()
-    return [
-      ...(Array.isArray(v2Templates) ? v2Templates : []),
-      ...(Array.isArray(v3Templates) ? v3Templates : []),
-    ]
-  }, [getSNMPv2Templates, getSNMPv3Templates])
-
-  // Get network inventory
-  const networkInventory = useMemo(() => {
-    return getNetworkInventory()
-  }, [getNetworkInventory])
-
-  // Get IP addresses
-  const ipAddresses = useMemo(() => {
-    return getIPAddresses()
-  }, [getIPAddresses])
-
-  // Define columns for the data grid
-  const columns: ColumnDef[] = [
-    { field: '_id', headerName: 'ID' },
-    {
-      field: 'snmpPollingTemplateName',
-      headerName: 'SNMP Polling Template Name',
-      renderCell: (params: CellParams) => {
-        const pollingStatusRow =
-          params.row as unknown as ExtendedSNMPPollingStatusFields
-        const template = pollingTemplates.find(
-          (
-            t:
-              | ExtendedSNMPv2PollingTemplateFields
-              | ExtendedSNMPv3PollingTemplateFields
-          ) => t._id.equals(pollingStatusRow.snmpPollingTemplateId)
-        )
-        return template ? template.name : 'Unknown'
-      },
-    },
-    {
-      field: 'snmpTemplateName',
-      headerName: 'SNMP Template Name',
-      renderCell: (params: CellParams) => {
-        const pollingStatusRow =
-          params.row as unknown as ExtendedSNMPPollingStatusFields
-        const template = snmpTemplates.find(
-          (t: SNMPv2TemplateFields | SNMPv3TemplateFields) =>
-            t._id.equals(pollingStatusRow.snmpPollingTemplateId)
-        )
-        return template ? template.templateName : 'Unknown'
-      },
-    },
-    {
-      field: 'networkDevices',
-      headerName: 'Network Devices',
-      renderCell: (params: CellParams) => {
-        const pollingStatusRow =
-          params.row as unknown as ExtendedSNMPPollingStatusFields
-        const devices = networkInventory.filter(
-          (device: ExtendedCompanyNetworkInventoryFields) =>
-            pollingStatusRow.networkInventoryIds?.includes(device._id) ?? false
-        )
-        return devices.map(device => device.macAddress).join(', ')
-      },
-    },
-    {
-      field: 'ipAddress',
-      headerName: 'IP Address',
-      renderCell: (params: CellParams) => {
-        const pollingStatusRow =
-          params.row as unknown as ExtendedSNMPPollingStatusFields
-        const device = networkInventory.find(
-          (device: ExtendedCompanyNetworkInventoryFields) =>
-            pollingStatusRow.networkInventoryIds?.includes(device._id) ?? false
-        )
-        if (device) {
-          const ipAddress = ipAddresses.find(
-            (ip: ExtendedIPAddressFields) =>
-              ip.networkInventoryId && ip.networkInventoryId.equals(device._id)
-          )
-          return ipAddress ? ipAddress.address : 'No IP Assigned'
-        }
-        return 'Unknown Device'
-      },
-    },
-    {
-      field: 'uptime',
-      headerName: 'Uptime',
-      renderCell: (params: CellParams) => {
-        const pollingStatusRow =
-          params.row as unknown as ExtendedSNMPPollingStatusFields
-        return `${pollingStatusRow.uptime} seconds`
-      },
-    },
-    {
-      field: 'downtime',
-      headerName: 'Downtime',
-      renderCell: (params: CellParams) => {
-        const pollingStatusRow =
-          params.row as unknown as ExtendedSNMPPollingStatusFields
-        return `${pollingStatusRow.downtime} seconds`
-      },
-    },
-    { field: 'deviceStatus', headerName: 'Status' },
-  ]
-
-  // Handle row selection
-  function handleSelectionChange(selectedIds: string[]): void {
-    if (selectedIds.length > 0) {
-      setSelectedRowId(selectedIds[0])
-      const selectedRow = pollingStatuses.find(
-        status => status._id.toString() === selectedIds[0]
+    try {
+      // Fetch SNMP polling statuses
+      const statusResponse = await fetch(
+        `/api/network-administration/snmp/polling/status?companyId=${companyId}`
       )
-      if (selectedRow) {
-        setSelectedStatus(selectedRow)
+      if (!statusResponse.ok) {
+        throw new Error(
+          `Failed to fetch SNMP polling statuses: ${statusResponse.statusText}`
+        )
       }
-    } else {
-      setSelectedRowId(null)
-      setSelectedStatus(null)
+      const statusData = await statusResponse.json()
+      setSNMPPollingStatuses(statusData)
+
+      // Fetch SNMP polling templates (both v2 and v3)
+      const templateResponse = await fetch(
+        `/api/network-administration/snmp/polling/templates?companyId=${companyId}`
+      )
+      if (!templateResponse.ok) {
+        throw new Error(
+          `Failed to fetch SNMP polling templates: ${templateResponse.statusText}`
+        )
+      }
+      const templateData = await templateResponse.json()
+      setSNMPPollingTemplates(templateData)
+
+      // Fetch SNMP templates (both v2 and v3)
+      const snmpTemplateResponse = await fetch(
+        `/api/network-administration/snmp/templates?companyId=${companyId}`
+      )
+      if (!snmpTemplateResponse.ok) {
+        throw new Error(
+          `Failed to fetch SNMP templates: ${snmpTemplateResponse.statusText}`
+        )
+      }
+      const snmpTemplateData = await snmpTemplateResponse.json()
+      setSNMPTemplates(snmpTemplateData)
+
+      // Extract network inventory IDs from polling statuses
+      const networkInvIds = statusData.flatMap(
+        (status: SNMPPollingStatus) => status.networkInventoryIds || []
+      )
+
+      if (networkInvIds.length > 0) {
+        // Fetch network inventories
+        const networkInvResponse = await fetch(
+          `/api/network-administration/inventory?companyId=${companyId}&ids=${networkInvIds.join(',')}`
+        )
+        if (!networkInvResponse.ok) {
+          throw new Error(
+            `Failed to fetch network inventories: ${networkInvResponse.statusText}`
+          )
+        }
+        const networkInvData = await networkInvResponse.json()
+        setNetworkInventories(networkInvData)
+
+        // Fetch IP addresses
+        const ipResponse = await fetch(
+          `/api/network-administration/ipam/ipaddress?companyId=${companyId}`
+        )
+        if (!ipResponse.ok) {
+          throw new Error(
+            `Failed to fetch IP addresses: ${ipResponse.statusText}`
+          )
+        }
+        const ipData = await ipResponse.json()
+        setIPAddresses(ipData)
+      }
+    } catch (err) {
+      console.error('Error fetching SNMP polling data:', err)
+      setError(err instanceof Error ? err.message : 'Unknown error occurred')
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Refresh data on component mount
+  // Fetch data on component mount
   useEffect(() => {
-    refreshSNMPPollingStatusAtom()
-    refreshSNMPv2PollingTemplateAtom()
-    refreshSNMPv3PollingTemplateAtom()
-    refreshSNMPv2TemplateAtom()
-    refreshSNMPv3TemplateAtom()
-    refreshNetworkInventoryAtom()
-    refreshIPAddressAtom()
-  }, [
-    refreshSNMPPollingStatusAtom,
-    refreshSNMPv2PollingTemplateAtom,
-    refreshSNMPv3PollingTemplateAtom,
-    refreshSNMPv2TemplateAtom,
-    refreshSNMPv3TemplateAtom,
-    refreshNetworkInventoryAtom,
-    refreshIPAddressAtom,
-  ])
+    refreshData()
 
-  // Get polling statuses
-  const pollingStatuses = getSNMPPollingStatuses()
+    // Optional: Setup WebSocket connection for real-time updates
+    const ws = new WebSocket(
+      `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'}/ws?companyId=${companyId}`
+    )
 
-  // Convert polling statuses to rows for the data grid
-  const rows = useMemo(() => {
-    return Array.isArray(pollingStatuses)
-      ? pollingStatuses.map(status => ({
-          ...status,
-          _id: status._id.toString(), // Convert ObjectId to string for RowData compatibility
-          id: status._id.toString(),
-          snmpPollingTemplateId: status.snmpPollingTemplateId, // Keep as ObjectId for comparison
-          networkInventoryIds: status.networkInventoryIds, // Keep array of ObjectIds for comparison
-          uptime: status.uptime || 0,
-          downtime: status.downtime || 0,
-          deviceStatus: status.deviceStatus,
-        }))
-      : []
-  }, [pollingStatuses])
+    ws.onopen = () => {
+      console.log('WebSocket connection established')
+      // Request initial data
+      ws.send(JSON.stringify({ type: 'requestInitialSNMPData' }))
+    }
 
-  // Assemble DataGrid props
-  const datagridProps = {
-    columns,
-    rows,
-    onSelectionChange: handleSelectionChange,
+    ws.onmessage = event => {
+      try {
+        const data = JSON.parse(event.data)
+
+        // Handle different message types
+        if (data.type === 'initialSNMPData' && Array.isArray(data.statuses)) {
+          setSNMPPollingStatuses(data.statuses)
+          if (data.templates) setSNMPPollingTemplates(data.templates)
+          if (data.snmpTemplates) setSNMPTemplates(data.snmpTemplates)
+          if (data.networkInventories)
+            setNetworkInventories(data.networkInventories)
+          if (data.ipAddresses) setIPAddresses(data.ipAddresses)
+          setLoading(false)
+        } else if (data.type === 'snmp') {
+          // Handle individual SNMP status update
+          setSNMPPollingStatuses(prev => {
+            const index = prev.findIndex(status => status.id === data._id)
+            if (index >= 0) {
+              const newStatuses = [...prev]
+              newStatuses[index] = {
+                id: data._id,
+                companyId: data.companyId,
+                snmpPollingTemplateId: data.snmpPollingTemplateId,
+                snmpTemplateId: data.snmpTemplateId,
+                manufacturerId: data.manufacturerId,
+                modelNameId: data.modelNameId,
+                productId: data.productId,
+                stockIds: data.stockIds,
+                networkInventoryIds: data.networkInventoryIds,
+                uptime: data.uptime,
+                downtime: data.downtime,
+                deviceStatus: data.deviceStatus,
+                createdAt: data.createdAt || Date.now(),
+                updatedAt: data.updatedAt || Date.now(),
+              }
+              return newStatuses
+            }
+            return prev
+          })
+        } else if (data.type === 'deleteSNMP') {
+          // Handle SNMP status deletion
+          setSNMPPollingStatuses(prev =>
+            prev.filter(status => status.id !== data.id)
+          )
+        } else if (data.type === 'error') {
+          console.error('WebSocket error:', data.message)
+          setError(data.message)
+        }
+      } catch (err) {
+        console.error('Error processing WebSocket message:', err)
+      }
+    }
+
+    ws.onerror = error => {
+      console.error('WebSocket error:', error)
+      setError('WebSocket connection error')
+    }
+
+    ws.onclose = () => {
+      console.log('WebSocket connection closed')
+    }
+
+    // Clean up WebSocket connection
+    return () => {
+      ws.close()
+    }
+  }, [companyId])
+
+  // Handle row selection
+  const handleSelectStatus = (status: SNMPPollingStatus) => {
+    setSelectedStatus(status)
+  }
+
+  return {
+    loading,
+    error,
+    snmpPollingStatuses,
+    snmpPollingTemplates,
+    snmpTemplates,
+    networkInventories,
+    ipAddresses,
+    selectedStatus,
+    handleSelectStatus,
+    refreshData,
+  }
+}
+
+/**
+ * Format seconds into a human-readable duration
+ */
+function formatDuration(seconds?: number): string {
+  if (seconds === undefined || seconds === 0) return '0 seconds'
+
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainingSeconds = seconds % 60
+
+  const parts = []
+  if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`)
+  if (hours > 0) parts.push(`${hours} hour${hours > 1 ? 's' : ''}`)
+  if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? 's' : ''}`)
+  if (remainingSeconds > 0 || parts.length === 0)
+    parts.push(`${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`)
+
+  return parts.join(', ')
+}
+
+/**
+ * Get status chip color based on device status
+ */
+function getStatusColor(
+  status: string
+): 'success' | 'error' | 'warning' | 'default' {
+  switch (status.toLowerCase()) {
+    case 'up':
+      return 'success'
+    case 'down':
+      return 'error'
+    case 'warning':
+      return 'warning'
+    default:
+      return 'default'
+  }
+}
+
+/**
+ * Main SNMP Device Polling component
+ */
+const DevicePolling: React.FC = () => {
+  // Use our custom hook to fetch data
+  const {
+    loading,
+    error,
+    snmpPollingStatuses,
+    snmpPollingTemplates,
+    snmpTemplates,
+    networkInventories,
+    ipAddresses,
+    selectedStatus,
+    handleSelectStatus,
+    refreshData,
+  } = useSNMPPollingData()
+
+  // Create lookup maps for efficient access
+  const templateMap = snmpPollingTemplates.reduce(
+    (map, template) => {
+      map[template.id] = template
+      return map
+    },
+    {} as Record<string, SNMPPollingTemplate>
+  )
+
+  const snmpTemplateMap = snmpTemplates.reduce(
+    (map, template) => {
+      map[template.id] = template
+      return map
+    },
+    {} as Record<string, SNMPTemplate>
+  )
+
+  const networkInventoryMap = networkInventories.reduce(
+    (map, inv) => {
+      map[inv.id] = inv
+      return map
+    },
+    {} as Record<string, NetworkInventory>
+  )
+
+  // Create a map of IP addresses by network inventory ID
+  const ipAddressesByNetworkInventory = ipAddresses.reduce(
+    (map, ip) => {
+      if (ip.networkInventoryId) {
+        map[ip.networkInventoryId] = ip
+      }
+      return map
+    },
+    {} as Record<string, IPAddress>
+  )
+
+  // Render loading state
+  if (loading) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          p: 3,
+        }}
+      >
+        <CircularProgress sx={{ mb: 2 }} />
+        <Typography>Loading SNMP polling status...</Typography>
+      </Box>
+    )
+  }
+
+  // Render error state
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography color="error" variant="h6">
+          Error
+        </Typography>
+        <Typography>{error}</Typography>
+      </Box>
+    )
   }
 
   return (
-    <FormDataGrid
-      title={`SNMP - ${viewTitle}`}
-      description={description}
-      datagrid={datagridProps}
-    />
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h5" gutterBottom>
+        SNMP - Device Polling Status
+      </Typography>
+      <Typography color="text.secondary" paragraph>
+        View SNMP device polling status with uptime, downtime, and device status
+      </Typography>
+
+      <TableContainer component={Paper} sx={{ mt: 2 }}>
+        <Table sx={{ minWidth: 650 }} aria-label="SNMP polling status table">
+          <TableHead>
+            <TableRow>
+              <TableCell>ID</TableCell>
+              <TableCell>SNMP Polling Template</TableCell>
+              <TableCell>SNMP Template</TableCell>
+              <TableCell>Network Devices</TableCell>
+              <TableCell>IP Address</TableCell>
+              <TableCell>Uptime</TableCell>
+              <TableCell>Downtime</TableCell>
+              <TableCell>Status</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {snmpPollingStatuses.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} align="center">
+                  No SNMP polling status data available
+                </TableCell>
+              </TableRow>
+            ) : (
+              snmpPollingStatuses.map(status => {
+                const pollingTemplate =
+                  templateMap[status.snmpPollingTemplateId]
+                const snmpTemplate = status.snmpTemplateId
+                  ? snmpTemplateMap[status.snmpTemplateId]
+                  : undefined
+
+                // Get network devices
+                const devices = status.networkInventoryIds
+                  ? status.networkInventoryIds
+                      .map(id => networkInventoryMap[id])
+                      .filter(Boolean)
+                  : []
+
+                // Get IP address of first device
+                let ipAddress = 'No IP Assigned'
+                if (
+                  devices.length > 0 &&
+                  ipAddressesByNetworkInventory[devices[0].id]
+                ) {
+                  ipAddress =
+                    ipAddressesByNetworkInventory[devices[0].id].address
+                }
+
+                return (
+                  <TableRow
+                    key={status.id}
+                    hover
+                    onClick={() => handleSelectStatus(status)}
+                    selected={selectedStatus?.id === status.id}
+                    sx={{ cursor: 'pointer' }}
+                  >
+                    <TableCell>{status.id.substring(0, 8)}...</TableCell>
+                    <TableCell>{pollingTemplate?.name || 'Unknown'}</TableCell>
+                    <TableCell>
+                      {snmpTemplate?.templateName || 'Unknown'}
+                    </TableCell>
+                    <TableCell>
+                      {devices.length > 0
+                        ? devices.map(d => d.macAddress).join(', ')
+                        : 'No devices'}
+                    </TableCell>
+                    <TableCell>{ipAddress}</TableCell>
+                    <TableCell>{formatDuration(status.uptime)}</TableCell>
+                    <TableCell>{formatDuration(status.downtime)}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={status.deviceStatus}
+                        color={getStatusColor(status.deviceStatus)}
+                        size="small"
+                      />
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
   )
 }
 
