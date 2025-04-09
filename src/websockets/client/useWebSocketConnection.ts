@@ -104,8 +104,14 @@ export function useWebSocketConnection(options: UseWebSocketOptions) {
 
       // Handle errors
       socket.current.addEventListener('error', event => {
-        console.error('WebSocket error:', event)
-        setError('WebSocket connection error')
+        // WebSocket error events don't contain useful properties when logged directly
+        // Log a more descriptive message instead
+        console.error('WebSocket connection error occurred')
+        
+        // Store more detailed error information
+        const errorMessage = 'WebSocket connection error - check network connection and server status'
+        setError(errorMessage)
+        
         if (onError) onError(event)
       })
     } catch (error) {

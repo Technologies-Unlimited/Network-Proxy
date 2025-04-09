@@ -1,3 +1,5 @@
+'use server'
+
 /**
  * SQLite database implementation for Network-Proxy
  * Provides persistent storage for ICMP and SNMP polling data

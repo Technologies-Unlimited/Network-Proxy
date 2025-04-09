@@ -4,8 +4,7 @@ import tseslintParser from '@typescript-eslint/parser'
 import reactPlugin from 'eslint-plugin-react'
 import reactHooksPlugin from 'eslint-plugin-react-hooks'
 import prettierPlugin from 'eslint-plugin-prettier'
-import nextPlugin from '@next/eslint-plugin-next'
-import _globals from 'globals'
+import globals from 'globals'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 
@@ -30,9 +29,9 @@ function toRulesObject(config) {
 
 // Combine globals from the 'globals' package:
 const combinedGlobals = {
-  ..._globals.browser,
-  ..._globals.es2021,
-  ..._globals.node,
+  ...globals.browser,
+  ...globals.es2021,
+  ...globals.node,
 }
 
 // Sanitize any keys that may have trailing/leading whitespace:
@@ -45,6 +44,11 @@ for (const key of Object.keys(combinedGlobals)) {
 }
 
 export default [
+  // Ignore ESLint configuration file
+  {
+    ignores: ['eslint.config.js'],
+  },
+
   // 1) Merged plugin "recommended" rules (flat config doesn't use "extends")
   {
     rules: {
@@ -53,7 +57,6 @@ export default [
       ...toRulesObject(tseslint.configs['recommended-requiring-type-checking']),
       ...toRulesObject(reactPlugin.configs.recommended),
       ...toRulesObject(reactHooksPlugin.configs.recommended),
-      ...toRulesObject(nextPlugin.configs.recommended),
       ...toRulesObject(prettierPlugin.configs.recommended),
     },
   },
@@ -67,7 +70,6 @@ export default [
       react: reactPlugin,
       'react-hooks': reactHooksPlugin,
       prettier: prettierPlugin,
-      '@next/next': nextPlugin,
     },
 
     languageOptions: {
@@ -77,7 +79,7 @@ export default [
         sourceType: 'module',
 
         // Type-aware linting - updated to include Storybook tsconfig
-        project: ['./tsconfig.json', './.storybook/tsconfig.json'],
+        project: ['./tsconfig.json'],
         tsconfigRootDir: __dirname,
 
         // Let TS check JSDoc in .js files

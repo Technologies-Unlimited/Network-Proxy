@@ -1,130 +1,79 @@
-# Network-Proxy
+# Network Proxy
 
-Network administration and monitoring tool with real-time WebSocket updates and SQLite storage.
+A network monitoring and administration tool built with Bun and React.
 
 ## Features
 
-- Real-time network monitoring using Bun's high-performance WebSockets
-- Persistent data storage with Bun's native SQLite integration
-- ICMP and SNMP polling data with live updates
-- Pub/Sub architecture for efficient data distribution
-- RESTful API for data access from any client
-- Fallback to RESTful API when WebSockets are not available
+- Real-time network monitoring via WebSockets
+- Network device administration (ICMP, SNMP)
+- Network inventory management
+- Diagnostic tools
+
+## Prerequisites
+
+- [Bun](https://bun.sh/) (v1.2.0 or higher)
 
 ## Getting Started
 
-### Prerequisites
+1. Clone the repository:
 
-- [Bun](https://bun.sh/) version 1.2.8 or higher
-- Node.js and npm
+```bash
+git clone https://github.com/yourusername/network-proxy.git
+cd network-proxy
+```
 
-### Installation
-
-1. Install dependencies:
+2. Install dependencies:
 
 ```bash
 bun install
 ```
 
-2. Configure environment variables:
-
-Create a `.env.local` file with the following content:
-
-```
-# WebSocket server configuration
-WS_PORT=3001
-NEXT_PUBLIC_WS_URL=ws://localhost:3001
-
-# SQLite database configuration
-SQLITE_DB_PATH=network-proxy.db
-```
-
-### Development
-
-Run the development server:
+3. Start the development server:
 
 ```bash
-bun run dev
+bun dev
 ```
 
-This starts both the Next.js frontend and the WebSocket server with SQLite integration.
+This will start the development server with hot reloading enabled.
 
-## Architecture
+## Project Structure
 
-### Database
-
-Network-Proxy uses Bun's native SQLite integration for high-performance data storage. The database schema includes:
-
-- Companies
-- ICMP polling templates and statuses
-- SNMP polling templates and statuses
-- Junction tables for associations
-
-The SQLite database is automatically initialized with sample data when you first run the server.
-
-### WebSocket Server
-
-The WebSocket server provides real-time updates for network monitoring data. It's implemented using Bun's native WebSocket API, which offers significantly better performance than other Node.js WebSocket libraries.
-
-Key features:
-
-- Pub/Sub system for topic-based messaging
-- Message compression for efficient data transfer
-- Connection management with automatic reconnection
-- Authenticated connections with company-specific data isolation
-
-### REST API
-
-Network-Proxy also provides a RESTful API for accessing and manipulating data. The API endpoints include:
-
-- `/api/network-administration/icmp/polling/status` - ICMP polling status operations
-- `/api/network-administration/snmp/polling/status` - SNMP polling status operations
-- `/api/debug/database` - Debug endpoint for viewing database contents
-
-### Client Hooks
-
-React hooks are provided to easily consume the WebSocket API:
-
-- `useICMPPollingStatus`: For ICMP monitoring data
-- `useSNMPPollingStatus`: For SNMP monitoring data
-
-Example usage:
-
-```tsx
-import { useICMPPollingStatus } from '@/websockets/client'
-
-function ICMPStatusMonitor({ companyId }) {
-  const { icmpPollingStatuses, loading, error, refreshICMPPollingStatus } =
-    useICMPPollingStatus(companyId)
-
-  // Now you can use the data with automatic real-time updates
-  return (
-    <div>
-      {loading ? (
-        <p>Loading...</p>
-      ) : error ? (
-        <p>Error: {error}</p>
-      ) : (
-        <ul>
-          {icmpPollingStatuses.map(status => (
-            <li key={status._id.toString()}>
-              Device Status: {status.deviceStatus}
-            </li>
-          ))}
-        </ul>
-      )}
-      <button onClick={refreshICMPPollingStatus}>Refresh</button>
-    </div>
-  )
-}
+```
+network-proxy/
+├── app.ts              # Main server entry point
+├── public/             # Static assets and client pages
+│   ├── client.tsx        # Main React client entry
+│   ├── index.html        # Main HTML template
+│   └── styles.css        # Global styles
+├── src/                # Source code
+│   ├── api/              # API endpoints
+│   ├── database/         # Database operations
+│   ├── themes/           # UI themes
+│   ├── types/            # TypeScript types
+│   ├── utils/            # Utility functions
+│   └── websockets/       # WebSocket server and client
+├── package.json        # Project dependencies
+└── README.md           # Project documentation
 ```
 
-## Performance
+## Available Scripts
 
-The combination of Bun's WebSockets and SQLite provides significant performance improvements:
+- `bun dev`: Start the development server with hot reloading
+- `bun build`: Build the application for production
+- `bun start`: Start the production server
+- `bun test`: Run tests
+- `bun lint`: Run linting
 
-- **7x higher throughput** for WebSockets compared to Node.js + "ws" library
-- **3-6x faster** than better-sqlite3 and 8-9x faster than deno.land/x/sqlite for database operations
-- Optimized message handling with lower CPU usage
-- Better memory efficiency
-- Enhanced compression for bandwidth optimization
+## Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```
+PORT=3000
+WS_PORT=3001
+NODE_ENV=development
+```
+
+## License
+
+This project is licensed under the MIT License.

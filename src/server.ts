@@ -4,10 +4,10 @@
  */
 
 import { startWebSocketServer } from './websockets/server'
-import { initializeDatabaseWithSampleData } from './database/sql'
+import { getDatabase } from './database/index'
 
-// Initialize the database and create sample data if needed
-initializeDatabaseWithSampleData()
+// Initialize the database
+getDatabase()
 
 // Define the port for the WebSocket server
 const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 3001
