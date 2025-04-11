@@ -2,7 +2,7 @@
  * Default theme for the Network Proxy application
  */
 
-import { createTheme, Theme } from '@mui/material/styles';
+import { createTheme, Theme } from '@mui/material/styles'
 
 // Create and export a basic theme
 export const theme: Theme = createTheme({
@@ -54,4 +54,4 @@ export const theme: Theme = createTheme({
       },
     },
   },
-}); 
+})

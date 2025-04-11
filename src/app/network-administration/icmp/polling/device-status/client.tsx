@@ -34,19 +34,19 @@ function formatDate(timestamp: number): string {
  */
 function formatTime(ms: number): string {
   if (ms === 0) return '0s'
-  
+
   // Calculate days, hours, minutes, seconds
   const seconds = Math.floor((ms / 1000) % 60)
   const minutes = Math.floor((ms / (1000 * 60)) % 60)
   const hours = Math.floor((ms / (1000 * 60 * 60)) % 24)
   const days = Math.floor(ms / (1000 * 60 * 60 * 24))
-  
+
   const parts = []
   if (days > 0) parts.push(`${days}d`)
   if (hours > 0) parts.push(`${hours}h`)
   if (minutes > 0) parts.push(`${minutes}m`)
   if (seconds > 0) parts.push(`${seconds}s`)
-  
+
   return parts.length > 0 ? parts.join(' ') : '0s'
 }
 
@@ -71,7 +71,7 @@ function getStatusInfo(status: DeviceStatus): { color: string; text: string } {
 const ICMPDeviceStatusClient: React.FC = () => {
   // Use default company ID for demo purposes (should be fetched from auth context in production)
   const [companyId] = useState<string>('default-company-id')
-  
+
   // Use the ICMP polling status hook
   const {
     icmpPollingStatuses,
@@ -79,19 +79,20 @@ const ICMPDeviceStatusClient: React.FC = () => {
     error,
     refreshICMPPollingStatus,
     isConnected,
-    reconnect
+    reconnect,
   } = useICMPPollingStatus(companyId)
 
   // Sort statuses by device status (online first, then offline, etc.)
   const sortedStatuses = useMemo(() => {
     const statusOrder: Record<DeviceStatus, number> = {
-      'offline': 0,
-      'online': 2,
-      'unknown': 3
+      offline: 0,
+      online: 2,
+      unknown: 3,
     }
-    
-    return [...icmpPollingStatuses].sort((a, b) => 
-      (statusOrder[a.deviceStatus] || 3) - (statusOrder[b.deviceStatus] || 3)
+
+    return [...icmpPollingStatuses].sort(
+      (a, b) =>
+        (statusOrder[a.deviceStatus] || 3) - (statusOrder[b.deviceStatus] || 3)
     )
   }, [icmpPollingStatuses])
 
@@ -124,7 +125,14 @@ const ICMPDeviceStatusClient: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 2,
+        }}
+      >
         <Box>
           <Typography variant="h5" gutterBottom>
             ICMP - Device Status
@@ -134,16 +142,16 @@ const ICMPDeviceStatusClient: React.FC = () => {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Chip 
-            label={isConnected ? 'Connected' : 'Disconnected'} 
-            color={isConnected ? 'success' : 'error'} 
+          <Chip
+            label={isConnected ? 'Connected' : 'Disconnected'}
+            color={isConnected ? 'success' : 'error'}
             size="small"
           />
           {!isConnected && (
-            <Button 
-              variant="outlined" 
-              color="primary" 
-              size="small" 
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
               onClick={handleReconnect}
               startIcon={<RefreshIcon />}
             >
@@ -189,10 +197,16 @@ const ICMPDeviceStatusClient: React.FC = () => {
                 return (
                   <TableRow key={device._id} hover>
                     <TableCell>
-                      <Chip 
-                        label={statusInfo.text} 
-                        color={statusInfo.color as 'success' | 'error' | 'warning' | 'default'} 
-                        size="small" 
+                      <Chip
+                        label={statusInfo.text}
+                        color={
+                          statusInfo.color as
+                            | 'success'
+                            | 'error'
+                            | 'warning'
+                            | 'default'
+                        }
+                        size="small"
                       />
                     </TableCell>
                     <TableCell>{device.icmpPollingTemplateId}</TableCell>

@@ -49,7 +49,9 @@ export function useSNMPv2Settings(
   companyId: string | null,
   wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'
 ): SNMPv2HookResult {
-  const [snmpv2Settings, setSNMPv2Settings] = useState<ExtendedSNMPv2Fields[]>([])
+  const [snmpv2Settings, setSNMPv2Settings] = useState<ExtendedSNMPv2Fields[]>(
+    []
+  )
   const [loading, setLoading] = useState<boolean>(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -94,19 +96,21 @@ export function useSNMPv2Settings(
       })
     } else if (message.type === 'initialSNMPv2Data') {
       // Handle initial data load
-      const initialSettings = message.settings.map((setting: Record<string, any>) => ({
-        _id: setting._id,
-        companyId: setting.companyId,
-        manufacturerId: setting.manufacturerId,
-        modelId: setting.modelId,
-        productId: setting.productId,
-        communityName: setting.communityName,
-        readCommunity: setting.readCommunity,
-        writeCommunity: setting.writeCommunity,
-        description: setting.description,
-        createdAt: setting.createdAt,
-        updatedAt: setting.updatedAt,
-      }))
+      const initialSettings = message.settings.map(
+        (setting: Record<string, any>) => ({
+          _id: setting._id,
+          companyId: setting.companyId,
+          manufacturerId: setting.manufacturerId,
+          modelId: setting.modelId,
+          productId: setting.productId,
+          communityName: setting.communityName,
+          readCommunity: setting.readCommunity,
+          writeCommunity: setting.writeCommunity,
+          description: setting.description,
+          createdAt: setting.createdAt,
+          updatedAt: setting.updatedAt,
+        })
+      )
 
       setSNMPv2Settings(initialSettings)
       setLoading(false)

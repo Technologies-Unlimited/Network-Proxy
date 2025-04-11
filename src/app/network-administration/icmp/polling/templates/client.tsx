@@ -33,7 +33,7 @@ function formatTimeInterval(interval?: TimeInterval): string {
   if (interval.hours > 0) parts.push(`${interval.hours}h`)
   if (interval.minutes > 0) parts.push(`${interval.minutes}m`)
   if (interval.seconds > 0) parts.push(`${interval.seconds}s`)
-  
+
   return parts.length > 0 ? parts.join(' ') : '0s'
 }
 
@@ -50,7 +50,7 @@ function formatDate(timestamp: number): string {
 const ICMPTemplatesClient: React.FC = () => {
   // Use default company ID for demo purposes (should be fetched from auth context in production)
   const [companyId] = useState<string>('default-company-id')
-  
+
   // Use WebSocket-based hook to fetch template data
   const {
     icmpPollingTemplates,
@@ -58,12 +58,14 @@ const ICMPTemplatesClient: React.FC = () => {
     error,
     refreshICMPPollingTemplates,
     isConnected,
-    reconnect
+    reconnect,
   } = useICMPPollingTemplates(companyId)
 
   // Sort templates by name
   const sortedTemplates = useMemo(() => {
-    return [...icmpPollingTemplates].sort((a, b) => a.name.localeCompare(b.name))
+    return [...icmpPollingTemplates].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )
   }, [icmpPollingTemplates])
 
   // Handle refresh button click
@@ -95,7 +97,14 @@ const ICMPTemplatesClient: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 2,
+        }}
+      >
         <Box>
           <Typography variant="h5" gutterBottom>
             ICMP - Polling Templates
@@ -105,16 +114,16 @@ const ICMPTemplatesClient: React.FC = () => {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Chip 
-            label={isConnected ? 'Connected' : 'Disconnected'} 
-            color={isConnected ? 'success' : 'error'} 
+          <Chip
+            label={isConnected ? 'Connected' : 'Disconnected'}
+            color={isConnected ? 'success' : 'error'}
             size="small"
           />
           {!isConnected && (
-            <Button 
-              variant="outlined" 
-              color="primary" 
-              size="small" 
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
               onClick={handleReconnect}
               startIcon={<RefreshIcon />}
             >
@@ -164,8 +173,12 @@ const ICMPTemplatesClient: React.FC = () => {
                   <TableCell>{template.frequency} min</TableCell>
                   <TableCell>{template.timeout} ms</TableCell>
                   <TableCell>{template.retries}</TableCell>
-                  <TableCell>{formatTimeInterval(template.pollingFrequency)}</TableCell>
-                  <TableCell>{formatTimeInterval(template.downtimeTrigger)}</TableCell>
+                  <TableCell>
+                    {formatTimeInterval(template.pollingFrequency)}
+                  </TableCell>
+                  <TableCell>
+                    {formatTimeInterval(template.downtimeTrigger)}
+                  </TableCell>
                   <TableCell>{formatDate(template.createdAt)}</TableCell>
                 </TableRow>
               ))

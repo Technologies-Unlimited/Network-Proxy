@@ -97,21 +97,23 @@ export function useSNMPPollingStatus(
       })
     } else if (message.type === 'initialSNMPData') {
       // Handle initial data load
-      const initialStatuses = message.statuses.map((status: Record<string, any>) => ({
-        _id: status._id,
-        companyId: status.companyId,
-        snmpPollingTemplateId: status.snmpPollingTemplateId,
-        manufacturerId: status.manufacturerId,
-        modelNameId: status.modelNameId,
-        productId: status.productId,
-        stockIds: status.stockIds,
-        networkInventoryIds: status.networkInventoryIds,
-        uptime: status.uptime || 0,
-        downtime: status.downtime || 0,
-        deviceStatus: status.deviceStatus as DeviceStatus,
-        createdAt: status.createdAt,
-        updatedAt: status.updatedAt,
-      }))
+      const initialStatuses = message.statuses.map(
+        (status: Record<string, any>) => ({
+          _id: status._id,
+          companyId: status.companyId,
+          snmpPollingTemplateId: status.snmpPollingTemplateId,
+          manufacturerId: status.manufacturerId,
+          modelNameId: status.modelNameId,
+          productId: status.productId,
+          stockIds: status.stockIds,
+          networkInventoryIds: status.networkInventoryIds,
+          uptime: status.uptime || 0,
+          downtime: status.downtime || 0,
+          deviceStatus: status.deviceStatus as DeviceStatus,
+          createdAt: status.createdAt,
+          updatedAt: status.updatedAt,
+        })
+      )
 
       setSNMPPollingStatuses(initialStatuses)
       setLoading(false)

@@ -34,7 +34,7 @@ function formatDate(timestamp: number): string {
 const ICMPTemplatesClient: React.FC = () => {
   // Use default company ID for demo purposes (should be fetched from auth context in production)
   const [companyId] = useState<string>('default-company-id')
-  
+
   // Use WebSocket-based hook to fetch template data
   const {
     icmpMonitoringTemplates,
@@ -42,12 +42,12 @@ const ICMPTemplatesClient: React.FC = () => {
     error,
     refreshICMPMonitoringTemplates,
     isConnected,
-    reconnect
+    reconnect,
   } = useICMPMonitoringTemplates(companyId)
 
   // Sort templates by name
   const sortedTemplates = useMemo(() => {
-    return [...icmpMonitoringTemplates].sort((a, b) => 
+    return [...icmpMonitoringTemplates].sort((a, b) =>
       a.templateName.localeCompare(b.templateName)
     )
   }, [icmpMonitoringTemplates])
@@ -81,26 +81,34 @@ const ICMPTemplatesClient: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 2,
+        }}
+      >
         <Box>
           <Typography variant="h5" gutterBottom>
             ICMP - Monitoring Templates
           </Typography>
           <Typography color="text.secondary" paragraph>
-            View and manage ICMP monitoring templates for network device monitoring
+            View and manage ICMP monitoring templates for network device
+            monitoring
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Chip 
-            label={isConnected ? 'Connected' : 'Disconnected'} 
-            color={isConnected ? 'success' : 'error'} 
+          <Chip
+            label={isConnected ? 'Connected' : 'Disconnected'}
+            color={isConnected ? 'success' : 'error'}
             size="small"
           />
           {!isConnected && (
-            <Button 
-              variant="outlined" 
-              color="primary" 
-              size="small" 
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
               onClick={handleReconnect}
               startIcon={<RefreshIcon />}
             >

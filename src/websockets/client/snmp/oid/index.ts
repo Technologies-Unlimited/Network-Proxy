@@ -76,9 +76,7 @@ export function useSNMPOID(
         }
 
         // Update or add the OID to the array
-        const existingIndex = prevOIDs.findIndex(
-          oid => oid._id === newOID._id
-        )
+        const existingIndex = prevOIDs.findIndex(oid => oid._id === newOID._id)
 
         if (existingIndex >= 0) {
           // Update existing OID
@@ -109,9 +107,7 @@ export function useSNMPOID(
       setLoading(false)
     } else if (message.type === 'deleteSNMPOID') {
       // Handle deletion message
-      setSNMPOIDs(prevOIDs =>
-        prevOIDs.filter(oid => oid._id !== message.id)
-      )
+      setSNMPOIDs(prevOIDs => prevOIDs.filter(oid => oid._id !== message.id))
     }
   }, [])
 
@@ -221,9 +217,7 @@ export function useSNMPOID(
           } as ExtendedOIDFields
 
           setSNMPOIDs(prevOIDs => {
-            const existingIndex = prevOIDs.findIndex(
-              oid => oid._id === id
-            )
+            const existingIndex = prevOIDs.findIndex(oid => oid._id === id)
 
             if (existingIndex >= 0) {
               // Update existing OID
@@ -320,9 +314,7 @@ export function useSNMPOID(
           })
 
           // Update local state optimistically
-          setSNMPOIDs(prevOIDs =>
-            prevOIDs.filter(oid => oid._id !== id)
-          )
+          setSNMPOIDs(prevOIDs => prevOIDs.filter(oid => oid._id !== id))
 
           return true
         }
@@ -349,9 +341,7 @@ export function useSNMPOID(
 
         if (success) {
           // Update state
-          setSNMPOIDs(prevOIDs =>
-            prevOIDs.filter(oid => oid._id !== id)
-          )
+          setSNMPOIDs(prevOIDs => prevOIDs.filter(oid => oid._id !== id))
         }
 
         return success

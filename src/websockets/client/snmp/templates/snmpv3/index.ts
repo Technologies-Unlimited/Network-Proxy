@@ -51,7 +51,9 @@ export function useSNMPv3Templates(
   companyId: string | null,
   wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'
 ): SNMPv3TemplateHookResult {
-  const [snmpv3Templates, setSNMPv3Templates] = useState<SNMPv3TemplateFields[]>([])
+  const [snmpv3Templates, setSNMPv3Templates] = useState<
+    SNMPv3TemplateFields[]
+  >([])
   const [loading, setLoading] = useState<boolean>(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -98,21 +100,23 @@ export function useSNMPv3Templates(
       })
     } else if (message.type === 'initialSNMPv3TemplateData') {
       // Handle initial data load
-      const initialTemplates = message.templates.map((template: Record<string, any>) => ({
-        _id: template._id,
-        companyId: template.companyId,
-        manufacturerId: template.manufacturerId,
-        modelNameId: template.modelNameId,
-        productId: template.productId,
-        snmpv3SettingId: template.snmpv3SettingId,
-        templateName: template.templateName,
-        description: template.description,
-        oidIds: template.oidIds,
-        stockIds: template.stockIds,
-        networkInventoryIds: template.networkInventoryIds,
-        createdAt: template.createdAt,
-        updatedAt: template.updatedAt,
-      }))
+      const initialTemplates = message.templates.map(
+        (template: Record<string, any>) => ({
+          _id: template._id,
+          companyId: template.companyId,
+          manufacturerId: template.manufacturerId,
+          modelNameId: template.modelNameId,
+          productId: template.productId,
+          snmpv3SettingId: template.snmpv3SettingId,
+          templateName: template.templateName,
+          description: template.description,
+          oidIds: template.oidIds,
+          stockIds: template.stockIds,
+          networkInventoryIds: template.networkInventoryIds,
+          createdAt: template.createdAt,
+          updatedAt: template.updatedAt,
+        })
+      )
 
       setSNMPv3Templates(initialTemplates)
       setLoading(false)

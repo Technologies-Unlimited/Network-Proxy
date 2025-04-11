@@ -153,57 +153,101 @@ export function startWebSocketServer(port: number = 3001): Server {
       if (url.pathname.startsWith('/api/network-administration')) {
         // ICMP API endpoints
         if (url.pathname.startsWith('/api/network-administration/icmp')) {
-          if (url.pathname.startsWith('/api/network-administration/icmp/polling/status')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/icmp/polling/status'
+            )
+          ) {
             return handleICMPPollingStatusRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/icmp/polling/templates')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/icmp/polling/templates'
+            )
+          ) {
             return handleICMPPollingTemplatesRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/icmp/templates')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/icmp/templates'
+            )
+          ) {
             return handleICMPTemplatesRequest(req)
           }
         }
-        
+
         // IPAM API endpoints
         if (url.pathname.startsWith('/api/network-administration/ipam')) {
-          if (url.pathname.startsWith('/api/network-administration/ipam/ipaddress')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/ipam/ipaddress'
+            )
+          ) {
             return handleIPAddressRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/ipam/pool')) {
+          if (
+            url.pathname.startsWith('/api/network-administration/ipam/pool')
+          ) {
             return handleIPPoolRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/ipam/subnet')) {
+          if (
+            url.pathname.startsWith('/api/network-administration/ipam/subnet')
+          ) {
             return handleIPSubnetRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/ipam/supernet')) {
+          if (
+            url.pathname.startsWith('/api/network-administration/ipam/supernet')
+          ) {
             return handleIPSupernetRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/ipam/vlan')) {
+          if (
+            url.pathname.startsWith('/api/network-administration/ipam/vlan')
+          ) {
             return handleVLANRequest(req)
           }
         }
-        
+
         // SNMP API endpoints
         if (url.pathname.startsWith('/api/network-administration/snmp')) {
           if (url.pathname.startsWith('/api/network-administration/snmp/oid')) {
             return handleSNMPOIDRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/snmp/polling/template/snmpv2')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/snmp/polling/template/snmpv2'
+            )
+          ) {
             return handleSNMPv2PollingTemplateRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/snmp/polling/template/snmpv3')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/snmp/polling/template/snmpv3'
+            )
+          ) {
             return handleSNMPv3PollingTemplateRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/snmp/snmpv2')) {
+          if (
+            url.pathname.startsWith('/api/network-administration/snmp/snmpv2')
+          ) {
             return handleSNMPv2Request(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/snmp/snmpv3')) {
+          if (
+            url.pathname.startsWith('/api/network-administration/snmp/snmpv3')
+          ) {
             return handleSNMPv3Request(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/snmp/templates/snmpv2')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/snmp/templates/snmpv2'
+            )
+          ) {
             return handleSNMPv2TemplateRequest(req)
           }
-          if (url.pathname.startsWith('/api/network-administration/snmp/templates/snmpv3')) {
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/snmp/templates/snmpv3'
+            )
+          ) {
             return handleSNMPv3TemplateRequest(req)
           }
         }
@@ -273,15 +317,19 @@ export function startWebSocketServer(port: number = 3001): Server {
           } else if (data.type === 'requestInitialICMPData') {
             // Handle initial ICMP data request
             try {
-              const statuses = db.query(`
+              const statuses = db
+                .query(
+                  `
                 SELECT 
                   _id, company_id, icmp_polling_template_id, manufacturer_id, 
                   model_name_id, product_id, uptime, downtime, 
                   device_status, created_at, updated_at
                 FROM icmp_polling_status 
                 WHERE company_id = ?
-              `).all(companyId) as ICMPStatusRow[]
-              
+              `
+                )
+                .all(companyId) as ICMPStatusRow[]
+
               ws.send(
                 JSON.stringify({
                   type: 'initialICMPData',
@@ -294,7 +342,9 @@ export function startWebSocketServer(port: number = 3001): Server {
                     productId: status.product_id || undefined,
                     // Handle related data properly
                     stockIds: getStockIdsForStatus(status._id),
-                    networkInventoryIds: getNetworkInventoryIdsForStatus(status._id),
+                    networkInventoryIds: getNetworkInventoryIdsForStatus(
+                      status._id
+                    ),
                     uptime: status.uptime || 0,
                     downtime: status.downtime || 0,
                     deviceStatus: status.device_status,
@@ -316,7 +366,9 @@ export function startWebSocketServer(port: number = 3001): Server {
           } else if (data.type === 'requestInitialICMPTemplates') {
             // Handle initial ICMP templates request
             try {
-              const templates = db.query(`
+              const templates = db
+                .query(
+                  `
                 SELECT 
                   _id, company_id, name, description, frequency, timeout, retries,
                   polling_frequency_days, polling_frequency_hours, 
@@ -326,8 +378,10 @@ export function startWebSocketServer(port: number = 3001): Server {
                   created_at
                 FROM icmp_polling_templates
                 WHERE company_id = ?
-              `).all(companyId) as ICMPTemplateRow[]
-              
+              `
+                )
+                .all(companyId) as ICMPTemplateRow[]
+
               ws.send(
                 JSON.stringify({
                   type: 'initialICMPTemplates',
@@ -343,13 +397,13 @@ export function startWebSocketServer(port: number = 3001): Server {
                       days: template.polling_frequency_days,
                       hours: template.polling_frequency_hours,
                       minutes: template.polling_frequency_minutes,
-                      seconds: template.polling_frequency_seconds
+                      seconds: template.polling_frequency_seconds,
                     },
                     downtimeTrigger: {
                       days: template.downtime_trigger_days,
                       hours: template.downtime_trigger_hours,
                       minutes: template.downtime_trigger_minutes,
-                      seconds: template.downtime_trigger_seconds
+                      seconds: template.downtime_trigger_seconds,
                     },
                     createdAt: template.created_at,
                   })),
@@ -368,15 +422,19 @@ export function startWebSocketServer(port: number = 3001): Server {
           } else if (data.type === 'requestInitialSNMPData') {
             // Handle initial SNMP data request
             try {
-              const statuses = db.query(`
+              const statuses = db
+                .query(
+                  `
                 SELECT 
                   _id, company_id, snmp_polling_template_id, manufacturer_id, 
                   model_name_id, product_id, uptime, downtime, 
                   device_status, created_at, updated_at
                 FROM snmp_polling_status 
                 WHERE company_id = ?
-              `).all(companyId) as SNMPStatusRow[]
-              
+              `
+                )
+                .all(companyId) as SNMPStatusRow[]
+
               ws.send(
                 JSON.stringify({
                   type: 'initialSNMPData',
@@ -389,7 +447,9 @@ export function startWebSocketServer(port: number = 3001): Server {
                     productId: status.product_id || undefined,
                     // Handle related data properly
                     stockIds: getSNMPStockIdsForStatus(status._id),
-                    networkInventoryIds: getSNMPNetworkInventoryIdsForStatus(status._id),
+                    networkInventoryIds: getSNMPNetworkInventoryIdsForStatus(
+                      status._id
+                    ),
                     uptime: status.uptime || 0,
                     downtime: status.downtime || 0,
                     deviceStatus: status.device_status,
@@ -411,15 +471,19 @@ export function startWebSocketServer(port: number = 3001): Server {
           } else if (data.type === 'requestICMPRefresh') {
             // Handle ICMP refresh request - reuse the same logic as initial data request
             try {
-              const statuses = db.query(`
+              const statuses = db
+                .query(
+                  `
                 SELECT 
                   _id, company_id, icmp_polling_template_id, manufacturer_id, 
                   model_name_id, product_id, uptime, downtime, 
                   device_status, created_at, updated_at
                 FROM icmp_polling_status 
                 WHERE company_id = ?
-              `).all(companyId) as ICMPStatusRow[]
-              
+              `
+                )
+                .all(companyId) as ICMPStatusRow[]
+
               ws.send(
                 JSON.stringify({
                   type: 'initialICMPData',
@@ -431,7 +495,9 @@ export function startWebSocketServer(port: number = 3001): Server {
                     modelNameId: status.model_name_id || undefined,
                     productId: status.product_id || undefined,
                     stockIds: getStockIdsForStatus(status._id),
-                    networkInventoryIds: getNetworkInventoryIdsForStatus(status._id),
+                    networkInventoryIds: getNetworkInventoryIdsForStatus(
+                      status._id
+                    ),
                     uptime: status.uptime || 0,
                     downtime: status.downtime || 0,
                     deviceStatus: status.device_status,
@@ -453,15 +519,19 @@ export function startWebSocketServer(port: number = 3001): Server {
           } else if (data.type === 'requestSNMPRefresh') {
             // Handle SNMP refresh request
             try {
-              const statuses = db.query(`
+              const statuses = db
+                .query(
+                  `
                 SELECT 
                   _id, company_id, snmp_polling_template_id, manufacturer_id, 
                   model_name_id, product_id, uptime, downtime, 
                   device_status, created_at, updated_at
                 FROM snmp_polling_status 
                 WHERE company_id = ?
-              `).all(companyId) as SNMPStatusRow[]
-              
+              `
+                )
+                .all(companyId) as SNMPStatusRow[]
+
               ws.send(
                 JSON.stringify({
                   type: 'initialSNMPData',
@@ -473,7 +543,9 @@ export function startWebSocketServer(port: number = 3001): Server {
                     modelNameId: status.model_name_id || undefined,
                     productId: status.product_id || undefined,
                     stockIds: getSNMPStockIdsForStatus(status._id),
-                    networkInventoryIds: getSNMPNetworkInventoryIdsForStatus(status._id),
+                    networkInventoryIds: getSNMPNetworkInventoryIdsForStatus(
+                      status._id
+                    ),
                     uptime: status.uptime || 0,
                     downtime: status.downtime || 0,
                     deviceStatus: status.device_status,
@@ -496,73 +568,80 @@ export function startWebSocketServer(port: number = 3001): Server {
             // Handle ICMP update request
             try {
               const { _id, input } = data
-              
+
               // Build a proper update SQL statement instead of using SET ?
               let updateSql = 'UPDATE icmp_polling_status SET updated_at = ?'
               const params: any[] = [Date.now()]
-              
+
               // Add each field to update
               if (input.icmpPollingTemplateId !== undefined) {
                 updateSql += ', icmp_polling_template_id = ?'
                 params.push(input.icmpPollingTemplateId)
               }
-              
+
               if (input.manufacturerId !== undefined) {
                 updateSql += ', manufacturer_id = ?'
                 params.push(input.manufacturerId)
               }
-              
+
               if (input.modelNameId !== undefined) {
                 updateSql += ', model_name_id = ?'
                 params.push(input.modelNameId)
               }
-              
+
               if (input.productId !== undefined) {
                 updateSql += ', product_id = ?'
                 params.push(input.productId)
               }
-              
+
               if (input.uptime !== undefined) {
                 updateSql += ', uptime = ?'
                 params.push(input.uptime)
               }
-              
+
               if (input.downtime !== undefined) {
                 updateSql += ', downtime = ?'
                 params.push(input.downtime)
               }
-              
+
               if (input.deviceStatus !== undefined) {
                 updateSql += ', device_status = ?'
                 params.push(input.deviceStatus)
               }
-              
+
               updateSql += ' WHERE _id = ? AND company_id = ?'
               params.push(_id, companyId)
-              
+
               // Execute the update
               const result = db.query(updateSql).run(...params)
 
               if (result.changes > 0) {
                 // Get the updated status
-                const updatedStatus = db.query(`
+                const updatedStatus = db
+                  .query(
+                    `
                   SELECT 
                     _id, company_id, icmp_polling_template_id, manufacturer_id, 
                     model_name_id, product_id, uptime, downtime, 
                     device_status, created_at, updated_at
                   FROM icmp_polling_status 
                   WHERE _id = ?
-                `).get(_id) as ICMPStatusRow
-                
+                `
+                  )
+                  .get(_id) as ICMPStatusRow
+
                 // Update related collections if needed
                 if (input.stockIds !== undefined) {
                   updateStockIdsForStatus(_id, input.stockIds)
                 }
-                
+
                 if (input.networkInventoryIds !== undefined) {
-                  updateNetworkInventoryIdsForStatus(_id, input.networkInventoryIds)
+                  updateNetworkInventoryIdsForStatus(
+                    _id,
+                    input.networkInventoryIds
+                  )
                 }
-                
+
                 // Broadcast the update to all subscribed clients
                 broadcastICMPUpdate(server, {
                   _id: updatedStatus._id,
@@ -572,7 +651,9 @@ export function startWebSocketServer(port: number = 3001): Server {
                   modelNameId: updatedStatus.model_name_id || undefined,
                   productId: updatedStatus.product_id || undefined,
                   stockIds: getStockIdsForStatus(updatedStatus._id),
-                  networkInventoryIds: getNetworkInventoryIdsForStatus(updatedStatus._id),
+                  networkInventoryIds: getNetworkInventoryIdsForStatus(
+                    updatedStatus._id
+                  ),
                   uptime: updatedStatus.uptime || 0,
                   downtime: updatedStatus.downtime || 0,
                   deviceStatus: updatedStatus.device_status,
@@ -608,73 +689,80 @@ export function startWebSocketServer(port: number = 3001): Server {
             // Handle SNMP update request
             try {
               const { _id, input } = data
-              
+
               // Build a proper update SQL statement
               let updateSql = 'UPDATE snmp_polling_status SET updated_at = ?'
               const params: any[] = [Date.now()]
-              
+
               // Add each field to update
               if (input.snmpPollingTemplateId !== undefined) {
                 updateSql += ', snmp_polling_template_id = ?'
                 params.push(input.snmpPollingTemplateId)
               }
-              
+
               if (input.manufacturerId !== undefined) {
                 updateSql += ', manufacturer_id = ?'
                 params.push(input.manufacturerId)
               }
-              
+
               if (input.modelNameId !== undefined) {
                 updateSql += ', model_name_id = ?'
                 params.push(input.modelNameId)
               }
-              
+
               if (input.productId !== undefined) {
                 updateSql += ', product_id = ?'
                 params.push(input.productId)
               }
-              
+
               if (input.uptime !== undefined) {
                 updateSql += ', uptime = ?'
                 params.push(input.uptime)
               }
-              
+
               if (input.downtime !== undefined) {
                 updateSql += ', downtime = ?'
                 params.push(input.downtime)
               }
-              
+
               if (input.deviceStatus !== undefined) {
                 updateSql += ', device_status = ?'
                 params.push(input.deviceStatus)
               }
-              
+
               updateSql += ' WHERE _id = ? AND company_id = ?'
               params.push(_id, companyId)
-              
+
               // Execute the update
               const result = db.query(updateSql).run(...params)
 
               if (result.changes > 0) {
                 // Get the updated status
-                const updatedStatus = db.query(`
+                const updatedStatus = db
+                  .query(
+                    `
                   SELECT 
                     _id, company_id, snmp_polling_template_id, manufacturer_id, 
                     model_name_id, product_id, uptime, downtime, 
                     device_status, created_at, updated_at
                   FROM snmp_polling_status 
                   WHERE _id = ?
-                `).get(_id) as SNMPStatusRow
-                
+                `
+                  )
+                  .get(_id) as SNMPStatusRow
+
                 // Update related collections if needed
                 if (input.stockIds !== undefined) {
                   updateSNMPStockIdsForStatus(_id, input.stockIds)
                 }
-                
+
                 if (input.networkInventoryIds !== undefined) {
-                  updateSNMPNetworkInventoryIdsForStatus(_id, input.networkInventoryIds)
+                  updateSNMPNetworkInventoryIdsForStatus(
+                    _id,
+                    input.networkInventoryIds
+                  )
                 }
-                
+
                 // Broadcast the update to all subscribed clients
                 broadcastSNMPUpdate(server, {
                   _id: updatedStatus._id,
@@ -684,7 +772,9 @@ export function startWebSocketServer(port: number = 3001): Server {
                   modelNameId: updatedStatus.model_name_id || undefined,
                   productId: updatedStatus.product_id || undefined,
                   stockIds: getSNMPStockIdsForStatus(updatedStatus._id),
-                  networkInventoryIds: getSNMPNetworkInventoryIdsForStatus(updatedStatus._id),
+                  networkInventoryIds: getSNMPNetworkInventoryIdsForStatus(
+                    updatedStatus._id
+                  ),
                   uptime: updatedStatus.uptime || 0,
                   downtime: updatedStatus.downtime || 0,
                   deviceStatus: updatedStatus.device_status,
@@ -720,23 +810,31 @@ export function startWebSocketServer(port: number = 3001): Server {
             // Handle ICMP delete request
             try {
               const { _id } = data
-              
+
               // First, delete associated data
-              db.query(`
+              db.query(
+                `
                 DELETE FROM icmp_polling_status_stock
                 WHERE icmp_polling_status_id = ?
-              `).run(_id)
-              
-              db.query(`
+              `
+              ).run(_id)
+
+              db.query(
+                `
                 DELETE FROM icmp_polling_status_network_inventory
                 WHERE icmp_polling_status_id = ?
-              `).run(_id)
-              
+              `
+              ).run(_id)
+
               // Then delete the main record
-              const result = db.query(`
+              const result = db
+                .query(
+                  `
                 DELETE FROM icmp_polling_status 
                 WHERE _id = ? AND company_id = ?
-              `).run(_id, companyId)
+              `
+                )
+                .run(_id, companyId)
 
               if (result.changes > 0) {
                 // Broadcast the deletion to all subscribed clients
@@ -778,23 +876,31 @@ export function startWebSocketServer(port: number = 3001): Server {
             // Handle SNMP delete request
             try {
               const { _id } = data
-              
+
               // First, delete associated data
-              db.query(`
+              db.query(
+                `
                 DELETE FROM snmp_polling_status_stock
                 WHERE snmp_polling_status_id = ?
-              `).run(_id)
-              
-              db.query(`
+              `
+              ).run(_id)
+
+              db.query(
+                `
                 DELETE FROM snmp_polling_status_network_inventory
                 WHERE snmp_polling_status_id = ?
-              `).run(_id)
-              
+              `
+              ).run(_id)
+
               // Then delete the main record
-              const result = db.query(`
+              const result = db
+                .query(
+                  `
                 DELETE FROM snmp_polling_status 
                 WHERE _id = ? AND company_id = ?
-              `).run(_id, companyId)
+              `
+                )
+                .run(_id, companyId)
 
               if (result.changes > 0) {
                 // Broadcast the deletion to all subscribed clients
@@ -928,12 +1034,12 @@ function updateStockIdsForStatus(statusId: string, stockIds: string[]): void {
     'DELETE FROM icmp_polling_status_stock WHERE icmp_polling_status_id = ?'
   )
   deleteStmt.run(statusId)
-  
+
   if (stockIds.length > 0) {
     const insertStmt = db.prepare(
       'INSERT INTO icmp_polling_status_stock (icmp_polling_status_id, stock_id) VALUES (?, ?)'
     )
-    
+
     for (const stockId of stockIds) {
       insertStmt.run(statusId, stockId)
     }
@@ -943,17 +1049,20 @@ function updateStockIdsForStatus(statusId: string, stockIds: string[]): void {
 /**
  * Helper function to update network inventory IDs for an ICMP polling status
  */
-function updateNetworkInventoryIdsForStatus(statusId: string, networkInventoryIds: string[]): void {
+function updateNetworkInventoryIdsForStatus(
+  statusId: string,
+  networkInventoryIds: string[]
+): void {
   const deleteStmt = db.query(
     'DELETE FROM icmp_polling_status_network_inventory WHERE icmp_polling_status_id = ?'
   )
   deleteStmt.run(statusId)
-  
+
   if (networkInventoryIds.length > 0) {
     const insertStmt = db.prepare(
       'INSERT INTO icmp_polling_status_network_inventory (icmp_polling_status_id, network_inventory_id) VALUES (?, ?)'
     )
-    
+
     for (const networkId of networkInventoryIds) {
       insertStmt.run(statusId, networkId)
     }
@@ -963,17 +1072,20 @@ function updateNetworkInventoryIdsForStatus(statusId: string, networkInventoryId
 /**
  * Helper function to update stock IDs for an SNMP polling status
  */
-function updateSNMPStockIdsForStatus(statusId: string, stockIds: string[]): void {
+function updateSNMPStockIdsForStatus(
+  statusId: string,
+  stockIds: string[]
+): void {
   const deleteStmt = db.query(
     'DELETE FROM snmp_polling_status_stock WHERE snmp_polling_status_id = ?'
   )
   deleteStmt.run(statusId)
-  
+
   if (stockIds.length > 0) {
     const insertStmt = db.prepare(
       'INSERT INTO snmp_polling_status_stock (snmp_polling_status_id, stock_id) VALUES (?, ?)'
     )
-    
+
     for (const stockId of stockIds) {
       insertStmt.run(statusId, stockId)
     }
@@ -983,17 +1095,20 @@ function updateSNMPStockIdsForStatus(statusId: string, stockIds: string[]): void
 /**
  * Helper function to update network inventory IDs for an SNMP polling status
  */
-function updateSNMPNetworkInventoryIdsForStatus(statusId: string, networkInventoryIds: string[]): void {
+function updateSNMPNetworkInventoryIdsForStatus(
+  statusId: string,
+  networkInventoryIds: string[]
+): void {
   const deleteStmt = db.query(
     'DELETE FROM snmp_polling_status_network_inventory WHERE snmp_polling_status_id = ?'
   )
   deleteStmt.run(statusId)
-  
+
   if (networkInventoryIds.length > 0) {
     const insertStmt = db.prepare(
       'INSERT INTO snmp_polling_status_network_inventory (snmp_polling_status_id, network_inventory_id) VALUES (?, ?)'
     )
-    
+
     for (const networkId of networkInventoryIds) {
       insertStmt.run(statusId, networkId)
     }

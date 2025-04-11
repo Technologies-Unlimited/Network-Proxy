@@ -97,18 +97,20 @@ export function useSNMPv2PollingTemplate(
       })
     } else if (message.type === 'initialSNMPv2PollingTemplateData') {
       // Handle initial data load
-      const initialTemplates = message.templates.map((template: Record<string, any>) => ({
-        _id: template._id,
-        companyId: template.companyId,
-        name: template.name,
-        description: template.description,
-        frequency: template.frequency,
-        timeout: template.timeout,
-        retries: template.retries,
-        pollingFrequency: template.pollingFrequency,
-        downtimeTrigger: template.downtimeTrigger,
-        createdAt: template.createdAt,
-      }))
+      const initialTemplates = message.templates.map(
+        (template: Record<string, any>) => ({
+          _id: template._id,
+          companyId: template.companyId,
+          name: template.name,
+          description: template.description,
+          frequency: template.frequency,
+          timeout: template.timeout,
+          retries: template.retries,
+          pollingFrequency: template.pollingFrequency,
+          downtimeTrigger: template.downtimeTrigger,
+          createdAt: template.createdAt,
+        })
+      )
 
       setSNMPv2PollingTemplates(initialTemplates)
       setLoading(false)

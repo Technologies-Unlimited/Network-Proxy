@@ -52,7 +52,9 @@ export function useSNMPv3Settings(
   companyId: string | null,
   wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001'
 ): SNMPv3HookResult {
-  const [snmpv3Settings, setSNMPv3Settings] = useState<ExtendedSNMPv3Fields[]>([])
+  const [snmpv3Settings, setSNMPv3Settings] = useState<ExtendedSNMPv3Fields[]>(
+    []
+  )
   const [loading, setLoading] = useState<boolean>(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -100,22 +102,24 @@ export function useSNMPv3Settings(
       })
     } else if (message.type === 'initialSNMPv3Data') {
       // Handle initial data load
-      const initialSettings = message.settings.map((setting: Record<string, any>) => ({
-        _id: setting._id,
-        companyId: setting.companyId,
-        manufacturerId: setting.manufacturerId,
-        modelId: setting.modelId,
-        productId: setting.productId,
-        communityName: setting.communityName,
-        userName: setting.userName,
-        authMethod: setting.authMethod,
-        authPassword: setting.authPassword,
-        encryptionMethod: setting.encryptionMethod,
-        encryptionPassword: setting.encryptionPassword,
-        description: setting.description,
-        createdAt: setting.createdAt,
-        updatedAt: setting.updatedAt,
-      }))
+      const initialSettings = message.settings.map(
+        (setting: Record<string, any>) => ({
+          _id: setting._id,
+          companyId: setting.companyId,
+          manufacturerId: setting.manufacturerId,
+          modelId: setting.modelId,
+          productId: setting.productId,
+          communityName: setting.communityName,
+          userName: setting.userName,
+          authMethod: setting.authMethod,
+          authPassword: setting.authPassword,
+          encryptionMethod: setting.encryptionMethod,
+          encryptionPassword: setting.encryptionPassword,
+          description: setting.description,
+          createdAt: setting.createdAt,
+          updatedAt: setting.updatedAt,
+        })
+      )
 
       setSNMPv3Settings(initialSettings)
       setLoading(false)
