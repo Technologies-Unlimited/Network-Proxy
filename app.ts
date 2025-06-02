@@ -5,13 +5,134 @@
 
 import { serve } from 'bun'
 import { startWebSocketServer } from './src/websockets/server'
-import { getDatabase } from './src/database/index'
+import { getDatabase } from './src/database'
 import fs from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'util'
 import { exec, spawn } from 'child_process'
+import net from 'node:net'
+import dns from 'node:dns'
 
 const execAsync = promisify(exec)
+
+// Type definitions for request bodies
+interface PingRequest {
+  target: string
+  count?: number
+  continuous?: boolean
+}
+
+interface TracerouteRequest {
+  target: string
+  maxHops?: number
+}
+
+interface PortScanRequest {
+  target: string
+  startPort?: number
+  endPort?: number
+}
+
+interface DNSLookupRequest {
+  domain: string
+  recordType?: string
+}
+
+interface WhoisRequest {
+  domain: string
+}
+
+interface DeviceDiscoveryRequest {
+  networkRange: string
+}
+
+interface SNMPUser {
+  name: string
+  level: string
+  authKey?: string
+  authProtocol?: string
+  privKey?: string
+  privProtocol?: string
+}
+
+interface SNMPBrowseRequest {
+  target: string
+  community?: string
+  version?: string
+  user?: SNMPUser
+}
+
+interface SNMPWalkRequest {
+  target: string
+  community?: string
+  version?: string
+  oid: string
+  user?: SNMPUser
+}
+
+interface PingResult {
+  id: string
+  timestamp: number
+  target: string
+  originalTarget: string
+  bytes: number
+  time: number | null
+  ttl: number | null
+  success: boolean
+  message: string | null
+}
+
+interface TracerouteHop {
+  id: string
+  hop: number
+  ip: string
+  hostname: string
+  time1: number | null
+  time2: number | null
+  time3: number | null
+  success: boolean
+}
+
+interface PortScanResult {
+  port: number
+  open: boolean
+  service: string | null
+}
+
+interface DNSRecord {
+  type: string
+  address?: string
+  value?: string
+  priority?: number
+  exchange?: string
+  entries?: string[]
+  primary?: string
+  admin?: string
+  serial?: number
+  refresh?: number
+  retry?: number
+  expiration?: number
+  minimum?: number
+}
+
+interface Device {
+  id: string
+  ipAddress: string
+  hostname: string
+  macAddress: string
+  vendor: string
+  responseTime: number
+  status: string
+}
+
+interface MIBObject {
+  oid: string
+  name: string
+  value: string
+  type?: number
+  description?: string
+  hasChildren?: boolean
+}
 
 // Define the port for the WebSocket server
 const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 3001
@@ -21,7 +142,6 @@ const HTTP_PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000
 getDatabase()
 
 // Try to start the WebSocket server with fallback ports
-let wsServer
 let actualWsPort = WS_PORT
 const MAX_PORT_ATTEMPTS = 5
 
@@ -29,10 +149,10 @@ for (let i = 0; i < MAX_PORT_ATTEMPTS; i++) {
   try {
     // Try starting the server with the current port
     const attemptPort = WS_PORT + i
-    wsServer = startWebSocketServer(attemptPort)
+    startWebSocketServer(attemptPort)
     actualWsPort = attemptPort
     break // If successful, exit the loop
-  } catch (error) {
+  } catch {
     if (i === MAX_PORT_ATTEMPTS - 1) {
       // If we've tried all ports and failed, log an error
       console.error(
@@ -55,6 +175,20 @@ if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true })
 }
 
+// Helper function to validate target format
+function validateTarget(target: string): boolean {
+  const targetRegex = /^[a-zA-Z0-9.-]+$/
+  return targetRegex.test(target)
+}
+
+// Helper function to get error message from unknown error
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+  return String(error)
+}
+
 // Start the Bun server
 const server = serve({
   port: HTTP_PORT,
@@ -63,7 +197,7 @@ const server = serve({
   routes: {
     // API routes
     '/api/network': {
-      async GET(req) {
+      GET() {
         // Placeholder for network data API
         return Response.json({ status: 'ok' })
       },
@@ -72,7 +206,7 @@ const server = serve({
       async POST(req) {
         console.log('=== PING API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as PingRequest
           console.log('Request body:', body)
           const { target, count = 4, continuous = false } = body
 
@@ -85,8 +219,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -97,7 +230,7 @@ const server = serve({
           console.log(
             `Starting ping to ${target}, count: ${count}, continuous: ${continuous}`
           )
-          const results: any[] = []
+          const results: PingResult[] = []
           const maxPings = continuous ? 20 : count // Reduce continuous to 20 for better performance
 
           for (let i = 0; i < maxPings; i++) {
@@ -172,7 +305,7 @@ const server = serve({
                 }
               }
 
-              const result = success
+              const result: PingResult = success
                 ? {
                     id: `ping-${Date.now()}-${i}`,
                     timestamp: Date.now(),
@@ -200,7 +333,7 @@ const server = serve({
               results.push(result)
             } catch (error) {
               console.log('Ping command error:', error)
-              const result = {
+              const result: PingResult = {
                 id: `ping-${Date.now()}-${i}`,
                 timestamp: Date.now(),
                 target: target,
@@ -238,7 +371,7 @@ const server = serve({
       async POST(req) {
         console.log('=== PING STREAM API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as PingRequest
           console.log('Stream request body:', body)
           const { target, count = 4, continuous = false } = body
 
@@ -251,8 +384,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Stream error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -337,7 +469,7 @@ const server = serve({
                     }
                   }
 
-                  const result = success
+                  const result: PingResult = success
                     ? {
                         id: `ping-${Date.now()}-${i}`,
                         timestamp: Date.now(),
@@ -375,7 +507,7 @@ const server = serve({
                   }
                 } catch (error) {
                   console.log('Stream ping command error:', error)
-                  const result = {
+                  const result: PingResult = {
                     id: `ping-${Date.now()}-${i}`,
                     timestamp: Date.now(),
                     target: target,
@@ -427,7 +559,7 @@ const server = serve({
       async POST(req) {
         console.log('=== TRACEROUTE API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as TracerouteRequest
           console.log('Traceroute request body:', body)
           const { target, maxHops = 20 } = body
 
@@ -440,8 +572,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -449,7 +580,7 @@ const server = serve({
             )
           }
 
-          const maxHopsNum = parseInt(maxHops, 10)
+          const maxHopsNum = parseInt(String(maxHops), 10)
           if (isNaN(maxHopsNum) || maxHopsNum <= 0 || maxHopsNum > 30) {
             console.log('Error: Invalid max hops:', maxHops)
             return Response.json(
@@ -461,7 +592,7 @@ const server = serve({
           console.log(
             `Starting traceroute to ${target}, max hops: ${maxHopsNum}`
           )
-          const results: any[] = []
+          const results: TracerouteHop[] = []
 
           try {
             const startTime = Date.now()
@@ -483,7 +614,6 @@ const server = serve({
 
             // Parse traceroute output
             const lines = stdout.split('\n')
-            let hopNumber = 1
 
             for (const line of lines) {
               const trimmedLine = line.trim()
@@ -577,7 +707,7 @@ const server = serve({
       async POST(req) {
         console.log('=== TRACEROUTE STREAM API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as TracerouteRequest
           console.log('Traceroute stream request body:', body)
           const { target, maxHops = 20 } = body
 
@@ -590,8 +720,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Stream error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -599,7 +728,7 @@ const server = serve({
             )
           }
 
-          const maxHopsNum = parseInt(maxHops, 10)
+          const maxHopsNum = parseInt(String(maxHops), 10)
           if (isNaN(maxHopsNum) || maxHopsNum <= 0 || maxHopsNum > 30) {
             console.log('Stream error: Invalid max hops:', maxHops)
             return Response.json(
@@ -614,7 +743,7 @@ const server = serve({
 
           // Create a readable stream for real-time traceroute results
           const stream = new ReadableStream({
-            async start(controller) {
+            start(controller) {
               console.log('Traceroute stream started')
 
               try {
@@ -631,10 +760,9 @@ const server = serve({
 
                 const tracerouteProcess = spawn(command, args)
                 let buffer = ''
-                let hopNumber = 1
 
                 // Process stdout line by line
-                tracerouteProcess.stdout.on('data', data => {
+                tracerouteProcess.stdout?.on('data', (data: Buffer) => {
                   buffer += data.toString()
                   const lines = buffer.split('\n')
                   buffer = lines.pop() || '' // Keep incomplete line in buffer
@@ -645,7 +773,7 @@ const server = serve({
 
                     console.log(`Processing traceroute line: ${trimmedLine}`)
 
-                    let result: any = null
+                    let result: TracerouteHop | null = null
 
                     if (isWindows) {
                       // Windows tracert format: "  1    <1 ms    <1 ms    <1 ms  192.168.1.1"
@@ -770,7 +898,7 @@ const server = serve({
       async POST(req) {
         console.log('=== PORT SCAN STREAM API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as PortScanRequest
           console.log('Port scan stream request body:', body)
           const { target, startPort = 1, endPort = 1000 } = body
 
@@ -783,8 +911,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Stream error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -792,8 +919,8 @@ const server = serve({
             )
           }
 
-          const startPortNum = parseInt(startPort, 10)
-          const endPortNum = parseInt(endPort, 10)
+          const startPortNum = parseInt(String(startPort), 10)
+          const endPortNum = parseInt(String(endPort), 10)
 
           if (
             isNaN(startPortNum) ||
@@ -829,7 +956,7 @@ const server = serve({
           )
 
           // Common service mappings
-          const commonServices = {
+          const commonServices: Record<number, string> = {
             21: 'FTP',
             22: 'SSH',
             23: 'Telnet',
@@ -855,12 +982,10 @@ const server = serve({
               console.log('Port scan stream started')
 
               try {
-                const net = require('net')
-
                 for (let port = startPortNum; port <= endPortNum; port++) {
                   console.log(`Scanning port ${port}`)
 
-                  const result = await new Promise(resolve => {
+                  const result = await new Promise<PortScanResult>(resolve => {
                     const socket = new net.Socket()
                     const timeout = 2000 // 2 second timeout
 
@@ -886,8 +1011,10 @@ const server = serve({
                       })
                     })
 
-                    socket.on('error', err => {
-                      console.log(`Port ${port} error: ${err.code}`)
+                    socket.on('error', (err: NodeJS.ErrnoException) => {
+                      console.log(
+                        `Port ${port} error: ${err.code || 'Unknown'}`
+                      )
                       socket.destroy()
                       resolve({
                         port: port,
@@ -940,7 +1067,7 @@ const server = serve({
       async POST(req) {
         console.log('=== DNS LOOKUP API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as DNSLookupRequest
           console.log('DNS lookup request body:', body)
           const { domain, recordType = 'A' } = body
 
@@ -953,8 +1080,7 @@ const server = serve({
           }
 
           // Validate domain (basic validation)
-          const domainRegex = /^[a-zA-Z0-9.-]+$/
-          if (!domainRegex.test(domain)) {
+          if (!validateTarget(domain)) {
             console.log('Error: Invalid domain format:', domain)
             return Response.json(
               { error: 'Invalid domain format' },
@@ -965,33 +1091,32 @@ const server = serve({
           console.log(`Starting DNS lookup for ${domain}, type: ${recordType}`)
 
           try {
-            const dns = require('dns').promises
-            let records: any[] = []
+            let records: DNSRecord[] = []
             let status = 'success'
             let error: string | null = null
 
             try {
               switch (recordType.toUpperCase()) {
                 case 'A':
-                  const aRecords = await dns.resolve4(domain)
+                  const aRecords = await dns.promises.resolve4(domain)
                   records = aRecords.map(address => ({ type: 'A', address }))
                   break
                 case 'AAAA':
-                  const aaaaRecords = await dns.resolve6(domain)
+                  const aaaaRecords = await dns.promises.resolve6(domain)
                   records = aaaaRecords.map(address => ({
                     type: 'AAAA',
                     address,
                   }))
                   break
                 case 'CNAME':
-                  const cnameRecords = await dns.resolveCname(domain)
+                  const cnameRecords = await dns.promises.resolveCname(domain)
                   records = cnameRecords.map(value => ({
                     type: 'CNAME',
                     value,
                   }))
                   break
                 case 'MX':
-                  const mxRecords = await dns.resolveMx(domain)
+                  const mxRecords = await dns.promises.resolveMx(domain)
                   records = mxRecords.map(record => ({
                     type: 'MX',
                     priority: record.priority,
@@ -999,18 +1124,18 @@ const server = serve({
                   }))
                   break
                 case 'NS':
-                  const nsRecords = await dns.resolveNs(domain)
+                  const nsRecords = await dns.promises.resolveNs(domain)
                   records = nsRecords.map(value => ({ type: 'NS', value }))
                   break
                 case 'TXT':
-                  const txtRecords = await dns.resolveTxt(domain)
+                  const txtRecords = await dns.promises.resolveTxt(domain)
                   records = txtRecords.map(entries => ({
                     type: 'TXT',
                     entries,
                   }))
                   break
                 case 'SOA':
-                  const soaRecord = await dns.resolveSoa(domain)
+                  const soaRecord = await dns.promises.resolveSoa(domain)
                   records = [
                     {
                       type: 'SOA',
@@ -1025,7 +1150,7 @@ const server = serve({
                   ]
                   break
                 case 'PTR':
-                  const ptrRecords = await dns.resolvePtr(domain)
+                  const ptrRecords = await dns.promises.resolvePtr(domain)
                   records = ptrRecords.map(value => ({ type: 'PTR', value }))
                   break
                 default:
@@ -1034,7 +1159,7 @@ const server = serve({
             } catch (dnsError) {
               console.log('DNS resolution error:', dnsError)
               status = 'error'
-              error = dnsError.message
+              error = getErrorMessage(dnsError)
             }
 
             const result = {
@@ -1054,7 +1179,7 @@ const server = serve({
               type: recordType.toUpperCase(),
               status: 'error',
               records: [],
-              error: error.message,
+              error: getErrorMessage(error),
             })
           }
         } catch (error) {
@@ -1070,7 +1195,7 @@ const server = serve({
       async POST(req) {
         console.log('=== WHOIS LOOKUP API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as WhoisRequest
           console.log('WHOIS lookup request body:', body)
           const { domain } = body
 
@@ -1083,8 +1208,7 @@ const server = serve({
           }
 
           // Validate domain (basic validation)
-          const domainRegex = /^[a-zA-Z0-9.-]+$/
-          if (!domainRegex.test(domain)) {
+          if (!validateTarget(domain)) {
             console.log('Error: Invalid domain format:', domain)
             return Response.json(
               { error: 'Invalid domain format' },
@@ -1152,7 +1276,7 @@ const server = serve({
               status: 'error',
               data: null,
               server: null,
-              error: error.message,
+              error: getErrorMessage(error),
             })
           }
         } catch (error) {
@@ -1168,7 +1292,7 @@ const server = serve({
       async POST(req) {
         console.log('=== DEVICE DISCOVERY STREAM API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as DeviceDiscoveryRequest
           console.log('Device discovery stream request body:', body)
           const { networkRange } = body
 
@@ -1235,7 +1359,7 @@ const server = serve({
                   // Check if the client has disconnected
                   try {
                     controller.enqueue(new TextEncoder().encode(''))
-                  } catch (error) {
+                  } catch {
                     console.log(
                       'Client disconnected, stopping device discovery'
                     )
@@ -1285,7 +1409,7 @@ const server = serve({
                         if (hostnameMatch) {
                           hostname = hostnameMatch[1].trim().replace(/\.$/, '')
                         }
-                      } catch (e) {
+                      } catch {
                         // Hostname lookup failed, keep as Unknown
                       }
 
@@ -1318,10 +1442,7 @@ const server = serve({
 
                         // Simple vendor detection based on MAC OUI
                         if (macAddress !== 'Unknown') {
-                          const oui = macAddress
-                            .substring(0, 8)
-                            .replace(/:/g, '')
-                          const vendors = {
+                          const vendors: Record<string, string> = {
                             '00:50:56': 'VMware',
                             '08:00:27': 'VirtualBox',
                             '52:54:00': 'QEMU',
@@ -1339,11 +1460,11 @@ const server = serve({
                             }
                           }
                         }
-                      } catch (e) {
+                      } catch {
                         // ARP lookup failed, keep as Unknown
                       }
 
-                      const device = {
+                      const device: Device = {
                         id: `device-${targetIp}`,
                         ipAddress: targetIp,
                         hostname: hostname,
@@ -1361,7 +1482,7 @@ const server = serve({
 
                       try {
                         controller.enqueue(new TextEncoder().encode(deviceData))
-                      } catch (error) {
+                      } catch {
                         console.log(
                           'Client disconnected while sending device data, stopping'
                         )
@@ -1369,7 +1490,10 @@ const server = serve({
                       }
                     }
                   } catch (error) {
-                    console.log(`Host ${targetIp} ping failed:`, error.message)
+                    console.log(
+                      `Host ${targetIp} ping failed:`,
+                      getErrorMessage(error)
+                    )
                     // Host is offline, don't report it
                   }
 
@@ -1381,7 +1505,7 @@ const server = serve({
 
                   try {
                     controller.enqueue(new TextEncoder().encode(progressData))
-                  } catch (error) {
+                  } catch {
                     console.log(
                       'Client disconnected while sending progress, stopping'
                     )
@@ -1427,7 +1551,7 @@ const server = serve({
       async POST(req) {
         console.log('=== SNMP BROWSE API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as SNMPBrowseRequest
           console.log('SNMP browse request body:', body)
           const { target, community = 'public', version = '2c', user } = body
 
@@ -1440,8 +1564,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -1452,10 +1575,11 @@ const server = serve({
           console.log(`Starting SNMP browse for ${target}, version: ${version}`)
 
           try {
-            // Import net-snmp library
-            const snmp = require('net-snmp')
+            // Import net-snmp library - handling as unknown due to dynamic import
+            const snmpModule = await import('net-snmp')
+            const snmp = snmpModule as any // eslint-disable-line @typescript-eslint/no-explicit-any
 
-            let session
+            let session: any // eslint-disable-line @typescript-eslint/no-explicit-any
 
             // Create SNMP session based on version
             if (version === '3') {
@@ -1466,36 +1590,37 @@ const server = serve({
                 )
               }
 
-              // Map security levels
-              const securityLevelMap = {
-                noAuthNoPriv: snmp.SecurityLevel.noAuthNoPriv,
-                authNoPriv: snmp.SecurityLevel.authNoPriv,
-                authPriv: snmp.SecurityLevel.authPriv,
+              // Map security levels with explicit any to handle untyped library
+              const securityLevelMap: Record<string, number> = {
+                noAuthNoPriv: snmp.SecurityLevel?.noAuthNoPriv ?? 1,
+                authNoPriv: snmp.SecurityLevel?.authNoPriv ?? 2,
+                authPriv: snmp.SecurityLevel?.authPriv ?? 3,
               }
 
-              // Map auth protocols
-              const authProtocolMap = {
-                md5: snmp.AuthProtocols.md5,
-                sha: snmp.AuthProtocols.sha,
-                sha224: snmp.AuthProtocols.sha224,
-                sha256: snmp.AuthProtocols.sha256,
-                sha384: snmp.AuthProtocols.sha384,
-                sha512: snmp.AuthProtocols.sha512,
+              // Map auth protocols with explicit any to handle untyped library
+              const authProtocolMap: Record<string, number> = {
+                md5: snmp.AuthProtocols?.md5 ?? 1,
+                sha: snmp.AuthProtocols?.sha ?? 2,
+                sha224: snmp.AuthProtocols?.sha224 ?? 3,
+                sha256: snmp.AuthProtocols?.sha256 ?? 4,
+                sha384: snmp.AuthProtocols?.sha384 ?? 5,
+                sha512: snmp.AuthProtocols?.sha512 ?? 6,
               }
 
-              // Map privacy protocols
-              const privProtocolMap = {
-                des: snmp.PrivProtocols.des,
-                aes: snmp.PrivProtocols.aes,
-                aes256b: snmp.PrivProtocols.aes256b,
-                aes256r: snmp.PrivProtocols.aes256r,
+              // Map privacy protocols with explicit any to handle untyped library
+              const privProtocolMap: Record<string, number> = {
+                des: snmp.PrivProtocols?.des ?? 1,
+                aes: snmp.PrivProtocols?.aes ?? 2,
+                aes256b: snmp.PrivProtocols?.aes256b ?? 3,
+                aes256r: snmp.PrivProtocols?.aes256r ?? 4,
               }
 
-              const userOptions: any = {
+              const userOptions: Record<string, any> = {
+                // eslint-disable-line @typescript-eslint/no-explicit-any
                 name: user.name,
                 level:
                   securityLevelMap[user.level] ||
-                  snmp.SecurityLevel.noAuthNoPriv,
+                  (snmp.SecurityLevel?.noAuthNoPriv ?? 1),
               }
 
               // Add authentication if required
@@ -1510,7 +1635,8 @@ const server = serve({
                   )
                 }
                 userOptions.authProtocol =
-                  authProtocolMap[user.authProtocol] || snmp.AuthProtocols.md5
+                  authProtocolMap[user.authProtocol || 'md5'] ||
+                  (snmp.AuthProtocols?.md5 ?? 1)
                 userOptions.authKey = user.authKey
               }
 
@@ -1526,7 +1652,8 @@ const server = serve({
                   )
                 }
                 userOptions.privProtocol =
-                  privProtocolMap[user.privProtocol] || snmp.PrivProtocols.des
+                  privProtocolMap[user.privProtocol || 'des'] ||
+                  (snmp.PrivProtocols?.des ?? 1)
                 userOptions.privKey = user.privKey
               }
 
@@ -1534,20 +1661,24 @@ const server = serve({
                 'Creating SNMPv3 session with user:',
                 userOptions.name
               )
-              session = snmp.createV3Session(target, userOptions)
+              session = snmp.createV3Session?.(target, userOptions)
             } else {
               // SNMPv1 or v2c
-              const versionMap = {
-                '1': snmp.Version1,
-                '2c': snmp.Version2c,
+              const versionMap: Record<string, number> = {
+                '1': snmp.Version1 ?? 0,
+                '2c': snmp.Version2c ?? 1,
               }
 
               console.log(`Creating SNMP session with community: ${community}`)
-              session = snmp.createSession(target, community, {
-                version: versionMap[version] || snmp.Version2c,
+              session = snmp.createSession?.(target, community, {
+                version: versionMap[version] || (snmp.Version2c ?? 1),
                 timeout: 3000,
                 retries: 1,
               })
+            }
+
+            if (!session) {
+              throw new Error('Failed to create SNMP session')
             }
 
             // Get basic system information
@@ -1560,30 +1691,33 @@ const server = serve({
               '1.3.6.1.2.1.1.6.0', // sysLocation
             ]
 
-            const mibs: any[] = []
+            const mibs: MIBObject[] = []
 
             // Perform SNMP get request with timeout
-            const varbinds: any = await Promise.race([
-              new Promise((resolve, reject) => {
-                session.get(systemOids, (error: any, varbinds: any) => {
-                  session.close()
+            const varbinds = await Promise.race([
+              new Promise<any[]>((resolve, reject) => {
+                // eslint-disable-line @typescript-eslint/no-explicit-any
+                session.get?.(systemOids, (error: any, varbinds: any) => {
+                  // eslint-disable-line @typescript-eslint/no-explicit-any
+                  session.close?.()
                   if (error) {
-                    reject(error)
+                    reject(new Error(error?.message || 'SNMP request failed'))
                   } else {
-                    resolve(varbinds)
+                    resolve(varbinds || [])
                   }
                 })
               }),
-              new Promise((_, reject) => {
+              new Promise<any[]>((_, reject) => {
+                // eslint-disable-line @typescript-eslint/no-explicit-any
                 setTimeout(() => {
-                  session.close()
+                  session.close?.()
                   reject(new Error('SNMP request timed out after 5 seconds'))
                 }, 5000)
               }),
             ])
 
             // Process varbinds
-            const oidNames = {
+            const oidNames: Record<string, string> = {
               '1.3.6.1.2.1.1.1.0': 'sysDescr',
               '1.3.6.1.2.1.1.2.0': 'sysObjectID',
               '1.3.6.1.2.1.1.3.0': 'sysUpTime',
@@ -1592,7 +1726,7 @@ const server = serve({
               '1.3.6.1.2.1.1.6.0': 'sysLocation',
             }
 
-            const oidDescriptions = {
+            const oidDescriptions: Record<string, string> = {
               '1.3.6.1.2.1.1.1.0': 'A textual description of the entity',
               '1.3.6.1.2.1.1.2.0':
                 "The vendor's authoritative identification of the network management subsystem",
@@ -1606,12 +1740,12 @@ const server = serve({
             }
 
             for (const varbind of varbinds) {
-              if (!snmp.isVarbindError(varbind)) {
+              if (varbind && !snmp.isVarbindError?.(varbind)) {
                 mibs.push({
-                  oid: varbind.oid,
+                  oid: varbind.oid || '',
                   name: oidNames[varbind.oid] || 'Unknown',
-                  value: varbind.value.toString(),
-                  type: varbind.type,
+                  value: varbind.value?.toString() || '',
+                  type: varbind.type || 0,
                   description: oidDescriptions[varbind.oid] || 'SNMP object',
                   hasChildren: false,
                 })
@@ -1667,13 +1801,14 @@ const server = serve({
             console.log('SNMP browse error:', error)
 
             // Provide detailed error information
-            let errorMessage = error.message
+            let errorMessage = getErrorMessage(error)
             let errorType = 'unknown'
             let suggestions: string[] = []
 
             if (
-              error.name === 'RequestTimedOutError' ||
-              error.message.includes('timed out')
+              (error instanceof Error &&
+                error.name === 'RequestTimedOutError') ||
+              errorMessage.includes('timed out')
             ) {
               errorType = 'timeout'
               errorMessage = 'SNMP request timed out'
@@ -1684,7 +1819,7 @@ const server = serve({
                 'Check if SNMP is running on port 161',
                 'Try a different SNMP version (v1 instead of v2c)',
               ]
-            } else if (error.message.includes('ECONNREFUSED')) {
+            } else if (errorMessage.includes('ECONNREFUSED')) {
               errorType = 'connection_refused'
               errorMessage = 'Connection refused - SNMP service not available'
               suggestions = [
@@ -1692,7 +1827,7 @@ const server = serve({
                 'Check if SNMP is enabled in device configuration',
                 'Verify firewall settings allow SNMP traffic on port 161',
               ]
-            } else if (error.message.includes('EHOSTUNREACH')) {
+            } else if (errorMessage.includes('EHOSTUNREACH')) {
               errorType = 'host_unreachable'
               errorMessage = 'Host unreachable'
               suggestions = [
@@ -1700,7 +1835,7 @@ const server = serve({
                 'Verify the IP address is correct',
                 'Check routing and firewall rules',
               ]
-            } else if (error.message.includes('Authentication')) {
+            } else if (errorMessage.includes('Authentication')) {
               errorType = 'authentication'
               errorMessage = 'SNMP authentication failed'
               suggestions = [
@@ -1718,7 +1853,7 @@ const server = serve({
               error: errorMessage,
               errorType: errorType,
               suggestions: suggestions,
-              rawError: error.toString(),
+              rawError: String(error),
             })
           }
         } catch (error) {
@@ -1734,7 +1869,7 @@ const server = serve({
       async POST(req) {
         console.log('=== SNMP WALK API REQUEST ===')
         try {
-          const body = await req.json()
+          const body = (await req.json()) as SNMPWalkRequest
           console.log('SNMP walk request body:', body)
           const {
             target,
@@ -1753,8 +1888,7 @@ const server = serve({
           }
 
           // Validate target (basic validation)
-          const targetRegex = /^[a-zA-Z0-9.-]+$/
-          if (!targetRegex.test(target)) {
+          if (!validateTarget(target)) {
             console.log('Error: Invalid target format:', target)
             return Response.json(
               { error: 'Invalid target format' },
@@ -1765,10 +1899,10 @@ const server = serve({
           console.log(`Starting SNMP walk for ${target}, OID: ${oid}`)
 
           try {
-            // Import net-snmp library
-            const snmp = require('net-snmp')
+            // Dynamic import for SNMP library
+            const snmp = await import('net-snmp')
 
-            let session: any
+            let session: any // eslint-disable-line @typescript-eslint/no-explicit-any
 
             // Create SNMP session based on version
             if (version === '3') {
@@ -1780,14 +1914,14 @@ const server = serve({
               }
 
               // Map security levels
-              const securityLevelMap: any = {
+              const securityLevelMap: Record<string, any> = {
                 noAuthNoPriv: snmp.SecurityLevel.noAuthNoPriv,
                 authNoPriv: snmp.SecurityLevel.authNoPriv,
                 authPriv: snmp.SecurityLevel.authPriv,
               }
 
               // Map auth protocols
-              const authProtocolMap: any = {
+              const authProtocolMap: Record<string, any> = {
                 md5: snmp.AuthProtocols.md5,
                 sha: snmp.AuthProtocols.sha,
                 sha224: snmp.AuthProtocols.sha224,
@@ -1797,7 +1931,7 @@ const server = serve({
               }
 
               // Map privacy protocols
-              const privProtocolMap: any = {
+              const privProtocolMap: Record<string, any> = {
                 des: snmp.PrivProtocols.des,
                 aes: snmp.PrivProtocols.aes,
                 aes256b: snmp.PrivProtocols.aes256b,
@@ -1805,6 +1939,7 @@ const server = serve({
               }
 
               const userOptions: any = {
+                // eslint-disable-line @typescript-eslint/no-explicit-any
                 name: user.name,
                 level:
                   securityLevelMap[user.level] ||
@@ -1823,7 +1958,8 @@ const server = serve({
                   )
                 }
                 userOptions.authProtocol =
-                  authProtocolMap[user.authProtocol] || snmp.AuthProtocols.md5
+                  authProtocolMap[user.authProtocol || 'md5'] ||
+                  snmp.AuthProtocols.md5
                 userOptions.authKey = user.authKey
               }
 
@@ -1839,7 +1975,8 @@ const server = serve({
                   )
                 }
                 userOptions.privProtocol =
-                  privProtocolMap[user.privProtocol] || snmp.PrivProtocols.des
+                  privProtocolMap[user.privProtocol || 'des'] ||
+                  snmp.PrivProtocols.des
                 userOptions.privKey = user.privKey
               }
 
@@ -1850,7 +1987,7 @@ const server = serve({
               session = snmp.createV3Session(target, userOptions)
             } else {
               // SNMPv1 or v2c
-              const versionMap: any = {
+              const versionMap: Record<string, any> = {
                 '1': snmp.Version1,
                 '2c': snmp.Version2c,
               }
@@ -1863,10 +2000,10 @@ const server = serve({
               })
             }
 
-            const results: any[] = []
+            const results: MIBObject[] = []
 
             // Perform SNMP subtree walk
-            const walkResults: any = await new Promise((resolve, reject) => {
+            await new Promise((resolve, reject) => {
               session.subtree(
                 oid,
                 20,
@@ -1912,7 +2049,7 @@ const server = serve({
               baseOid: oid,
               results: [],
               status: 'error',
-              error: error.message,
+              error: getErrorMessage(error),
             })
           }
         } catch (error) {
@@ -1930,7 +2067,7 @@ const server = serve({
   development: process.env.NODE_ENV !== 'production',
 
   // Fallback handler for routing
-  async fetch(req) {
+  fetch(req) {
     const url = new URL(req.url)
     const pathname = url.pathname
 
@@ -2051,6 +2188,15 @@ const server = serve({
       )
     }
 
+    // Handle ICMP network monitoring polling dashboard
+    if (pathname === '/network-administration/icmp/polling') {
+      return new Response(
+        Bun.file(
+          path.join(publicDir, 'network-administration/icmp/polling/index.html')
+        )
+      )
+    }
+
     // Handle ICMP polling templates path
     if (pathname === '/network-administration/icmp/polling/templates') {
       return new Response(
@@ -2058,18 +2204,6 @@ const server = serve({
           path.join(
             publicDir,
             'network-administration/icmp/polling/templates/index.html'
-          )
-        )
-      )
-    }
-
-    // Handle ICMP templates path
-    if (pathname === '/network-administration/icmp/templates') {
-      return new Response(
-        Bun.file(
-          path.join(
-            publicDir,
-            'network-administration/icmp/templates/index.html'
           )
         )
       )

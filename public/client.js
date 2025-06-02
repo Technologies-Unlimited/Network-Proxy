@@ -75,6 +75,12 @@ const App = () => {
           key: 'icmp',
           children: [
             {
+              title: 'Network Monitoring',
+              href: '/network-administration/icmp/polling',
+              description:
+                'Real-time ICMP network monitoring dashboard with continuous polling and alerts',
+            },
+            {
               title: 'Device Status',
               href: '/network-administration/icmp/polling/device-status',
               description:

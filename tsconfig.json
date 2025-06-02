@@ -12,7 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
-    "typeRoots": ["node_modules/@types"],
+    "typeRoots": ["node_modules/@types", "types"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
@@ -28,10 +28,13 @@
     ]
   },
   "include": [
+    "*.ts",
+    "*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
     ".next/types/**/*.ts",
-    "src/server.js"
+    "src/server.js",
+    "types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

@@ -3,17 +3,13 @@
  * This file starts the WebSocket server for real-time network monitoring data
  */
 
-import { startWebSocketServer } from './websockets/server'
-import { getDatabase } from './database/index'
+import { getDatabase } from './database'
 
 // Initialize the database
 getDatabase()
 
 // Define the port for the WebSocket server
 const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT) : 3001
-
-// Start the WebSocket server
-const server = startWebSocketServer(WS_PORT)
 
 // Handle graceful shutdown
 const handleShutdown = () => {

@@ -4,56 +4,6 @@
  */
 
 import { z } from 'zod'
-import { Database } from 'bun:sqlite'
-import crypto from 'crypto'
-import fs from 'node:fs'
-import path from 'node:path'
-
-let db: Database | null = null
-
-/**
- * Get or create the database instance
- */
-export function getDatabase(): Database {
-  if (!db) {
-    // Create database in the data directory
-    const dbPath = './data/network-proxy.db'
-
-    // Ensure data directory exists
-    const dataDir = path.dirname(dbPath)
-
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true })
-    }
-
-    db = new Database(dbPath)
-
-    // Enable foreign keys
-    db.exec('PRAGMA foreign_keys = ON')
-
-    console.log('Database initialized:', dbPath)
-  }
-
-  return db
-}
-
-/**
- * Generate a unique ID
- */
-export function generateId(): string {
-  return crypto.randomUUID()
-}
-
-/**
- * Close the database connection
- */
-export function closeDatabase(): void {
-  if (db) {
-    db.close()
-    db = null
-    console.log('Database closed')
-  }
-}
 
 // Monitor status enum
 export const MONITOR_STATUS = {

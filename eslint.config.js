@@ -44,9 +44,9 @@ for (const key of Object.keys(combinedGlobals)) {
 }
 
 export default [
-  // Ignore ESLint configuration file
+  // Ignore ESLint configuration file and app.ts
   {
-    ignores: ['eslint.config.js'],
+    ignores: ['eslint.config.js', 'app.ts'],
   },
 
   // 1) Merged plugin "recommended" rules (flat config doesn't use "extends")

@@ -8,6 +8,8 @@ import { getDatabase } from '@/database/index'
 import { handleICMPPollingStatusRequest } from '@/app/api/network-administration/icmp/polling/status/route'
 import { handleICMPPollingTemplatesRequest } from '@/app/api/network-administration/icmp/polling/templates/route'
 import { handleICMPTemplatesRequest } from '@/app/api/network-administration/icmp/templates/route'
+import { handleICMPMonitorsRequest } from '@/app/api/network-administration/icmp/monitors/route'
+import { handleICMPAlertsRequest } from '@/app/api/network-administration/icmp/alerts/route'
 import { handleIPAddressRequest } from '@/app/api/network-administration/ipam/ipaddress/route'
 import { handleIPPoolRequest } from '@/app/api/network-administration/ipam/pool/route'
 import { handleIPSubnetRequest } from '@/app/api/network-administration/ipam/subnet/route'
@@ -126,6 +128,22 @@ export function startWebSocketServer(port: number = 3001): Server {
       // Get the URL
       const url = new URL(req.url)
 
+      // Add CORS headers for all responses
+      const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Credentials': 'true',
+      }
+
+      // Handle preflight requests
+      if (req.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 200,
+          headers: corsHeaders,
+        })
+      }
+
       // Handle WebSocket upgrades
       if (url.pathname === '/ws') {
         const companyId = url.searchParams.get('companyId')
@@ -173,6 +191,20 @@ export function startWebSocketServer(port: number = 3001): Server {
             )
           ) {
             return handleICMPTemplatesRequest(req)
+          }
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/icmp/monitors'
+            )
+          ) {
+            return handleICMPMonitorsRequest(req)
+          }
+          if (
+            url.pathname.startsWith(
+              '/api/network-administration/icmp/alerts'
+            )
+          ) {
+            return handleICMPAlertsRequest(req)
           }
         }
 
@@ -257,12 +289,60 @@ export function startWebSocketServer(port: number = 3001): Server {
       if (url.pathname === '/health') {
         return new Response(JSON.stringify({ status: 'ok' }), {
           status: 200,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        })
+      }
+
+      // Handle direct ICMP monitor API endpoints (for frontend)
+      if (url.pathname.startsWith('/api/monitors')) {
+        const response = await handleICMPMonitorsRequest(req)
+        // Add CORS headers to the response
+        const headers = new Headers(response.headers)
+        Object.entries(corsHeaders).forEach(([key, value]) => {
+          headers.set(key, value)
+        })
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        })
+      }
+
+      // Handle ping API endpoint (for real ping tests)
+      if (url.pathname === '/api/ping') {
+        const response = await handleICMPMonitorsRequest(req)
+        // Add CORS headers to the response
+        const headers = new Headers(response.headers)
+        Object.entries(corsHeaders).forEach(([key, value]) => {
+          headers.set(key, value)
+        })
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        })
+      }
+
+      // Handle direct ICMP alerts API endpoints (for frontend)
+      if (url.pathname.startsWith('/api/alerts')) {
+        const response = await handleICMPAlertsRequest(req)
+        // Add CORS headers to the response
+        const headers = new Headers(response.headers)
+        Object.entries(corsHeaders).forEach(([key, value]) => {
+          headers.set(key, value)
+        })
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
         })
       }
 
       // Default response for unknown endpoints
-      return new Response('Not Found', { status: 404 })
+      return new Response('Not Found', { 
+        status: 404,
+        headers: corsHeaders,
+      })
     },
     websocket: {
       // Enable compression for better performance with network monitoring data
