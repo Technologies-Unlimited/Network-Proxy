@@ -30,7 +30,7 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
     authKey: '',
     privMethod: 'DES',
     privKey: '',
-    securityLevel: 'authPriv'
+    securityLevel: 'authPriv',
   })
 
   // Function to refresh data
@@ -124,16 +124,16 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
   }, [companyId])
 
   // Handle form input changes
-  const handleInputChange = (e) => {
+  const handleInputChange = e => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }))
   }
 
   // Handle form submission for creating/updating settings
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)
 
@@ -144,25 +144,25 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
       if (editMode && selectedSetting) {
         // Update existing setting
         if (activeTab === 'v2') {
-          setSnmpv2Settings(prev => 
-            prev.map(setting => 
-              setting.id === selectedSetting.id 
-                ? { 
-                    ...setting, 
+          setSnmpv2Settings(prev =>
+            prev.map(setting =>
+              setting.id === selectedSetting.id
+                ? {
+                    ...setting,
                     name: formData.communityName,
                     readCommunity: formData.readCommunity,
                     writeCommunity: formData.writeCommunity,
-                    updatedAt: Date.now() 
-                  } 
+                    updatedAt: Date.now(),
+                  }
                 : setting
             )
           )
         } else {
-          setSnmpv3Settings(prev => 
-            prev.map(setting => 
-              setting.id === selectedSetting.id 
-                ? { 
-                    ...setting, 
+          setSnmpv3Settings(prev =>
+            prev.map(setting =>
+              setting.id === selectedSetting.id
+                ? {
+                    ...setting,
                     name: formData.username,
                     username: formData.username,
                     securityLevel: formData.securityLevel,
@@ -170,8 +170,8 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
                     authKey: formData.authKey,
                     privMethod: formData.privMethod,
                     privKey: formData.privKey,
-                    updatedAt: Date.now() 
-                  } 
+                    updatedAt: Date.now(),
+                  }
                 : setting
             )
           )
@@ -179,7 +179,7 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
       } else {
         // Create new setting
         const newId = `snmpv${activeTab === 'v2' ? '2' : '3'}-${Date.now()}`
-        
+
         if (activeTab === 'v2') {
           const newSetting = {
             id: newId,
@@ -227,7 +227,7 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
   const handleSelectSetting = setting => {
     setSelectedSetting(setting)
     setEditMode(true)
-    
+
     if (activeTab === 'v2') {
       setFormData({
         communityName: setting.name,
@@ -239,7 +239,7 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
         authKey: '',
         privMethod: 'DES',
         privKey: '',
-        securityLevel: 'authPriv'
+        securityLevel: 'authPriv',
       })
     } else {
       setFormData({
@@ -253,7 +253,7 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
         authKey: setting.authKey,
         privMethod: setting.privMethod,
         privKey: setting.privKey,
-        securityLevel: setting.securityLevel
+        securityLevel: setting.securityLevel,
       })
     }
   }
@@ -269,20 +269,24 @@ function useSNMPSettingsData(companyId = 'default-company-id') {
       authKey: '',
       privMethod: 'DES',
       privKey: '',
-      securityLevel: 'authPriv'
+      securityLevel: 'authPriv',
     })
     setEditMode(false)
     setSelectedSetting(null)
   }
 
   // Handle delete setting
-  const handleDeleteSetting = (settingId) => {
+  const handleDeleteSetting = settingId => {
     if (activeTab === 'v2') {
-      setSnmpv2Settings(prev => prev.filter(setting => setting.id !== settingId))
+      setSnmpv2Settings(prev =>
+        prev.filter(setting => setting.id !== settingId)
+      )
     } else {
-      setSnmpv3Settings(prev => prev.filter(setting => setting.id !== settingId))
+      setSnmpv3Settings(prev =>
+        prev.filter(setting => setting.id !== settingId)
+      )
     }
-    
+
     if (selectedSetting && selectedSetting.id === settingId) {
       resetForm()
     }
@@ -331,7 +335,7 @@ const SNMPSettings = () => {
   } = useSNMPSettingsData()
 
   // Render loading state
-  if (loading && (!snmpv2Settings.length && !snmpv3Settings.length)) {
+  if (loading && !snmpv2Settings.length && !snmpv3Settings.length) {
     return h(
       'div',
       { style: { maxWidth: '1200px', margin: '0 auto', padding: '16px' } },
@@ -639,7 +643,8 @@ const SNMPSettings = () => {
                 'tbody',
                 null,
                 // Show appropriate settings based on active tab
-                (activeTab === 'v2' ? snmpv2Settings : snmpv3Settings).length === 0
+                (activeTab === 'v2' ? snmpv2Settings : snmpv3Settings)
+                  .length === 0
                   ? h(
                       'tr',
                       null,
@@ -657,90 +662,94 @@ const SNMPSettings = () => {
                         `No SNMP${activeTab} settings available`
                       )
                     )
-                  : (activeTab === 'v2' ? snmpv2Settings : snmpv3Settings).map(setting => {
-                      return h(
-                        'tr',
-                        {
-                          key: setting.id,
-                          onClick: () => handleSelectSetting(setting),
-                          style: {
-                            cursor: 'pointer',
-                            backgroundColor:
-                              selectedSetting?.id === setting.id
-                                ? '#e3f2fd'
-                                : 'transparent',
-                            borderBottom: '1px solid #eee',
-                          },
-                          onMouseOver: e => {
-                            if (selectedSetting?.id !== setting.id) {
-                              e.target.closest('tr').style.backgroundColor =
-                                '#f5f5f5'
-                            }
-                          },
-                          onMouseOut: e => {
-                            if (selectedSetting?.id !== setting.id) {
-                              e.target.closest('tr').style.backgroundColor =
-                                'transparent'
-                            }
-                          },
-                        },
-                        h(
-                          'td',
-                          { style: { padding: '12px' } },
-                          setting.name
-                        ),
-                        // Conditional columns based on active tab
-                        activeTab === 'v2'
-                          ? [
-                              h(
-                                'td',
-                                { key: 'read', style: { padding: '12px' } },
-                                setting.readCommunity || '-'
-                              ),
-                              h(
-                                'td',
-                                { key: 'write', style: { padding: '12px' } },
-                                setting.writeCommunity || '-'
-                              ),
-                            ]
-                          : [
-                              h(
-                                'td',
-                                { key: 'username', style: { padding: '12px' } },
-                                setting.username
-                              ),
-                              h(
-                                'td',
-                                { key: 'security', style: { padding: '12px' } },
-                                setting.securityLevel
-                              ),
-                            ],
-                        // Actions column
-                        h(
-                          'td',
-                          { style: { padding: '12px' } },
-                          h(
-                            'button',
-                            {
-                              onClick: e => {
-                                e.stopPropagation()
-                                handleDeleteSetting(setting.id)
-                              },
-                              style: {
-                                padding: '4px 8px',
-                                backgroundColor: '#f44336',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                              },
+                  : (activeTab === 'v2' ? snmpv2Settings : snmpv3Settings).map(
+                      setting => {
+                        return h(
+                          'tr',
+                          {
+                            key: setting.id,
+                            onClick: () => handleSelectSetting(setting),
+                            style: {
+                              cursor: 'pointer',
+                              backgroundColor:
+                                selectedSetting?.id === setting.id
+                                  ? '#e3f2fd'
+                                  : 'transparent',
+                              borderBottom: '1px solid #eee',
                             },
-                            '🗑️ Delete'
+                            onMouseOver: e => {
+                              if (selectedSetting?.id !== setting.id) {
+                                e.target.closest('tr').style.backgroundColor =
+                                  '#f5f5f5'
+                              }
+                            },
+                            onMouseOut: e => {
+                              if (selectedSetting?.id !== setting.id) {
+                                e.target.closest('tr').style.backgroundColor =
+                                  'transparent'
+                              }
+                            },
+                          },
+                          h('td', { style: { padding: '12px' } }, setting.name),
+                          // Conditional columns based on active tab
+                          activeTab === 'v2'
+                            ? [
+                                h(
+                                  'td',
+                                  { key: 'read', style: { padding: '12px' } },
+                                  setting.readCommunity || '-'
+                                ),
+                                h(
+                                  'td',
+                                  { key: 'write', style: { padding: '12px' } },
+                                  setting.writeCommunity || '-'
+                                ),
+                              ]
+                            : [
+                                h(
+                                  'td',
+                                  {
+                                    key: 'username',
+                                    style: { padding: '12px' },
+                                  },
+                                  setting.username
+                                ),
+                                h(
+                                  'td',
+                                  {
+                                    key: 'security',
+                                    style: { padding: '12px' },
+                                  },
+                                  setting.securityLevel
+                                ),
+                              ],
+                          // Actions column
+                          h(
+                            'td',
+                            { style: { padding: '12px' } },
+                            h(
+                              'button',
+                              {
+                                onClick: e => {
+                                  e.stopPropagation()
+                                  handleDeleteSetting(setting.id)
+                                },
+                                style: {
+                                  padding: '4px 8px',
+                                  backgroundColor: '#f44336',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                },
+                              },
+                              '🗑️ Delete'
+                            )
                           )
                         )
-                      )
-                    })
+                      }
+                    )
               )
             )
           )
@@ -763,9 +772,11 @@ const SNMPSettings = () => {
           },
           h(
             'h2',
-            { style: { margin: '0 0 16px 0', fontSize: '18px', color: '#333' } },
-            editMode 
-              ? `Edit ${activeTab === 'v2' ? 'SNMPv2' : 'SNMPv3'} Setting` 
+            {
+              style: { margin: '0 0 16px 0', fontSize: '18px', color: '#333' },
+            },
+            editMode
+              ? `Edit ${activeTab === 'v2' ? 'SNMPv2' : 'SNMPv3'} Setting`
               : `Add New ${activeTab === 'v2' ? 'SNMPv2' : 'SNMPv3'} Setting`
           ),
           h(
@@ -941,8 +952,16 @@ const SNMPSettings = () => {
                       fontSize: '14px',
                     },
                   },
-                  h('option', { value: 'noAuthNoPriv' }, 'No Auth, No Privacy (noAuthNoPriv)'),
-                  h('option', { value: 'authNoPriv' }, 'Auth, No Privacy (authNoPriv)'),
+                  h(
+                    'option',
+                    { value: 'noAuthNoPriv' },
+                    'No Auth, No Privacy (noAuthNoPriv)'
+                  ),
+                  h(
+                    'option',
+                    { value: 'authNoPriv' },
+                    'Auth, No Privacy (authNoPriv)'
+                  ),
                   h('option', { value: 'authPriv' }, 'Auth, Privacy (authPriv)')
                 )
               ),
@@ -1107,7 +1126,9 @@ const SNMPSettings = () => {
                     fontWeight: 'bold',
                   },
                 },
-                loading ? 'Saving...' : (editMode ? 'Update' : 'Add') + ' Setting'
+                loading
+                  ? 'Saving...'
+                  : (editMode ? 'Update' : 'Add') + ' Setting'
               ),
               h(
                 'button',

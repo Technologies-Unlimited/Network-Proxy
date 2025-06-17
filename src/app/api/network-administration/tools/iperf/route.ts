@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { runIperfTest } from '../../../../../services/iperf';
+import { NextRequest, NextResponse } from 'next/server'
+import { runIperfTest } from '../../../../../services/iperf'
 
 /**
  * Handle iperf3 test requests
@@ -7,17 +7,23 @@ import { runIperfTest } from '../../../../../services/iperf';
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    
+    const body = await request.json()
+
     // Validate input
     if (!body.sourceServerId) {
-      return NextResponse.json({ success: false, message: 'Source server ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: 'Source server ID is required' },
+        { status: 400 }
+      )
     }
-    
+
     if (!body.destinationServerId) {
-      return NextResponse.json({ success: false, message: 'Destination server ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: 'Destination server ID is required' },
+        { status: 400 }
+      )
     }
-    
+
     // Run the test
     const result = await runIperfTest({
       sourceServerId: body.sourceServerId,
@@ -27,15 +33,18 @@ export async function POST(request: NextRequest) {
       parallel: body.parallel || 1,
       windowSize: body.windowSize || 128,
       port: body.port || 5201,
-    });
-    
-    return NextResponse.json({ success: true, result });
+    })
+
+    return NextResponse.json({ success: true, result })
   } catch (error) {
-    console.error('Error running iperf test:', error);
+    console.error('Error running iperf test:', error)
     return NextResponse.json(
-      { success: false, message: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
-    );
+    )
   }
 }
 
@@ -45,15 +54,19 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     // This could be expanded to retrieve test history from a database
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Iperf test history feature will be implemented in a future update'
-    });
+    return NextResponse.json({
+      success: true,
+      message:
+        'Iperf test history feature will be implemented in a future update',
+    })
   } catch (error) {
-    console.error('Error getting iperf test history:', error);
+    console.error('Error getting iperf test history:', error)
     return NextResponse.json(
-      { success: false, message: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
-    );
+    )
   }
 }

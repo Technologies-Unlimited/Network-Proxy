@@ -101,7 +101,7 @@ export class ICMPMonitorRepository {
   initTables(): void {
     // Create dependency tables first
     this.createDependencyTables()
-    
+
     // Execute the schema creation SQL
     this.db.run(icmpMonitorTableSchema)
     this.db.run(icmpMonitorHistoryTableSchema)
@@ -144,22 +144,30 @@ export class ICMPMonitorRepository {
     `)
 
     // Insert default company if it doesn't exist
-    const defaultCompanyExists = this.db.query(`
+    const defaultCompanyExists = this.db
+      .query(
+        `
       SELECT COUNT(*) as count FROM companies WHERE _id = ?
-    `).get('default-company-id') as { count: number }
+    `
+      )
+      .get('default-company-id') as { count: number }
 
     if (defaultCompanyExists.count === 0) {
       const now = Date.now()
-      this.db.query(`
+      this.db
+        .query(
+          `
         INSERT INTO companies (_id, name, description, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?)
-      `).run(
-        'default-company-id',
-        'Default Company',
-        'Default company for ICMP monitoring',
-        now,
-        now
-      )
+      `
+        )
+        .run(
+          'default-company-id',
+          'Default Company',
+          'Default company for ICMP monitoring',
+          now,
+          now
+        )
     }
   }
 

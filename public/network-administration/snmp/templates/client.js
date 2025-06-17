@@ -215,38 +215,38 @@ function useSNMPTemplatesData(companyId = 'default-company-id') {
   }, [companyId])
 
   // Handle form input changes
-  const handleInputChange = (e) => {
+  const handleInputChange = e => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }))
 
     // Reset SNMP settings if version changes
     if (name === 'version') {
       setFormData(prev => ({
         ...prev,
-        snmpSettingId: ''
+        snmpSettingId: '',
       }))
     }
   }
 
   // Handle OID selection changes
-  const handleOidChange = (oidId) => {
+  const handleOidChange = oidId => {
     setFormData(prev => {
       const newOidIds = prev.oidIds.includes(oidId)
         ? prev.oidIds.filter(id => id !== oidId) // Remove if already exists
         : [...prev.oidIds, oidId] // Add if doesn't exist
-      
+
       return {
         ...prev,
-        oidIds: newOidIds
+        oidIds: newOidIds,
       }
     })
   }
 
   // Handle form submission for creating/updating templates
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)
 
@@ -256,11 +256,11 @@ function useSNMPTemplatesData(companyId = 'default-company-id') {
 
       if (editMode && selectedTemplate) {
         // Update existing template
-        setTemplates(prev => 
-          prev.map(template => 
-            template.id === selectedTemplate.id 
-              ? { 
-                  ...template, 
+        setTemplates(prev =>
+          prev.map(template =>
+            template.id === selectedTemplate.id
+              ? {
+                  ...template,
                   name: formData.name,
                   description: formData.description,
                   version: formData.version,
@@ -268,8 +268,8 @@ function useSNMPTemplatesData(companyId = 'default-company-id') {
                   manufacturerId: formData.manufacturerId,
                   modelId: formData.modelId,
                   oidIds: formData.oidIds,
-                  updatedAt: Date.now() 
-                } 
+                  updatedAt: Date.now(),
+                }
               : template
           )
         )
@@ -309,7 +309,7 @@ function useSNMPTemplatesData(companyId = 'default-company-id') {
     setSelectedTemplate(template)
     setEditMode(true)
     setActiveTab(template.version)
-    
+
     setFormData({
       name: template.name,
       description: template.description,
@@ -337,21 +337,28 @@ function useSNMPTemplatesData(companyId = 'default-company-id') {
   }
 
   // Handle delete template
-  const handleDeleteTemplate = (templateId) => {
+  const handleDeleteTemplate = templateId => {
     setTemplates(prev => prev.filter(template => template.id !== templateId))
-    
+
     if (selectedTemplate && selectedTemplate.id === templateId) {
       resetForm()
     }
   }
 
   // Filter templates based on search term and active tab
-  const filteredTemplates = templates.filter(template => 
-    (activeTab === 'all' || template.version === activeTab) &&
-    (template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     template.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     manufacturers.find(m => m.id === template.manufacturerId)?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     models.find(m => m.id === template.modelId)?.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredTemplates = templates.filter(
+    template =>
+      (activeTab === 'all' || template.version === activeTab) &&
+      (template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        manufacturers
+          .find(m => m.id === template.manufacturerId)
+          ?.name.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        models
+          .find(m => m.id === template.modelId)
+          ?.name.toLowerCase()
+          .includes(searchTerm.toLowerCase()))
   )
 
   return {
@@ -609,18 +616,18 @@ const SNMPTemplates = () => {
       ),
       h(
         'div',
-        { 
-          style: { 
+        {
+          style: {
             padding: '16px 0',
             display: 'flex',
-            justifyContent: 'flex-end'
-          } 
+            justifyContent: 'flex-end',
+          },
         },
         h('input', {
           type: 'text',
           placeholder: 'Search templates...',
           value: searchTerm,
-          onChange: (e) => setSearchTerm(e.target.value),
+          onChange: e => setSearchTerm(e.target.value),
           style: {
             width: '300px',
             padding: '8px 12px',
@@ -662,8 +669,8 @@ const SNMPTemplates = () => {
             h(
               'h2',
               { style: { margin: '0', fontSize: '18px', color: '#333' } },
-              activeTab === 'all' 
-                ? 'All SNMP Templates' 
+              activeTab === 'all'
+                ? 'All SNMP Templates'
                 : `${activeTab === 'v2' ? 'SNMPv2' : 'SNMPv3'} Templates`
             )
           ),
@@ -708,18 +715,19 @@ const SNMPTemplates = () => {
                     },
                     'Manufacturer'
                   ),
-                  activeTab === 'all' && h(
-                    'th',
-                    {
-                      style: {
-                        padding: '12px',
-                        textAlign: 'left',
-                        borderBottom: '1px solid #ddd',
-                        fontWeight: 'bold',
+                  activeTab === 'all' &&
+                    h(
+                      'th',
+                      {
+                        style: {
+                          padding: '12px',
+                          textAlign: 'left',
+                          borderBottom: '1px solid #ddd',
+                          fontWeight: 'bold',
+                        },
                       },
-                    },
-                    'Version'
-                  ),
+                      'Version'
+                    ),
                   h(
                     'th',
                     {
@@ -753,14 +761,16 @@ const SNMPTemplates = () => {
                             fontStyle: 'italic',
                           },
                         },
-                        searchTerm 
-                          ? 'No templates match your search criteria' 
+                        searchTerm
+                          ? 'No templates match your search criteria'
                           : `No ${activeTab === 'all' ? '' : activeTab + ' '}SNMP templates available`
                       )
                     )
                   : templates.map(template => {
-                      const manufacturer = manufacturers.find(m => m.id === template.manufacturerId)
-                      
+                      const manufacturer = manufacturers.find(
+                        m => m.id === template.manufacturerId
+                      )
+
                       return h(
                         'tr',
                         {
@@ -787,33 +797,33 @@ const SNMPTemplates = () => {
                             }
                           },
                         },
-                        h(
-                          'td',
-                          { style: { padding: '12px' } },
-                          template.name
-                        ),
+                        h('td', { style: { padding: '12px' } }, template.name),
                         h(
                           'td',
                           { style: { padding: '12px' } },
                           manufacturer ? manufacturer.name : 'Unknown'
                         ),
-                        activeTab === 'all' && h(
-                          'td',
-                          { style: { padding: '12px' } },
+                        activeTab === 'all' &&
                           h(
-                            'span',
-                            {
-                              style: {
-                                padding: '4px 8px',
-                                borderRadius: '12px',
-                                fontSize: '12px',
-                                backgroundColor: template.version === 'v2' ? '#1976d2' : '#7b1fa2',
-                                color: 'white',
+                            'td',
+                            { style: { padding: '12px' } },
+                            h(
+                              'span',
+                              {
+                                style: {
+                                  padding: '4px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '12px',
+                                  backgroundColor:
+                                    template.version === 'v2'
+                                      ? '#1976d2'
+                                      : '#7b1fa2',
+                                  color: 'white',
+                                },
                               },
-                            },
-                            template.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
-                          )
-                        ),
+                              template.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
+                            )
+                          ),
                         // Actions column
                         h(
                           'td',
@@ -845,108 +855,151 @@ const SNMPTemplates = () => {
           )
         ),
         // Template Details when selected
-        selectedTemplate && h(
-          'div',
-          {
-            style: {
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              padding: '24px',
-              marginTop: '24px',
+        selectedTemplate &&
+          h(
+            'div',
+            {
+              style: {
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                padding: '24px',
+                marginTop: '24px',
+              },
             },
-          },
-          h(
-            'h3',
-            { style: { margin: '0 0 16px 0', color: '#333' } },
-            'Template Details'
-          ),
-          h(
-            'div',
-            { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' } },
+            h(
+              'h3',
+              { style: { margin: '0 0 16px 0', color: '#333' } },
+              'Template Details'
+            ),
             h(
               'div',
-              null,
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Name: '), 
-                selectedTemplate.name
-              ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Version: '), 
+              {
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                },
+              },
+              h(
+                'div',
+                null,
                 h(
-                  'span',
-                  {
-                    style: {
-                      padding: '4px 8px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      backgroundColor: selectedTemplate.version === 'v2' ? '#1976d2' : '#7b1fa2',
-                      color: 'white',
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Name: '),
+                  selectedTemplate.name
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Version: '),
+                  h(
+                    'span',
+                    {
+                      style: {
+                        padding: '4px 8px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        backgroundColor:
+                          selectedTemplate.version === 'v2'
+                            ? '#1976d2'
+                            : '#7b1fa2',
+                        color: 'white',
+                      },
                     },
-                  },
-                  selectedTemplate.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
+                    selectedTemplate.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
+                  )
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Manufacturer: '),
+                  manufacturers.find(
+                    m => m.id === selectedTemplate.manufacturerId
+                  )?.name || 'Unknown'
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Model: '),
+                  models.find(m => m.id === selectedTemplate.modelId)?.name ||
+                    'Unknown'
                 )
               ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Manufacturer: '), 
-                manufacturers.find(m => m.id === selectedTemplate.manufacturerId)?.name || 'Unknown'
-              ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Model: '), 
-                models.find(m => m.id === selectedTemplate.modelId)?.name || 'Unknown'
+              h(
+                'div',
+                null,
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'SNMP Setting: '),
+                  selectedTemplate.version === 'v2'
+                    ? snmpv2Settings.find(
+                        s => s.id === selectedTemplate.snmpSettingId
+                      )?.name || 'Unknown'
+                    : snmpv3Settings.find(
+                        s => s.id === selectedTemplate.snmpSettingId
+                      )?.name || 'Unknown'
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'OIDs Count: '),
+                  selectedTemplate.oidIds.length
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Created: '),
+                  new Date(selectedTemplate.createdAt).toLocaleString()
+                )
               )
             ),
             h(
               'div',
-              null,
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'SNMP Setting: '), 
-                selectedTemplate.version === 'v2'
-                  ? snmpv2Settings.find(s => s.id === selectedTemplate.snmpSettingId)?.name || 'Unknown'
-                  : snmpv3Settings.find(s => s.id === selectedTemplate.snmpSettingId)?.name || 'Unknown'
+              { style: { marginTop: '16px' } },
+              h(
+                'p',
+                { style: { margin: '0 0 8px 0' } },
+                h('strong', null, 'Description: ')
               ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'OIDs Count: '), 
-                selectedTemplate.oidIds.length
-              ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Created: '), 
-                new Date(selectedTemplate.createdAt).toLocaleString()
-              )
-            )
-          ),
-          h(
-            'div',
-            { style: { marginTop: '16px' } },
-            h('p', { style: { margin: '0 0 8px 0' } }, 
-              h('strong', null, 'Description: ')
-            ),
-            h('p', { style: { margin: '0 0 16px 0', fontSize: '14px', lineHeight: '1.5' } }, 
-              selectedTemplate.description || 'No description available'
-            ),
-            h('p', { style: { margin: '0 0 8px 0' } }, 
-              h('strong', null, 'Monitored OIDs: ')
-            ),
-            h(
-              'ul',
-              { style: { margin: '0', paddingLeft: '20px' } },
-              selectedTemplate.oidIds.map(oidId => {
-                const oid = oids.find(o => o.id === oidId)
-                return h(
-                  'li',
-                  { 
-                    key: oidId,
-                    style: { 
-                      margin: '0 0 4px 0',
-                      fontSize: '14px'
-                    } 
+              h(
+                'p',
+                {
+                  style: {
+                    margin: '0 0 16px 0',
+                    fontSize: '14px',
+                    lineHeight: '1.5',
                   },
-                  oid ? `${oid.name} (${oid.oid})` : 'Unknown OID'
-                )
-              })
+                },
+                selectedTemplate.description || 'No description available'
+              ),
+              h(
+                'p',
+                { style: { margin: '0 0 8px 0' } },
+                h('strong', null, 'Monitored OIDs: ')
+              ),
+              h(
+                'ul',
+                { style: { margin: '0', paddingLeft: '20px' } },
+                selectedTemplate.oidIds.map(oidId => {
+                  const oid = oids.find(o => o.id === oidId)
+                  return h(
+                    'li',
+                    {
+                      key: oidId,
+                      style: {
+                        margin: '0 0 4px 0',
+                        fontSize: '14px',
+                      },
+                    },
+                    oid ? `${oid.name} (${oid.oid})` : 'Unknown OID'
+                  )
+                })
+              )
             )
           )
-        )
       ),
 
       // Right column - Add/Edit form
@@ -965,9 +1018,11 @@ const SNMPTemplates = () => {
           },
           h(
             'h2',
-            { style: { margin: '0 0 16px 0', fontSize: '18px', color: '#333' } },
-            editMode 
-              ? `Edit ${formData.version === 'v2' ? 'SNMPv2' : 'SNMPv3'} Template` 
+            {
+              style: { margin: '0 0 16px 0', fontSize: '18px', color: '#333' },
+            },
+            editMode
+              ? `Edit ${formData.version === 'v2' ? 'SNMPv2' : 'SNMPv3'} Template`
               : `Add New ${formData.version === 'v2' ? 'SNMPv2' : 'SNMPv3'} Template`
           ),
           h(
@@ -1112,8 +1167,15 @@ const SNMPTemplates = () => {
                   },
                 },
                 h('option', { value: '' }, '-- Select SNMP Setting --'),
-                (formData.version === 'v2' ? snmpv2Settings : snmpv3Settings).map(setting => 
-                  h('option', { key: setting.id, value: setting.id }, setting.name)
+                (formData.version === 'v2'
+                  ? snmpv2Settings
+                  : snmpv3Settings
+                ).map(setting =>
+                  h(
+                    'option',
+                    { key: setting.id, value: setting.id },
+                    setting.name
+                  )
                 )
               )
             ),
@@ -1151,8 +1213,12 @@ const SNMPTemplates = () => {
                   },
                 },
                 h('option', { value: '' }, '-- Select Manufacturer --'),
-                manufacturers.map(manufacturer => 
-                  h('option', { key: manufacturer.id, value: manufacturer.id }, manufacturer.name)
+                manufacturers.map(manufacturer =>
+                  h(
+                    'option',
+                    { key: manufacturer.id, value: manufacturer.id },
+                    manufacturer.name
+                  )
                 )
               )
             ),
@@ -1190,7 +1256,7 @@ const SNMPTemplates = () => {
                   },
                 },
                 h('option', { value: '' }, '-- Select Model --'),
-                models.map(model => 
+                models.map(model =>
                   h('option', { key: model.id, value: model.id }, model.name)
                 )
               )
@@ -1213,45 +1279,82 @@ const SNMPTemplates = () => {
               ),
               h(
                 'div',
-                { 
-                  style: { 
+                {
+                  style: {
                     border: '1px solid #ddd',
                     borderRadius: '4px',
                     maxHeight: '200px',
                     overflowY: 'auto',
                     padding: '8px',
-                  } 
+                  },
                 },
-                oids.length === 0 
-                  ? h('p', { style: { margin: '8px', color: '#666', fontStyle: 'italic' } }, 'No OIDs available')
-                  : oids.map(oid => 
+                oids.length === 0
+                  ? h(
+                      'p',
+                      {
+                        style: {
+                          margin: '8px',
+                          color: '#666',
+                          fontStyle: 'italic',
+                        },
+                      },
+                      'No OIDs available'
+                    )
+                  : oids.map(oid =>
                       h(
                         'div',
-                        { 
+                        {
                           key: oid.id,
-                          style: { 
+                          style: {
                             margin: '4px 0',
                             padding: '6px',
-                            backgroundColor: formData.oidIds.includes(oid.id) ? '#e3f2fd' : 'transparent',
+                            backgroundColor: formData.oidIds.includes(oid.id)
+                              ? '#e3f2fd'
+                              : 'transparent',
                             borderRadius: '4px',
                             cursor: 'pointer',
                           },
-                          onClick: () => handleOidChange(oid.id)
+                          onClick: () => handleOidChange(oid.id),
                         },
                         h(
                           'label',
-                          { style: { display: 'flex', alignItems: 'center', cursor: 'pointer' } },
+                          {
+                            style: {
+                              display: 'flex',
+                              alignItems: 'center',
+                              cursor: 'pointer',
+                            },
+                          },
                           h('input', {
                             type: 'checkbox',
                             checked: formData.oidIds.includes(oid.id),
                             onChange: () => handleOidChange(oid.id),
-                            style: { marginRight: '8px' }
+                            style: { marginRight: '8px' },
                           }),
-                          h('span', null, 
-                            h('strong', null, oid.name), 
-                            h('br'), 
-                            h('span', { style: { fontSize: '12px', fontFamily: 'monospace' } }, oid.oid),
-                            h('span', { style: { fontSize: '12px', marginLeft: '8px', color: '#666' } }, 
+                          h(
+                            'span',
+                            null,
+                            h('strong', null, oid.name),
+                            h('br'),
+                            h(
+                              'span',
+                              {
+                                style: {
+                                  fontSize: '12px',
+                                  fontFamily: 'monospace',
+                                },
+                              },
+                              oid.oid
+                            ),
+                            h(
+                              'span',
+                              {
+                                style: {
+                                  fontSize: '12px',
+                                  marginLeft: '8px',
+                                  color: '#666',
+                                },
+                              },
                               `(${oid.category})`
                             )
                           )
@@ -1259,11 +1362,18 @@ const SNMPTemplates = () => {
                       )
                     )
               ),
-              formData.oidIds.length === 0 && h(
-                'p', 
-                { style: { color: '#f44336', fontSize: '12px', margin: '4px 0 0 0' } },
-                'At least one OID must be selected'
-              )
+              formData.oidIds.length === 0 &&
+                h(
+                  'p',
+                  {
+                    style: {
+                      color: '#f44336',
+                      fontSize: '12px',
+                      margin: '4px 0 0 0',
+                    },
+                  },
+                  'At least one OID must be selected'
+                )
             ),
 
             // Form buttons
@@ -1277,15 +1387,19 @@ const SNMPTemplates = () => {
                   disabled: formData.oidIds.length === 0,
                   style: {
                     padding: '10px 16px',
-                    backgroundColor: formData.oidIds.length === 0 ? '#cccccc' : '#4caf50',
+                    backgroundColor:
+                      formData.oidIds.length === 0 ? '#cccccc' : '#4caf50',
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
-                    cursor: formData.oidIds.length === 0 ? 'not-allowed' : 'pointer',
+                    cursor:
+                      formData.oidIds.length === 0 ? 'not-allowed' : 'pointer',
                     fontWeight: 'bold',
                   },
                 },
-                loading ? 'Saving...' : (editMode ? 'Update' : 'Add') + ' Template'
+                loading
+                  ? 'Saving...'
+                  : (editMode ? 'Update' : 'Add') + ' Template'
               ),
               h(
                 'button',

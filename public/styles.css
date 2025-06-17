@@ -21,8 +21,17 @@
  */
 
 body {
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu,
-    Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family:
+    'Roboto',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Open Sans',
+    'Helvetica Neue',
+    sans-serif;
   line-height: 1.6;
   color: #2c1608;
   background-color: #f8f0dd;
@@ -59,7 +68,12 @@ body {
 }
 
 /* Typography */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: 'Cinzel', serif;
   font-weight: 700;
   margin-bottom: 1rem;
@@ -106,7 +120,8 @@ nav {
   position: relative;
 }
 
-nav::before, nav::after {
+nav::before,
+nav::after {
   content: '☥';
   font-size: 24px;
   color: #d4af37;
@@ -162,7 +177,8 @@ nav a:hover::after {
 }
 
 /* Buttons and interactive elements */
-button, .button {
+button,
+.button {
   background-color: #1f4e5f;
   color: #f8f0dd;
   border: 1px solid #d4af37;
@@ -176,23 +192,31 @@ button, .button {
   overflow: hidden;
 }
 
-button:hover, .button:hover {
+button:hover,
+.button:hover {
   background-color: #d4af37;
   color: #1f4e5f;
 }
 
-button:before, .button:before {
+button:before,
+.button:before {
   content: '';
   position: absolute;
   top: 0;
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
   transition: all 0.5s ease;
 }
 
-button:hover:before, .button:hover:before {
+button:hover:before,
+.button:hover:before {
   left: 100%;
 }
 
@@ -204,7 +228,9 @@ button:hover:before, .button:hover:before {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
   border-left: 4px solid #d4af37;
   margin-bottom: 1.5rem;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .card:hover {
@@ -213,7 +239,9 @@ button:hover:before, .button:hover:before {
 }
 
 /* Form elements */
-input, select, textarea {
+input,
+select,
+textarea {
   width: 100%;
   padding: 0.75rem;
   margin-bottom: 1rem;
@@ -225,7 +253,9 @@ input, select, textarea {
   transition: all 0.3s ease;
 }
 
-input:focus, select:focus, textarea:focus {
+input:focus,
+select:focus,
+textarea:focus {
   outline: none;
   border-color: #1f4e5f;
   box-shadow: 0 0 0 2px rgba(31, 78, 95, 0.2);
@@ -258,7 +288,7 @@ footer::before {
   h1 {
     font-size: 2.2rem;
   }
-  
+
   nav ul {
     flex-direction: column;
     align-items: center;

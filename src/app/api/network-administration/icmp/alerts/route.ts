@@ -38,11 +38,11 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
           // Filter by company by checking monitor ownership
           const monitors = repository.getMonitorsForCompany(companyId)
           const monitorIds = new Set(monitors.map(m => m._id))
-          
-          const companyAlerts = alerts.filter(alert => 
+
+          const companyAlerts = alerts.filter(alert =>
             monitorIds.has(alert.monitorId)
           )
-          
+
           return new Response(JSON.stringify(companyAlerts), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
@@ -65,7 +65,7 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
       if (method === 'POST') {
         try {
           const body = await req.json()
-          
+
           // Verify the monitor belongs to the company
           const monitor = repository.getMonitorById(body.monitorId, companyId)
           if (!monitor) {
@@ -91,9 +91,9 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
             threshold: body.threshold,
             notificationsSent: [],
           }
-          
+
           const newAlert = repository.createAlertHistory(alertData)
-          
+
           return new Response(JSON.stringify(newAlert), {
             status: 201,
             headers: { 'Content-Type': 'application/json' },
@@ -102,7 +102,10 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
           console.error('Error creating alert:', error)
           return new Response(
             JSON.stringify({
-              error: error instanceof Error ? error.message : 'Failed to create alert',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to create alert',
             }),
             {
               status: 400,
@@ -122,14 +125,14 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
       if (method === 'PUT') {
         try {
           const body = await req.json()
-          
+
           let success = false
-          
+
           if (body.status === 'resolved') {
             // Resolve the alert
             success = repository.resolveAlert(alertId)
           }
-          
+
           if (!success) {
             return new Response(
               JSON.stringify({
@@ -156,7 +159,10 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
           console.error('Error updating alert:', error)
           return new Response(
             JSON.stringify({
-              error: error instanceof Error ? error.message : 'Failed to update alert',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to update alert',
             }),
             {
               status: 400,
@@ -177,7 +183,6 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
         headers: { 'Content-Type': 'application/json' },
       }
     )
-
   } catch (error) {
     console.error('ICMP Alerts API error:', error)
     return new Response(
@@ -190,4 +195,4 @@ export async function handleICMPAlertsRequest(req: Request): Promise<Response> {
       }
     )
   }
-} 
+}

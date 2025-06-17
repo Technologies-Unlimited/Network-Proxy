@@ -27,7 +27,7 @@ function useSNMPPollingTemplatesData(companyId = 'default-company-id') {
     timeout: 5,
     retries: 3,
     downTrigger: 3,
-    snmpTemplateIds: []
+    snmpTemplateIds: [],
   })
 
   // Function to refresh data
@@ -126,40 +126,44 @@ function useSNMPPollingTemplatesData(companyId = 'default-company-id') {
   }, [companyId])
 
   // Handle form input changes
-  const handleInputChange = (e) => {
+  const handleInputChange = e => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'frequency' || name === 'timeout' || name === 'retries' || name === 'downTrigger'
-        ? parseInt(value, 10)
-        : value
+      [name]:
+        name === 'frequency' ||
+        name === 'timeout' ||
+        name === 'retries' ||
+        name === 'downTrigger'
+          ? parseInt(value, 10)
+          : value,
     }))
 
     // Reset SNMP templates selection if version changes
     if (name === 'version') {
       setFormData(prev => ({
         ...prev,
-        snmpTemplateIds: []
+        snmpTemplateIds: [],
       }))
     }
   }
 
   // Handle SNMP template selection changes
-  const handleTemplateChange = (templateId) => {
+  const handleTemplateChange = templateId => {
     setFormData(prev => {
       const newTemplateIds = prev.snmpTemplateIds.includes(templateId)
         ? prev.snmpTemplateIds.filter(id => id !== templateId) // Remove if already exists
         : [...prev.snmpTemplateIds, templateId] // Add if doesn't exist
-      
+
       return {
         ...prev,
-        snmpTemplateIds: newTemplateIds
+        snmpTemplateIds: newTemplateIds,
       }
     })
   }
 
   // Handle form submission for creating/updating polling templates
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault()
     setLoading(true)
 
@@ -169,11 +173,11 @@ function useSNMPPollingTemplatesData(companyId = 'default-company-id') {
 
       if (editMode && selectedTemplate) {
         // Update existing polling template
-        setPollingTemplates(prev => 
-          prev.map(template => 
-            template.id === selectedTemplate.id 
-              ? { 
-                  ...template, 
+        setPollingTemplates(prev =>
+          prev.map(template =>
+            template.id === selectedTemplate.id
+              ? {
+                  ...template,
                   name: formData.name,
                   description: formData.description,
                   version: formData.version,
@@ -182,8 +186,8 @@ function useSNMPPollingTemplatesData(companyId = 'default-company-id') {
                   retries: formData.retries,
                   downTrigger: formData.downTrigger,
                   snmpTemplateIds: formData.snmpTemplateIds,
-                  updatedAt: Date.now() 
-                } 
+                  updatedAt: Date.now(),
+                }
               : template
           )
         )
@@ -224,7 +228,7 @@ function useSNMPPollingTemplatesData(companyId = 'default-company-id') {
     setSelectedTemplate(template)
     setEditMode(true)
     setActiveTab(template.version)
-    
+
     setFormData({
       name: template.name,
       description: template.description,
@@ -254,24 +258,30 @@ function useSNMPPollingTemplatesData(companyId = 'default-company-id') {
   }
 
   // Handle delete polling template
-  const handleDeleteTemplate = (templateId) => {
-    setPollingTemplates(prev => prev.filter(template => template.id !== templateId))
-    
+  const handleDeleteTemplate = templateId => {
+    setPollingTemplates(prev =>
+      prev.filter(template => template.id !== templateId)
+    )
+
     if (selectedTemplate && selectedTemplate.id === templateId) {
       resetForm()
     }
   }
 
   // Filter polling templates based on search term and active tab
-  const filteredPollingTemplates = pollingTemplates.filter(template => 
-    (activeTab === 'all' || template.version === activeTab) &&
-    (template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     template.description.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredPollingTemplates = pollingTemplates.filter(
+    template =>
+      (activeTab === 'all' || template.version === activeTab) &&
+      (template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.description.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
   // Filter SNMP templates based on the active tab/version
-  const filteredSnmpTemplates = snmpTemplates.filter(template => 
-    activeTab === 'all' || template.version === activeTab || template.version === formData.version
+  const filteredSnmpTemplates = snmpTemplates.filter(
+    template =>
+      activeTab === 'all' ||
+      template.version === activeTab ||
+      template.version === formData.version
   )
 
   return {
@@ -552,18 +562,18 @@ const SNMPPollingTemplates = () => {
       ),
       h(
         'div',
-        { 
-          style: { 
+        {
+          style: {
             padding: '16px 0',
             display: 'flex',
-            justifyContent: 'flex-end'
-          } 
+            justifyContent: 'flex-end',
+          },
         },
         h('input', {
           type: 'text',
           placeholder: 'Search polling templates...',
           value: searchTerm,
-          onChange: (e) => setSearchTerm(e.target.value),
+          onChange: e => setSearchTerm(e.target.value),
           style: {
             width: '300px',
             padding: '8px 12px',
@@ -605,8 +615,8 @@ const SNMPPollingTemplates = () => {
             h(
               'h2',
               { style: { margin: '0', fontSize: '18px', color: '#333' } },
-              activeTab === 'all' 
-                ? 'All SNMP Polling Templates' 
+              activeTab === 'all'
+                ? 'All SNMP Polling Templates'
                 : `${activeTab === 'v2' ? 'SNMPv2' : 'SNMPv3'} Polling Templates`
             )
           ),
@@ -651,18 +661,19 @@ const SNMPPollingTemplates = () => {
                     },
                     'Frequency'
                   ),
-                  activeTab === 'all' && h(
-                    'th',
-                    {
-                      style: {
-                        padding: '12px',
-                        textAlign: 'left',
-                        borderBottom: '1px solid #ddd',
-                        fontWeight: 'bold',
+                  activeTab === 'all' &&
+                    h(
+                      'th',
+                      {
+                        style: {
+                          padding: '12px',
+                          textAlign: 'left',
+                          borderBottom: '1px solid #ddd',
+                          fontWeight: 'bold',
+                        },
                       },
-                    },
-                    'Version'
-                  ),
+                      'Version'
+                    ),
                   h(
                     'th',
                     {
@@ -696,8 +707,8 @@ const SNMPPollingTemplates = () => {
                             fontStyle: 'italic',
                           },
                         },
-                        searchTerm 
-                          ? 'No polling templates match your search criteria' 
+                        searchTerm
+                          ? 'No polling templates match your search criteria'
                           : `No ${activeTab === 'all' ? '' : activeTab + ' '}SNMP polling templates available`
                       )
                     )
@@ -728,33 +739,33 @@ const SNMPPollingTemplates = () => {
                             }
                           },
                         },
-                        h(
-                          'td',
-                          { style: { padding: '12px' } },
-                          template.name
-                        ),
+                        h('td', { style: { padding: '12px' } }, template.name),
                         h(
                           'td',
                           { style: { padding: '12px' } },
                           formatDuration(template.frequency)
                         ),
-                        activeTab === 'all' && h(
-                          'td',
-                          { style: { padding: '12px' } },
+                        activeTab === 'all' &&
                           h(
-                            'span',
-                            {
-                              style: {
-                                padding: '4px 8px',
-                                borderRadius: '12px',
-                                fontSize: '12px',
-                                backgroundColor: template.version === 'v2' ? '#1976d2' : '#7b1fa2',
-                                color: 'white',
+                            'td',
+                            { style: { padding: '12px' } },
+                            h(
+                              'span',
+                              {
+                                style: {
+                                  padding: '4px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '12px',
+                                  backgroundColor:
+                                    template.version === 'v2'
+                                      ? '#1976d2'
+                                      : '#7b1fa2',
+                                  color: 'white',
+                                },
                               },
-                            },
-                            template.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
-                          )
-                        ),
+                              template.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
+                            )
+                          ),
                         // Actions column
                         h(
                           'td',
@@ -786,111 +797,151 @@ const SNMPPollingTemplates = () => {
           )
         ),
         // Template Details when selected
-        selectedTemplate && h(
-          'div',
-          {
-            style: {
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              padding: '24px',
-              marginTop: '24px',
+        selectedTemplate &&
+          h(
+            'div',
+            {
+              style: {
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                padding: '24px',
+                marginTop: '24px',
+              },
             },
-          },
-          h(
-            'h3',
-            { style: { margin: '0 0 16px 0', color: '#333' } },
-            'Polling Template Details'
-          ),
-          h(
-            'div',
-            { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' } },
+            h(
+              'h3',
+              { style: { margin: '0 0 16px 0', color: '#333' } },
+              'Polling Template Details'
+            ),
             h(
               'div',
-              null,
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Name: '), 
-                selectedTemplate.name
-              ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Version: '), 
+              {
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                },
+              },
+              h(
+                'div',
+                null,
                 h(
-                  'span',
-                  {
-                    style: {
-                      padding: '4px 8px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      backgroundColor: selectedTemplate.version === 'v2' ? '#1976d2' : '#7b1fa2',
-                      color: 'white',
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Name: '),
+                  selectedTemplate.name
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Version: '),
+                  h(
+                    'span',
+                    {
+                      style: {
+                        padding: '4px 8px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        backgroundColor:
+                          selectedTemplate.version === 'v2'
+                            ? '#1976d2'
+                            : '#7b1fa2',
+                        color: 'white',
+                      },
                     },
-                  },
-                  selectedTemplate.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
+                    selectedTemplate.version === 'v2' ? 'SNMPv2' : 'SNMPv3'
+                  )
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Frequency: '),
+                  formatDuration(selectedTemplate.frequency)
                 )
               ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Frequency: '), 
-                formatDuration(selectedTemplate.frequency)
+              h(
+                'div',
+                null,
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Timeout: '),
+                  `${selectedTemplate.timeout} seconds`
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Retries: '),
+                  selectedTemplate.retries
+                ),
+                h(
+                  'p',
+                  { style: { margin: '0 0 8px 0' } },
+                  h('strong', null, 'Down Trigger: '),
+                  `${selectedTemplate.downTrigger} failed attempts`
+                )
               )
             ),
             h(
               'div',
-              null,
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Timeout: '), 
-                `${selectedTemplate.timeout} seconds`
+              { style: { marginTop: '16px' } },
+              h(
+                'p',
+                { style: { margin: '0 0 8px 0' } },
+                h('strong', null, 'Description: ')
               ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Retries: '), 
-                selectedTemplate.retries
+              h(
+                'p',
+                {
+                  style: {
+                    margin: '0 0 16px 0',
+                    fontSize: '14px',
+                    lineHeight: '1.5',
+                  },
+                },
+                selectedTemplate.description || 'No description available'
               ),
-              h('p', { style: { margin: '0 0 8px 0' } }, 
-                h('strong', null, 'Down Trigger: '), 
-                `${selectedTemplate.downTrigger} failed attempts`
-              )
-            )
-          ),
-          h(
-            'div',
-            { style: { marginTop: '16px' } },
-            h('p', { style: { margin: '0 0 8px 0' } }, 
-              h('strong', null, 'Description: ')
-            ),
-            h('p', { style: { margin: '0 0 16px 0', fontSize: '14px', lineHeight: '1.5' } }, 
-              selectedTemplate.description || 'No description available'
-            ),
-            h('p', { style: { margin: '0 0 8px 0' } }, 
-              h('strong', null, 'Associated SNMP Templates: ')
-            ),
-            selectedTemplate.snmpTemplateIds.length === 0
-              ? h('p', { 
-                  style: { 
-                    margin: '0', 
-                    fontStyle: 'italic', 
-                    color: '#666',
-                    fontSize: '14px'
-                  } 
-                }, 'No SNMP templates associated')
-              : h(
-                  'ul',
-                  { style: { margin: '0', paddingLeft: '20px' } },
-                  selectedTemplate.snmpTemplateIds.map(templateId => {
-                    const snmpTemplate = snmpTemplates.find(t => t.id === templateId)
-                    return h(
-                      'li',
-                      { 
-                        key: templateId,
-                        style: { 
-                          margin: '0 0 4px 0',
-                          fontSize: '14px'
-                        } 
+              h(
+                'p',
+                { style: { margin: '0 0 8px 0' } },
+                h('strong', null, 'Associated SNMP Templates: ')
+              ),
+              selectedTemplate.snmpTemplateIds.length === 0
+                ? h(
+                    'p',
+                    {
+                      style: {
+                        margin: '0',
+                        fontStyle: 'italic',
+                        color: '#666',
+                        fontSize: '14px',
                       },
-                      snmpTemplate ? snmpTemplate.name : 'Unknown template'
-                    )
-                  })
-                )
+                    },
+                    'No SNMP templates associated'
+                  )
+                : h(
+                    'ul',
+                    { style: { margin: '0', paddingLeft: '20px' } },
+                    selectedTemplate.snmpTemplateIds.map(templateId => {
+                      const snmpTemplate = snmpTemplates.find(
+                        t => t.id === templateId
+                      )
+                      return h(
+                        'li',
+                        {
+                          key: templateId,
+                          style: {
+                            margin: '0 0 4px 0',
+                            fontSize: '14px',
+                          },
+                        },
+                        snmpTemplate ? snmpTemplate.name : 'Unknown template'
+                      )
+                    })
+                  )
+            )
           )
-        )
       ),
 
       // Right column - Add/Edit form
@@ -909,9 +960,11 @@ const SNMPPollingTemplates = () => {
           },
           h(
             'h2',
-            { style: { margin: '0 0 16px 0', fontSize: '18px', color: '#333' } },
-            editMode 
-              ? `Edit ${formData.version === 'v2' ? 'SNMPv2' : 'SNMPv3'} Polling Template` 
+            {
+              style: { margin: '0 0 16px 0', fontSize: '18px', color: '#333' },
+            },
+            editMode
+              ? `Edit ${formData.version === 'v2' ? 'SNMPv2' : 'SNMPv3'} Polling Template`
               : `Add New ${formData.version === 'v2' ? 'SNMPv2' : 'SNMPv3'} Polling Template`
           ),
           h(
@@ -1186,7 +1239,15 @@ const SNMPPollingTemplates = () => {
                 h('option', { value: 3 }, 'After 3 failed attempts'),
                 h('option', { value: 5 }, 'After 5 failed attempts')
               ),
-              h('p', { style: { margin: '4px 0 0 0', fontSize: '12px', color: '#666' } }, 
+              h(
+                'p',
+                {
+                  style: {
+                    margin: '4px 0 0 0',
+                    fontSize: '12px',
+                    color: '#666',
+                  },
+                },
                 'The number of consecutive failed polls before a device is marked as down.'
               )
             ),
@@ -1208,52 +1269,81 @@ const SNMPPollingTemplates = () => {
               ),
               h(
                 'div',
-                { 
-                  style: { 
+                {
+                  style: {
                     border: '1px solid #ddd',
                     borderRadius: '4px',
                     maxHeight: '150px',
                     overflowY: 'auto',
                     padding: '8px',
-                  } 
+                  },
                 },
-                snmpTemplates.length === 0 
-                  ? h('p', { style: { margin: '8px', color: '#666', fontStyle: 'italic' } }, 'No SNMP templates available')
-                  : snmpTemplates.map(template => 
+                snmpTemplates.length === 0
+                  ? h(
+                      'p',
+                      {
+                        style: {
+                          margin: '8px',
+                          color: '#666',
+                          fontStyle: 'italic',
+                        },
+                      },
+                      'No SNMP templates available'
+                    )
+                  : snmpTemplates.map(template =>
                       h(
                         'div',
-                        { 
+                        {
                           key: template.id,
-                          style: { 
+                          style: {
                             margin: '4px 0',
                             padding: '6px',
-                            backgroundColor: formData.snmpTemplateIds.includes(template.id) ? '#e3f2fd' : 'transparent',
+                            backgroundColor: formData.snmpTemplateIds.includes(
+                              template.id
+                            )
+                              ? '#e3f2fd'
+                              : 'transparent',
                             borderRadius: '4px',
                             cursor: 'pointer',
                           },
-                          onClick: () => handleTemplateChange(template.id)
+                          onClick: () => handleTemplateChange(template.id),
                         },
                         h(
                           'label',
-                          { style: { display: 'flex', alignItems: 'center', cursor: 'pointer' } },
+                          {
+                            style: {
+                              display: 'flex',
+                              alignItems: 'center',
+                              cursor: 'pointer',
+                            },
+                          },
                           h('input', {
                             type: 'checkbox',
-                            checked: formData.snmpTemplateIds.includes(template.id),
+                            checked: formData.snmpTemplateIds.includes(
+                              template.id
+                            ),
                             onChange: () => handleTemplateChange(template.id),
-                            style: { marginRight: '8px' }
+                            style: { marginRight: '8px' },
                           }),
-                          h('span', null, 
+                          h(
+                            'span',
+                            null,
                             template.name,
-                            h('span', { 
-                              style: { 
-                                fontSize: '12px', 
-                                marginLeft: '8px',
-                                padding: '2px 6px',
-                                backgroundColor: template.version === 'v2' ? '#1976d2' : '#7b1fa2',
-                                color: 'white',
-                                borderRadius: '10px',
-                              } 
-                            }, 
+                            h(
+                              'span',
+                              {
+                                style: {
+                                  fontSize: '12px',
+                                  marginLeft: '8px',
+                                  padding: '2px 6px',
+                                  backgroundColor:
+                                    template.version === 'v2'
+                                      ? '#1976d2'
+                                      : '#7b1fa2',
+                                  color: 'white',
+                                  borderRadius: '10px',
+                                },
+                              },
                               template.version.toUpperCase()
                             )
                           )
@@ -1281,7 +1371,9 @@ const SNMPPollingTemplates = () => {
                     fontWeight: 'bold',
                   },
                 },
-                loading ? 'Saving...' : (editMode ? 'Update' : 'Add') + ' Template'
+                loading
+                  ? 'Saving...'
+                  : (editMode ? 'Update' : 'Add') + ' Template'
               ),
               h(
                 'button',

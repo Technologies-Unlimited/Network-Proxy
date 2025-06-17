@@ -27,7 +27,8 @@ const SNMPManagement = () => {
       title: 'Device Polling',
       icon: '📊',
       color: '#1976d2',
-      description: 'Monitor network devices with SNMP polling and view their status',
+      description:
+        'Monitor network devices with SNMP polling and view their status',
       href: '/network-administration/snmp/device-polling',
     },
     {
@@ -35,7 +36,8 @@ const SNMPManagement = () => {
       title: 'SNMP Settings',
       icon: '🔐',
       color: '#7b1fa2',
-      description: 'Manage SNMPv2 and SNMPv3 authentication settings for your network devices',
+      description:
+        'Manage SNMPv2 and SNMPv3 authentication settings for your network devices',
       href: '/network-administration/snmp/settings',
     },
     {
@@ -43,7 +45,8 @@ const SNMPManagement = () => {
       title: 'OID Management',
       icon: '🔍',
       color: '#c2185b',
-      description: 'Manage SNMP Object Identifiers (OIDs) for monitoring network devices',
+      description:
+        'Manage SNMP Object Identifiers (OIDs) for monitoring network devices',
       href: '/network-administration/snmp/oid',
     },
     {
@@ -51,7 +54,8 @@ const SNMPManagement = () => {
       title: 'SNMP Templates',
       icon: '📋',
       color: '#388e3c',
-      description: 'Create and manage templates that combine SNMP settings and OIDs',
+      description:
+        'Create and manage templates that combine SNMP settings and OIDs',
       href: '/network-administration/snmp/templates',
     },
     {
@@ -59,7 +63,8 @@ const SNMPManagement = () => {
       title: 'Polling Templates',
       icon: '⏱️',
       color: '#f57c00',
-      description: 'Configure SNMP polling frequency, timeouts, and retries for monitoring',
+      description:
+        'Configure SNMP polling frequency, timeouts, and retries for monitoring',
       href: '/network-administration/snmp/polling-templates',
     },
   ]
@@ -77,28 +82,40 @@ const SNMPManagement = () => {
           height: '100vh',
           backgroundColor: '#f8f0dd',
           color: '#1f4e5f',
-        }
+        },
       },
-      h('div', {
-        style: {
-          fontSize: '60px',
-          marginBottom: '20px',
-          animation: 'spin 3s infinite linear',
-        }
-      }, '☥'),
-      h('h2', {
-        style: {
-          fontFamily: 'Cinzel, serif',
-          color: '#a41c1b',
-          textAlign: 'center',
-        }
-      }, 'Loading SNMP Management...'),
-      h('style', null, `
+      h(
+        'div',
+        {
+          style: {
+            fontSize: '60px',
+            marginBottom: '20px',
+            animation: 'spin 3s infinite linear',
+          },
+        },
+        '☥'
+      ),
+      h(
+        'h2',
+        {
+          style: {
+            fontFamily: 'Cinzel, serif',
+            color: '#a41c1b',
+            textAlign: 'center',
+          },
+        },
+        'Loading SNMP Management...'
+      ),
+      h(
+        'style',
+        null,
+        `
         @keyframes spin {
           from { transform: rotateY(0deg); }
           to { transform: rotateY(360deg); }
         }
-      `)
+      `
+      )
     )
   }
 
@@ -144,121 +161,123 @@ const SNMPManagement = () => {
           marginBottom: '32px',
         },
       },
-      modules.map(module => h(
-        'a',
-        {
-          key: module.id,
-          href: module.href,
-          style: {
-            textDecoration: 'none',
-            color: 'inherit',
-          },
-        },
+      modules.map(module =>
         h(
-          'div',
+          'a',
           {
+            key: module.id,
+            href: module.href,
             style: {
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              overflow: 'hidden',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-              cursor: 'pointer',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-            },
-            onMouseOver: e => {
-              e.currentTarget.style.transform = 'translateY(-4px)'
-              e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.1)'
-            },
-            onMouseOut: e => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'
+              textDecoration: 'none',
+              color: 'inherit',
             },
           },
-          // Module icon
           h(
             'div',
             {
               style: {
-                padding: '32px 16px',
-                backgroundColor: module.color,
-                color: 'white',
-                textAlign: 'center',
-              },
-            },
-            h(
-              'div',
-              {
-                style: {
-                  fontSize: '48px',
-                  marginBottom: '8px',
-                },
-              },
-              module.icon
-            ),
-            h(
-              'h3',
-              {
-                style: {
-                  margin: '0',
-                  fontSize: '20px',
-                  fontWeight: 'bold',
-                },
-              },
-              module.title
-            )
-          ),
-          // Module description
-          h(
-            'div',
-            {
-              style: {
-                padding: '16px',
-                flex: '1',
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                overflow: 'hidden',
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                cursor: 'pointer',
+                height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
-                justifyContent: 'space-between',
+              },
+              onMouseOver: e => {
+                e.currentTarget.style.transform = 'translateY(-4px)'
+                e.currentTarget.style.boxShadow = '0 6px 12px rgba(0,0,0,0.1)'
+              },
+              onMouseOut: e => {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'
               },
             },
-            h(
-              'p',
-              {
-                style: {
-                  margin: '0 0 16px 0',
-                  color: '#666',
-                  fontSize: '14px',
-                  lineHeight: '1.5',
-                },
-              },
-              module.description
-            ),
+            // Module icon
             h(
               'div',
               {
                 style: {
-                  textAlign: 'right',
+                  padding: '32px 16px',
+                  backgroundColor: module.color,
+                  color: 'white',
+                  textAlign: 'center',
                 },
               },
               h(
-                'span',
+                'div',
                 {
                   style: {
-                    display: 'inline-block',
-                    padding: '8px 16px',
-                    backgroundColor: module.color,
-                    color: 'white',
-                    borderRadius: '4px',
-                    fontSize: '14px',
+                    fontSize: '48px',
+                    marginBottom: '8px',
                   },
                 },
-                'Open'
+                module.icon
+              ),
+              h(
+                'h3',
+                {
+                  style: {
+                    margin: '0',
+                    fontSize: '20px',
+                    fontWeight: 'bold',
+                  },
+                },
+                module.title
+              )
+            ),
+            // Module description
+            h(
+              'div',
+              {
+                style: {
+                  padding: '16px',
+                  flex: '1',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                },
+              },
+              h(
+                'p',
+                {
+                  style: {
+                    margin: '0 0 16px 0',
+                    color: '#666',
+                    fontSize: '14px',
+                    lineHeight: '1.5',
+                  },
+                },
+                module.description
+              ),
+              h(
+                'div',
+                {
+                  style: {
+                    textAlign: 'right',
+                  },
+                },
+                h(
+                  'span',
+                  {
+                    style: {
+                      display: 'inline-block',
+                      padding: '8px 16px',
+                      backgroundColor: module.color,
+                      color: 'white',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                    },
+                  },
+                  'Open'
+                )
               )
             )
           )
         )
-      ))
+      )
     ),
 
     // Information section
@@ -299,8 +318,16 @@ const SNMPManagement = () => {
         h(
           'ul',
           { style: { margin: '0 0 0 20px', padding: '0', color: '#666' } },
-          h('li', { style: { marginBottom: '8px' } }, 'SNMPv2c - Community-based security model'),
-          h('li', { style: { marginBottom: '8px' } }, 'SNMPv3 - User-based security model with authentication and encryption')
+          h(
+            'li',
+            { style: { marginBottom: '8px' } },
+            'SNMPv2c - Community-based security model'
+          ),
+          h(
+            'li',
+            { style: { marginBottom: '8px' } },
+            'SNMPv3 - User-based security model with authentication and encryption'
+          )
         )
       )
     ),
@@ -356,32 +383,34 @@ const SNMPManagement = () => {
             href: '/network-administration/snmp/polling-templates',
             color: '#f57c00',
           },
-        ].map(link => h(
-          'a',
-          {
-            key: link.title,
-            href: link.href,
-            style: {
-              textDecoration: 'none',
-              padding: '12px',
-              backgroundColor: link.color,
-              color: 'white',
-              borderRadius: '4px',
-              textAlign: 'center',
-              fontWeight: 'bold',
-              transition: 'transform 0.2s ease, opacity 0.2s ease',
+        ].map(link =>
+          h(
+            'a',
+            {
+              key: link.title,
+              href: link.href,
+              style: {
+                textDecoration: 'none',
+                padding: '12px',
+                backgroundColor: link.color,
+                color: 'white',
+                borderRadius: '4px',
+                textAlign: 'center',
+                fontWeight: 'bold',
+                transition: 'transform 0.2s ease, opacity 0.2s ease',
+              },
+              onMouseOver: e => {
+                e.currentTarget.style.transform = 'translateY(-2px)'
+                e.currentTarget.style.opacity = '0.9'
+              },
+              onMouseOut: e => {
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.opacity = '1'
+              },
             },
-            onMouseOver: e => {
-              e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.opacity = '0.9'
-            },
-            onMouseOut: e => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.opacity = '1'
-            },
-          },
-          link.title
-        ))
+            link.title
+          )
+        )
       )
     )
   )

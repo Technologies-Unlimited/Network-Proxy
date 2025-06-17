@@ -31,4 +31,4 @@ process.on('SIGTERM', () => {
   console.log('\n🛑 Shutting down server...')
   server.stop()
   process.exit(0)
-}) 
+})

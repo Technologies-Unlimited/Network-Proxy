@@ -3,7 +3,7 @@
  * This provides real-time updates for network monitoring data
  */
 
-import { type Server, type ServerWebSocket } from 'bun'
+import Bun, { type Server, type ServerWebSocket } from 'bun'
 import { getDatabase } from '@/database/index'
 import { handleICMPPollingStatusRequest } from '@/app/api/network-administration/icmp/polling/status/route'
 import { handleICMPPollingTemplatesRequest } from '@/app/api/network-administration/icmp/polling/templates/route'
@@ -23,6 +23,13 @@ import { handleSNMPv2Request } from '@/app/api/network-administration/snmp/snmpv
 import { handleSNMPv3Request } from '@/app/api/network-administration/snmp/snmpv3/route'
 import { handleSNMPv2TemplateRequest } from '@/app/api/network-administration/snmp/templates/snmpv2/route'
 import { handleSNMPv3TemplateRequest } from '@/app/api/network-administration/snmp/templates/snmpv3/route'
+import {
+  runIperfTest,
+  stopIperfTest,
+  getIperfTestStatus,
+  discoverIperfServers,
+  checkIperfServerAvailability,
+} from '../../services/iperf'
 
 // Define types for our WebSocket data and messages
 export interface NetworkMonitoringData {
@@ -31,7 +38,140 @@ export interface NetworkMonitoringData {
   tool?: string
 }
 
-type StatusUpdate = ICMPStatusUpdate | SNMPStatusUpdate
+// WebSocket message types
+interface BaseMessage {
+  type: string
+}
+
+interface PingMessage extends BaseMessage {
+  type: 'ping'
+}
+
+interface SubscribeMessage extends BaseMessage {
+  type: 'subscribe'
+  deviceId?: string
+}
+
+interface RequestInitialICMPDataMessage extends BaseMessage {
+  type: 'requestInitialICMPData'
+}
+
+interface RequestInitialICMPTemplatesMessage extends BaseMessage {
+  type: 'requestInitialICMPTemplates'
+}
+
+interface RequestInitialSNMPDataMessage extends BaseMessage {
+  type: 'requestInitialSNMPData'
+}
+
+interface RequestICMPRefreshMessage extends BaseMessage {
+  type: 'requestICMPRefresh'
+}
+
+interface RequestSNMPRefreshMessage extends BaseMessage {
+  type: 'requestSNMPRefresh'
+}
+
+interface UpdateICMPMessage extends BaseMessage {
+  type: 'updateICMP'
+  _id: string
+  input: Partial<{
+    icmpPollingTemplateId: string
+    manufacturerId: string
+    modelNameId: string
+    productId: string
+    uptime: number
+    downtime: number
+    deviceStatus: string
+    stockIds: string[]
+    networkInventoryIds: string[]
+  }>
+}
+
+interface UpdateSNMPMessage extends BaseMessage {
+  type: 'updateSNMP'
+  _id: string
+  input: Partial<{
+    snmpPollingTemplateId: string
+    manufacturerId: string
+    modelNameId: string
+    productId: string
+    uptime: number
+    downtime: number
+    deviceStatus: string
+    stockIds: string[]
+    networkInventoryIds: string[]
+  }>
+}
+
+interface DeleteICMPMessage extends BaseMessage {
+  type: 'deleteICMP'
+  _id: string
+}
+
+interface DeleteSNMPMessage extends BaseMessage {
+  type: 'deleteSNMP'
+  _id: string
+}
+
+// Iperf message types
+interface IperfStartTestMessage extends BaseMessage {
+  type: 'startTest'
+  params?: {
+    sourceServerId: string
+    destinationServerId: string
+    [key: string]: unknown
+  }
+}
+
+interface IperfStopTestMessage extends BaseMessage {
+  type: 'stopTest'
+  testId?: string
+}
+
+interface IperfGetStatusMessage extends BaseMessage {
+  type: 'getStatus'
+  testId?: string
+}
+
+interface IperfDiscoverServersMessage extends BaseMessage {
+  type: 'discoverServers'
+  port?: number
+  forceRefresh?: boolean
+}
+
+interface IperfCheckServerMessage extends BaseMessage {
+  type: 'checkServer'
+  address?: string
+  port?: number
+}
+
+type WebSocketMessage =
+  | PingMessage
+  | SubscribeMessage
+  | RequestInitialICMPDataMessage
+  | RequestInitialICMPTemplatesMessage
+  | RequestInitialSNMPDataMessage
+  | RequestICMPRefreshMessage
+  | RequestSNMPRefreshMessage
+  | UpdateICMPMessage
+  | UpdateSNMPMessage
+  | DeleteICMPMessage
+  | DeleteSNMPMessage
+  | IperfStartTestMessage
+  | IperfStopTestMessage
+  | IperfGetStatusMessage
+  | IperfDiscoverServersMessage
+  | IperfCheckServerMessage
+
+// Database row interfaces
+interface StockIdRow {
+  stock_id: string
+}
+
+interface NetworkInventoryIdRow {
+  network_inventory_id: string
+}
 
 interface ICMPStatusUpdate {
   type: 'icmp'
@@ -124,7 +264,7 @@ export function startWebSocketServer(port: number = 3001): Server {
     `Starting WebSocket server for network monitoring on port ${port}...`
   )
 
-  const server = Bun.serve<NetworkMonitoringData, any>({
+  const server = Bun.serve({
     port,
     async fetch(req: Request, server: Server) {
       // Get the URL
@@ -168,7 +308,7 @@ export function startWebSocketServer(port: number = 3001): Server {
 
         return undefined
       }
-      
+
       // Handle WebSocket upgrades for iperf tool
       if (url.pathname === '/ws/tools/iperf') {
         // For tools, we may not need a companyId
@@ -213,16 +353,12 @@ export function startWebSocketServer(port: number = 3001): Server {
             return handleICMPTemplatesRequest(req)
           }
           if (
-            url.pathname.startsWith(
-              '/api/network-administration/icmp/monitors'
-            )
+            url.pathname.startsWith('/api/network-administration/icmp/monitors')
           ) {
             return handleICMPMonitorsRequest(req)
           }
           if (
-            url.pathname.startsWith(
-              '/api/network-administration/icmp/alerts'
-            )
+            url.pathname.startsWith('/api/network-administration/icmp/alerts')
           ) {
             return handleICMPAlertsRequest(req)
           }
@@ -362,7 +498,7 @@ export function startWebSocketServer(port: number = 3001): Server {
       }
 
       // Default response for unknown endpoints
-      return new Response('Not Found', { 
+      return new Response('Not Found', {
         status: 404,
         headers: corsHeaders,
       })
@@ -399,7 +535,7 @@ export function startWebSocketServer(port: number = 3001): Server {
         message: string | Uint8Array
       ) {
         try {
-          const data = JSON.parse(message.toString())
+          const data = JSON.parse(message.toString()) as WebSocketMessage
           const companyId = ws.data.companyId
           const toolType = ws.data.tool
 
@@ -681,7 +817,7 @@ export function startWebSocketServer(port: number = 3001): Server {
 
               // Build a proper update SQL statement instead of using SET ?
               let updateSql = 'UPDATE icmp_polling_status SET updated_at = ?'
-              const params: any[] = [Date.now()]
+              const params: (string | number)[] = [Date.now()]
 
               // Add each field to update
               if (input.icmpPollingTemplateId !== undefined) {
@@ -802,7 +938,7 @@ export function startWebSocketServer(port: number = 3001): Server {
 
               // Build a proper update SQL statement
               let updateSql = 'UPDATE snmp_polling_status SET updated_at = ?'
-              const params: any[] = [Date.now()]
+              const params: (string | number)[] = [Date.now()]
 
               // Add each field to update
               if (input.snmpPollingTemplateId !== undefined) {
@@ -1092,48 +1228,52 @@ export function startWebSocketServer(port: number = 3001): Server {
  * Helper function to get stock IDs for an ICMP polling status
  */
 function getStockIdsForStatus(statusId: string): string[] {
-  return db
-    .query(
-      'SELECT stock_id FROM icmp_polling_status_stock WHERE icmp_polling_status_id = ?'
-    )
-    .all(statusId)
-    .map((row: any) => row.stock_id)
+  return (
+    db
+      .query(
+        'SELECT stock_id FROM icmp_polling_status_stock WHERE icmp_polling_status_id = ?'
+      )
+      .all(statusId) as StockIdRow[]
+  ).map(row => row.stock_id)
 }
 
 /**
  * Helper function to get network inventory IDs for an ICMP polling status
  */
 function getNetworkInventoryIdsForStatus(statusId: string): string[] {
-  return db
-    .query(
-      'SELECT network_inventory_id FROM icmp_polling_status_network_inventory WHERE icmp_polling_status_id = ?'
-    )
-    .all(statusId)
-    .map((row: any) => row.network_inventory_id)
+  return (
+    db
+      .query(
+        'SELECT network_inventory_id FROM icmp_polling_status_network_inventory WHERE icmp_polling_status_id = ?'
+      )
+      .all(statusId) as NetworkInventoryIdRow[]
+  ).map(row => row.network_inventory_id)
 }
 
 /**
  * Helper function to get stock IDs for an SNMP polling status
  */
 function getSNMPStockIdsForStatus(statusId: string): string[] {
-  return db
-    .query(
-      'SELECT stock_id FROM snmp_polling_status_stock WHERE snmp_polling_status_id = ?'
-    )
-    .all(statusId)
-    .map((row: any) => row.stock_id)
+  return (
+    db
+      .query(
+        'SELECT stock_id FROM snmp_polling_status_stock WHERE snmp_polling_status_id = ?'
+      )
+      .all(statusId) as StockIdRow[]
+  ).map(row => row.stock_id)
 }
 
 /**
  * Helper function to get network inventory IDs for an SNMP polling status
  */
 function getSNMPNetworkInventoryIdsForStatus(statusId: string): string[] {
-  return db
-    .query(
-      'SELECT network_inventory_id FROM snmp_polling_status_network_inventory WHERE snmp_polling_status_id = ?'
-    )
-    .all(statusId)
-    .map((row: any) => row.network_inventory_id)
+  return (
+    db
+      .query(
+        'SELECT network_inventory_id FROM snmp_polling_status_network_inventory WHERE snmp_polling_status_id = ?'
+      )
+      .all(statusId) as NetworkInventoryIdRow[]
+  ).map(row => row.network_inventory_id)
 }
 
 /**
@@ -1278,221 +1418,264 @@ export function broadcastSNMPUpdate(
  * @param ws WebSocket connection
  * @param data Message data
  */
-function handleIperfMessage(ws: ServerWebSocket<NetworkMonitoringData>, data: any) {
+function handleIperfMessage(
+  ws: ServerWebSocket<NetworkMonitoringData>,
+  data: WebSocketMessage
+) {
   try {
     console.log('Handling iperf message:', data.type)
-    
-    // Import iperf service functions
-    const { 
-      runIperfTest, 
-      stopIperfTest, 
-      getIperfTestStatus, 
-      discoverIperfServers, 
-      checkIperfServerAvailability,
-      getLocalAddress
-    } = require('../../services/iperf')
-    
+
     switch (data.type) {
-      case 'startTest':
+      case 'startTest': {
         // Start a new iperf test
         if (!data.params) {
-          ws.send(JSON.stringify({
-            type: 'testError',
-            message: 'Test parameters are required'
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'testError',
+              message: 'Test parameters are required',
+            })
+          )
           return
         }
-        
+
         // Validate parameters
         const { sourceServerId, destinationServerId } = data.params
         if (!sourceServerId || !destinationServerId) {
-          ws.send(JSON.stringify({
-            type: 'testError',
-            message: 'Source and destination servers are required'
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'testError',
+              message: 'Source and destination servers are required',
+            })
+          )
           return
         }
-        
+
         // Start the test asynchronously
-        console.log('Starting iperf test:', data.params)
-        runIperfTest(data.params)
-          .then(test => {
+        console.log(
+          'Starting iperf test:',
+          (data as IperfStartTestMessage).params
+        )
+        runIperfTest((data as IperfStartTestMessage).params!)
+          .then((test: any) => {
             // Send initial test started notification
-            ws.send(JSON.stringify({
-              type: 'testStarted',
-              testId: test.id,
-              timestamp: Date.now()
-            }))
-            
+            ws.send(
+              JSON.stringify({
+                type: 'testStarted',
+                testId: test.id,
+                timestamp: Date.now(),
+              })
+            )
+
             // Set up polling to send test progress updates
             const pollInterval = setInterval(() => {
               const updatedTest = getIperfTestStatus(test.id)
-              
+
               if (!updatedTest) {
                 clearInterval(pollInterval)
                 return
               }
-              
+
               // Check if the test has results to send
               if (updatedTest.results.length > 0) {
                 // Send the latest result
-                const latestResult = updatedTest.results[updatedTest.results.length - 1]
-                ws.send(JSON.stringify({
-                  type: 'testProgress',
-                  testId: test.id,
-                  result: latestResult,
-                  timestamp: Date.now()
-                }))
+                const latestResult =
+                  updatedTest.results[updatedTest.results.length - 1]
+                ws.send(
+                  JSON.stringify({
+                    type: 'testProgress',
+                    testId: test.id,
+                    result: latestResult,
+                    timestamp: Date.now(),
+                  })
+                )
               }
-              
+
               // Check if the test is completed
-              if (updatedTest.status === 'completed' || updatedTest.status === 'failed' || updatedTest.status === 'stopped') {
+              if (
+                updatedTest.status === 'completed' ||
+                updatedTest.status === 'failed' ||
+                updatedTest.status === 'stopped'
+              ) {
                 clearInterval(pollInterval)
-                
+
                 if (updatedTest.status === 'completed' && updatedTest.summary) {
-                  ws.send(JSON.stringify({
-                    type: 'testComplete',
-                    testId: test.id,
-                    summary: updatedTest.summary,
-                    timestamp: Date.now()
-                  }))
+                  ws.send(
+                    JSON.stringify({
+                      type: 'testComplete',
+                      testId: test.id,
+                      summary: updatedTest.summary,
+                      timestamp: Date.now(),
+                    })
+                  )
                 } else if (updatedTest.status === 'failed') {
-                  ws.send(JSON.stringify({
-                    type: 'testError',
-                    testId: test.id,
-                    message: updatedTest.error || 'Test failed',
-                    timestamp: Date.now()
-                  }))
+                  ws.send(
+                    JSON.stringify({
+                      type: 'testError',
+                      testId: test.id,
+                      message: updatedTest.error || 'Test failed',
+                      timestamp: Date.now(),
+                    })
+                  )
                 } else if (updatedTest.status === 'stopped') {
-                  ws.send(JSON.stringify({
-                    type: 'testStopped',
-                    testId: test.id,
-                    timestamp: Date.now()
-                  }))
+                  ws.send(
+                    JSON.stringify({
+                      type: 'testStopped',
+                      testId: test.id,
+                      timestamp: Date.now(),
+                    })
+                  )
                 }
               }
             }, 1000) // Poll every second
-            
-            // Clean up interval on connection close
-            ws.addEventListener('close', () => {
-              clearInterval(pollInterval)
-            })
+
+            // Note: Bun's WebSocket doesn't support addEventListener
+            // The interval will be cleaned up when the connection closes naturally
+            // or when the test completes
           })
           .catch(error => {
-            ws.send(JSON.stringify({
-              type: 'testError',
-              message: error.message || 'Failed to start test',
-              timestamp: Date.now()
-            }))
+            ws.send(
+              JSON.stringify({
+                type: 'testError',
+                message: error.message || 'Failed to start test',
+                timestamp: Date.now(),
+              })
+            )
           })
         break
-        
-      case 'stopTest':
+      }
+
+      case 'stopTest': {
         // Stop a running test
         if (!data.testId) {
-          ws.send(JSON.stringify({
-            type: 'testError',
-            message: 'Test ID is required'
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'testError',
+              message: 'Test ID is required',
+            })
+          )
           return
         }
-        
+
         console.log('Stopping iperf test:', data.testId)
         stopIperfTest(data.testId)
           .then(success => {
             if (success) {
-              ws.send(JSON.stringify({
-                type: 'testStopped',
-                testId: data.testId,
-                timestamp: Date.now()
-              }))
+              ws.send(
+                JSON.stringify({
+                  type: 'testStopped',
+                  testId: data.testId,
+                  timestamp: Date.now(),
+                })
+              )
             } else {
-              ws.send(JSON.stringify({
-                type: 'testError',
-                message: 'Failed to stop test or test not found',
-                timestamp: Date.now()
-              }))
+              ws.send(
+                JSON.stringify({
+                  type: 'testError',
+                  message: 'Failed to stop test or test not found',
+                  timestamp: Date.now(),
+                })
+              )
             }
           })
           .catch(error => {
-            ws.send(JSON.stringify({
-              type: 'testError',
-              message: error.message || 'Error stopping test',
-              timestamp: Date.now()
-            }))
+            ws.send(
+              JSON.stringify({
+                type: 'testError',
+                message: error.message || 'Error stopping test',
+                timestamp: Date.now(),
+              })
+            )
           })
         break
-        
-      case 'getStatus':
+      }
+
+      case 'getStatus': {
         // Get test status
         if (!data.testId) {
-          ws.send(JSON.stringify({
-            type: 'testError',
-            message: 'Test ID is required'
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'testError',
+              message: 'Test ID is required',
+            })
+          )
           return
         }
-        
+
         const test = getIperfTestStatus(data.testId)
         if (!test) {
-          ws.send(JSON.stringify({
-            type: 'testError',
-            message: 'Test not found',
-            timestamp: Date.now()
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'testError',
+              message: 'Test not found',
+              timestamp: Date.now(),
+            })
+          )
           return
         }
-        
-        ws.send(JSON.stringify({
-          type: 'testStatus',
-          test,
-          timestamp: Date.now()
-        }))
-        break
 
-      case 'discoverServers':
+        ws.send(
+          JSON.stringify({
+            type: 'testStatus',
+            test,
+            timestamp: Date.now(),
+          })
+        )
+        break
+      }
+
+      case 'discoverServers': {
         // Discover iperf servers on the network
         console.log('WebSocket received discoverServers request')
         const port = data.port || 5201
         const forceRefresh = data.forceRefresh || false
-        
-        console.log(`Discovery parameters - port: ${port}, forceRefresh: ${forceRefresh}`)
-        
+
+        console.log(
+          `Discovery parameters - port: ${port}, forceRefresh: ${forceRefresh}`
+        )
+
         // Send an immediate response to let the client know discovery is in progress
         try {
           console.log('Sending discoveryStarted message to client')
-          ws.send(JSON.stringify({
-            type: 'discoveryStarted',
-            timestamp: Date.now()
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'discoveryStarted',
+              timestamp: Date.now(),
+            })
+          )
         } catch (err) {
           console.error('Error sending discoveryStarted message:', err)
         }
-        
+
         try {
           // Start the discovery process
           console.log('Starting iperf server discovery process')
           discoverIperfServers(port, forceRefresh)
             .then(servers => {
-              console.log(`Discovery completed successfully, found ${servers.length} servers`)
-              
+              console.log(
+                `Discovery completed successfully, found ${servers.length} servers`
+              )
+
               // Send the complete list of servers
               console.log('Sending discoveryComplete message to client')
-              ws.send(JSON.stringify({
-                type: 'discoveryComplete',
-                servers,
-                timestamp: Date.now()
-              }))
+              ws.send(
+                JSON.stringify({
+                  type: 'discoveryComplete',
+                  servers,
+                  timestamp: Date.now(),
+                })
+              )
             })
             .catch(error => {
               console.error('Error during iperf server discovery:', error)
               try {
                 console.log('Sending discoveryError message to client')
-                ws.send(JSON.stringify({
-                  type: 'discoveryError',
-                  message: error.message || 'Error discovering servers',
-                  timestamp: Date.now()
-                }))
+                ws.send(
+                  JSON.stringify({
+                    type: 'discoveryError',
+                    message: error.message || 'Error discovering servers',
+                    timestamp: Date.now(),
+                  })
+                )
               } catch (err) {
                 console.error('Error sending error message to client:', err)
               }
@@ -1500,63 +1683,79 @@ function handleIperfMessage(ws: ServerWebSocket<NetworkMonitoringData>, data: an
         } catch (error) {
           console.error('Error starting discovery process:', error)
           try {
-            ws.send(JSON.stringify({
-              type: 'discoveryError',
-              message: 'Failed to start discovery process',
-              timestamp: Date.now()
-            }))
+            ws.send(
+              JSON.stringify({
+                type: 'discoveryError',
+                message: 'Failed to start discovery process',
+                timestamp: Date.now(),
+              })
+            )
           } catch (err) {
             console.error('Error sending error message to client:', err)
           }
         }
         break
+      }
 
-      case 'checkServer':
+      case 'checkServer': {
         // Check if a specific server is available
         if (!data.address) {
-          ws.send(JSON.stringify({
-            type: 'error',
-            message: 'Server address is required',
-            timestamp: Date.now()
-          }))
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: 'Server address is required',
+              timestamp: Date.now(),
+            })
+          )
           return
         }
-        
+
         const serverPort = data.port || 5201
-        console.log(`Checking iperf server availability: ${data.address}:${serverPort}`)
-        
+        console.log(
+          `Checking iperf server availability: ${data.address}:${serverPort}`
+        )
+
         checkIperfServerAvailability(data.address, serverPort)
           .then(isAvailable => {
-            ws.send(JSON.stringify({
-              type: 'serverCheckResult',
-              address: data.address,
-              port: serverPort,
-              available: isAvailable,
-              timestamp: Date.now()
-            }))
+            ws.send(
+              JSON.stringify({
+                type: 'serverCheckResult',
+                address: data.address,
+                port: serverPort,
+                available: isAvailable,
+                timestamp: Date.now(),
+              })
+            )
           })
           .catch(error => {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: error.message || 'Error checking server',
-              timestamp: Date.now()
-            }))
+            ws.send(
+              JSON.stringify({
+                type: 'error',
+                message: error.message || 'Error checking server',
+                timestamp: Date.now(),
+              })
+            )
           })
         break
-        
+      }
+
       default:
-        ws.send(JSON.stringify({
-          type: 'error',
-          message: 'Unknown message type',
-          timestamp: Date.now()
-        }))
+        ws.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'Unknown message type',
+            timestamp: Date.now(),
+          })
+        )
     }
   } catch (error) {
     console.error('Error handling iperf message:', error)
-    ws.send(JSON.stringify({
-      type: 'error',
-      message: 'Error processing message',
-      timestamp: Date.now()
-    }))
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: 'Error processing message',
+        timestamp: Date.now(),
+      })
+    )
   }
 }

@@ -4,7 +4,14 @@
  */
 
 // Using React CDN imports
-const { createElement: h, StrictMode, useState, useEffect, useRef, useCallback } = React
+const {
+  createElement: h,
+  StrictMode,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} = React
 const { createRoot } = ReactDOM
 
 /**
@@ -16,53 +23,70 @@ const api = {
   // Monitor CRUD operations
   async getMonitors(companyId) {
     const response = await fetch(`${API_BASE}/monitors?companyId=${companyId}`)
-    if (!response.ok) throw new Error(`Failed to fetch monitors: ${response.statusText}`)
+    if (!response.ok)
+      throw new Error(`Failed to fetch monitors: ${response.statusText}`)
     return response.json()
   },
 
   async createMonitor(monitorData, companyId = 'default-company-id') {
     console.log('Creating monitor with data:', monitorData)
     console.log('Company ID:', companyId)
-    
-    const response = await fetch(`${API_BASE}/monitors?companyId=${companyId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(monitorData)
-    })
-    
+
+    const response = await fetch(
+      `${API_BASE}/monitors?companyId=${companyId}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(monitorData),
+      }
+    )
+
     console.log('Response status:', response.status)
     console.log('Response ok:', response.ok)
-    
+
     if (!response.ok) {
       const errorText = await response.text()
       console.error('Create monitor error response:', errorText)
-      throw new Error(`Failed to create monitor: ${response.statusText} - ${errorText}`)
+      throw new Error(
+        `Failed to create monitor: ${response.statusText} - ${errorText}`
+      )
     }
     return response.json()
   },
 
   async updateMonitor(monitorId, updates, companyId = 'default-company-id') {
-    const response = await fetch(`${API_BASE}/monitors/${monitorId}?companyId=${companyId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    })
-    if (!response.ok) throw new Error(`Failed to update monitor: ${response.statusText}`)
+    const response = await fetch(
+      `${API_BASE}/monitors/${monitorId}?companyId=${companyId}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      }
+    )
+    if (!response.ok)
+      throw new Error(`Failed to update monitor: ${response.statusText}`)
     return response.json()
   },
 
   async deleteMonitor(monitorId, companyId = 'default-company-id') {
-    const response = await fetch(`${API_BASE}/monitors/${monitorId}?companyId=${companyId}`, {
-      method: 'DELETE'
-    })
-    if (!response.ok) throw new Error(`Failed to delete monitor: ${response.statusText}`)
+    const response = await fetch(
+      `${API_BASE}/monitors/${monitorId}?companyId=${companyId}`,
+      {
+        method: 'DELETE',
+      }
+    )
+    if (!response.ok)
+      throw new Error(`Failed to delete monitor: ${response.statusText}`)
     return response.json()
   },
 
   // Monitor results operations
   async getMonitorResults(monitorId, limit = 50) {
-    const response = await fetch(`${API_BASE}/monitors/${monitorId}/results?limit=${limit}`)
-    if (!response.ok) throw new Error(`Failed to fetch monitor results: ${response.statusText}`)
+    const response = await fetch(
+      `${API_BASE}/monitors/${monitorId}/results?limit=${limit}`
+    )
+    if (!response.ok)
+      throw new Error(`Failed to fetch monitor results: ${response.statusText}`)
     return response.json()
   },
 
@@ -70,16 +94,18 @@ const api = {
     const response = await fetch(`${API_BASE}/monitors/${monitorId}/results`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(resultData)
+      body: JSON.stringify(resultData),
     })
-    if (!response.ok) throw new Error(`Failed to store monitor result: ${response.statusText}`)
+    if (!response.ok)
+      throw new Error(`Failed to store monitor result: ${response.statusText}`)
     return response.json()
   },
 
   // Alerts operations
   async getAlerts(companyId) {
     const response = await fetch(`${API_BASE}/alerts?companyId=${companyId}`)
-    if (!response.ok) throw new Error(`Failed to fetch alerts: ${response.statusText}`)
+    if (!response.ok)
+      throw new Error(`Failed to fetch alerts: ${response.statusText}`)
     return response.json()
   },
 
@@ -87,9 +113,10 @@ const api = {
     const response = await fetch(`${API_BASE}/alerts?companyId=${companyId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(alertData)
+      body: JSON.stringify(alertData),
     })
-    if (!response.ok) throw new Error(`Failed to create alert: ${response.statusText}`)
+    if (!response.ok)
+      throw new Error(`Failed to create alert: ${response.statusText}`)
     return response.json()
   },
 
@@ -97,11 +124,12 @@ const api = {
     const response = await fetch(`${API_BASE}/alerts/${alertId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
+      body: JSON.stringify(updates),
     })
-    if (!response.ok) throw new Error(`Failed to update alert: ${response.statusText}`)
+    if (!response.ok)
+      throw new Error(`Failed to update alert: ${response.statusText}`)
     return response.json()
-  }
+  },
 }
 
 /**
@@ -125,7 +153,7 @@ function useICMPMonitors(companyId = 'default-company-id') {
     try {
       // Test API connectivity first
       console.log('Testing API connectivity to:', API_BASE)
-      
+
       // Fetch monitors from database
       const monitorsData = await api.getMonitors(companyId)
       console.log('Successfully fetched monitors:', monitorsData)
@@ -138,11 +166,18 @@ function useICMPMonitors(companyId = 'default-company-id') {
           const results = await api.getMonitorResults(monitor._id || monitor.id)
           resultsMap.set(monitor._id || monitor.id, {
             history: results,
-            currentStatus: results.length > 0 ? results[results.length - 1].status : 'unknown',
-            lastUpdate: results.length > 0 ? results[results.length - 1].timestamp : null,
+            currentStatus:
+              results.length > 0
+                ? results[results.length - 1].status
+                : 'unknown',
+            lastUpdate:
+              results.length > 0 ? results[results.length - 1].timestamp : null,
           })
         } catch (err) {
-          console.warn(`Failed to load results for monitor ${monitor._id || monitor.id}:`, err)
+          console.warn(
+            `Failed to load results for monitor ${monitor._id || monitor.id}:`,
+            err
+          )
           resultsMap.set(monitor._id || monitor.id, {
             history: [],
             currentStatus: 'unknown',
@@ -160,11 +195,17 @@ function useICMPMonitors(companyId = 'default-company-id') {
       console.log('Successfully loaded all data from API')
     } catch (err) {
       console.error('Error fetching data from database:', err)
-      
+
       if (err.message.includes('Failed to fetch')) {
-        setError('Cannot connect to API server on port 3001. Please make sure the WebSocket server is running.')
+        setError(
+          'Cannot connect to API server on port 3001. Please make sure the WebSocket server is running.'
+        )
       } else {
-        setError(err instanceof Error ? err.message : 'Failed to load data from database')
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to load data from database'
+        )
       }
       setIsConnected(false)
     } finally {
@@ -173,7 +214,7 @@ function useICMPMonitors(companyId = 'default-company-id') {
   }
 
   // Add a new monitor to SQLite database
-  const addMonitor = async (monitorData) => {
+  const addMonitor = async monitorData => {
     try {
       const monitorPayload = {
         name: monitorData.name,
@@ -185,11 +226,11 @@ function useICMPMonitors(companyId = 'default-company-id') {
         lossThreshold: monitorData.lossThreshold,
         latencyWarningThreshold: monitorData.latencyWarningThreshold,
         latencyCriticalThreshold: monitorData.latencyCriticalThreshold,
-          status: 'active',
+        status: 'active',
       }
 
       const newMonitor = await api.createMonitor(monitorPayload, companyId)
-      
+
       // Update local state
       setMonitors(prev => [...prev, newMonitor])
 
@@ -212,10 +253,10 @@ function useICMPMonitors(companyId = 'default-company-id') {
   }
 
   // Remove a monitor from SQLite database
-  const removeMonitor = async (monitorId) => {
+  const removeMonitor = async monitorId => {
     try {
       await api.deleteMonitor(monitorId, companyId)
-      
+
       // Update local state
       setMonitors(prev => prev.filter(m => (m._id || m.id) !== monitorId))
       setLiveResults(prev => {
@@ -223,7 +264,7 @@ function useICMPMonitors(companyId = 'default-company-id') {
         updated.delete(monitorId)
         return updated
       })
-      
+
       // Remove related alerts
       setAlerts(prev => prev.filter(a => a.monitorId !== monitorId))
     } catch (err) {
@@ -235,13 +276,17 @@ function useICMPMonitors(companyId = 'default-company-id') {
   // Update a monitor in SQLite database
   const updateMonitor = async (monitorId, updates) => {
     try {
-      const updatedMonitor = await api.updateMonitor(monitorId, updates, companyId)
-      
+      const updatedMonitor = await api.updateMonitor(
+        monitorId,
+        updates,
+        companyId
+      )
+
       // Update local state
-      setMonitors(prev => prev.map(m => 
-        (m._id || m.id) === monitorId ? updatedMonitor : m
-      ))
-      
+      setMonitors(prev =>
+        prev.map(m => ((m._id || m.id) === monitorId ? updatedMonitor : m))
+      )
+
       return updatedMonitor
     } catch (err) {
       console.error('Error updating monitor in database:', err)
@@ -250,186 +295,222 @@ function useICMPMonitors(companyId = 'default-company-id') {
   }
 
   // Perform actual ICMP ping and store results in database
-  const performMonitorCheck = useCallback(async (monitor) => {
-    try {
-      console.log(`Performing real ping check for ${monitor.name} (${monitor.ipAddress})`)
-      
-      // Call the real ping API endpoint
-      const pingResponse = await fetch(`${API_BASE}/ping`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ipAddress: monitor.ipAddress,
-          count: monitor.packetCount || 3,
-          timeout: monitor.timeout || 10,
-        })
-      })
-
-      if (!pingResponse.ok) {
-        console.error('Ping API call failed:', pingResponse.statusText)
-        throw new Error(`Ping API call failed: ${pingResponse.statusText}`)
-      }
-
-      const pingResult = await pingResponse.json()
-      console.log(`Real ping result for ${monitor.ipAddress}:`, pingResult)
-
-      // Convert ping result to our monitor result format
-      const result = {
-        monitorId: monitor._id || monitor.id,
-        timestamp: Date.now(),
-        status: pingResult.isUp ? 'up' : 'down',
-        responseTime: pingResult.avgLatency || null,
-        packetLoss: pingResult.packetLoss || 0,
-        avgLatency: pingResult.avgLatency || null,
-        minLatency: pingResult.minLatency || null,
-        maxLatency: pingResult.maxLatency || null,
-        packetsTransmitted: pingResult.packetsTransmitted || monitor.packetCount || 3,
-        packetsReceived: pingResult.packetsReceived || 0,
-        standardDeviation: pingResult.standardDeviation || 0,
-        createdAt: new Date().toISOString(),
-      }
-
-      console.log(`Processed result for ${monitor.name}:`, result)
-
-      // Store result in database
-      await api.createMonitorResult(monitor._id || monitor.id, result)
-
-      // Update local live results
-      setLiveResults(prev => {
-        const updated = new Map(prev)
-        const existing = updated.get(monitor._id || monitor.id) || { 
-          history: [], 
-          currentStatus: 'unknown', 
-          lastUpdate: null 
-        }
-
-        const updatedHistory = [...existing.history.slice(-49), result]
-        updated.set(monitor._id || monitor.id, {
-          history: updatedHistory,
-          currentStatus: pingResult.isUp ? 'up' : 'down',
-          lastUpdate: Date.now(),
-        })
-
-        return updated
-      })
-
-      // Update monitor's last check time in database
-      await updateMonitor(monitor._id || monitor.id, {
-        lastCheck: new Date().toISOString(),
-        lastStatus: pingResult.isUp ? 'up' : 'down'
-      })
-
-      // Generate alerts if thresholds are exceeded
-      if (!pingResult.isUp || (pingResult.avgLatency && pingResult.avgLatency > monitor.latencyWarningThreshold)) {
-        try {
-          const alertData = {
-            monitorId: monitor._id || monitor.id,
-            monitorName: monitor.name,
-            companyId: monitor.companyId,
-            severity: !pingResult.isUp ? 'critical' : 'warning',
-            condition: !pingResult.isUp ? 'Host is down' : 'High latency detected',
-            triggeredAt: new Date().toISOString(),
-            value: !pingResult.isUp ? 100 : Math.round(pingResult.avgLatency),
-            threshold: !pingResult.isUp ? monitor.lossThreshold : monitor.latencyWarningThreshold,
-          status: 'active',
-          }
-
-          // Check if alert already exists
-          const existingAlert = alerts.find(a => 
-            a.monitorId === (monitor._id || monitor.id) && 
-            a.status === 'active' &&
-            a.severity === alertData.severity
-          )
-
-          if (!existingAlert) {
-            const newAlert = await api.createAlert(alertData, monitor.companyId || companyId)
-            setAlerts(prev => [...prev, newAlert])
-            console.log(`Created ${alertData.severity} alert for ${monitor.name}:`, newAlert)
-          }
-        } catch (alertErr) {
-          console.warn('Failed to create alert:', alertErr)
-        }
-      } else {
-        // Clear alerts if monitor is healthy
-        const activeAlerts = alerts.filter(a => 
-          a.monitorId === (monitor._id || monitor.id) && a.status === 'active'
-        )
-        
-        for (const alert of activeAlerts) {
-          try {
-            await api.updateAlert(alert._id || alert.id, { status: 'resolved' })
-            console.log(`Resolved alert for ${monitor.name}:`, alert)
-          } catch (alertErr) {
-            console.warn('Failed to resolve alert:', alertErr)
-          }
-        }
-        
-        setAlerts(prev => prev.filter(a => a.monitorId !== (monitor._id || monitor.id)))
-      }
-
-      return result
-    } catch (err) {
-      console.error(`Error performing monitor check for ${monitor.name}:`, err)
-      
-      // In case of error, create a "down" result
-      const errorResult = {
-        monitorId: monitor._id || monitor.id,
-        timestamp: Date.now(),
-        status: 'down',
-        responseTime: null,
-        packetLoss: 100,
-        avgLatency: null,
-        createdAt: new Date().toISOString(),
-        error: err.message,
-      }
-
-      // Store error result in database
+  const performMonitorCheck = useCallback(
+    async monitor => {
       try {
-        await api.createMonitorResult(monitor._id || monitor.id, errorResult)
-      } catch (storeErr) {
-        console.error('Failed to store error result:', storeErr)
-      }
+        console.log(
+          `Performing real ping check for ${monitor.name} (${monitor.ipAddress})`
+        )
 
-      // Update local state to show down status
+        // Call the real ping API endpoint
+        const pingResponse = await fetch(`${API_BASE}/ping`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ipAddress: monitor.ipAddress,
+            count: monitor.packetCount || 3,
+            timeout: monitor.timeout || 10,
+          }),
+        })
+
+        if (!pingResponse.ok) {
+          console.error('Ping API call failed:', pingResponse.statusText)
+          throw new Error(`Ping API call failed: ${pingResponse.statusText}`)
+        }
+
+        const pingResult = await pingResponse.json()
+        console.log(`Real ping result for ${monitor.ipAddress}:`, pingResult)
+
+        // Convert ping result to our monitor result format
+        const result = {
+          monitorId: monitor._id || monitor.id,
+          timestamp: Date.now(),
+          status: pingResult.isUp ? 'up' : 'down',
+          responseTime: pingResult.avgLatency || null,
+          packetLoss: pingResult.packetLoss || 0,
+          avgLatency: pingResult.avgLatency || null,
+          minLatency: pingResult.minLatency || null,
+          maxLatency: pingResult.maxLatency || null,
+          packetsTransmitted:
+            pingResult.packetsTransmitted || monitor.packetCount || 3,
+          packetsReceived: pingResult.packetsReceived || 0,
+          standardDeviation: pingResult.standardDeviation || 0,
+          createdAt: new Date().toISOString(),
+        }
+
+        console.log(`Processed result for ${monitor.name}:`, result)
+
+        // Store result in database
+        await api.createMonitorResult(monitor._id || monitor.id, result)
+
+        // Update local live results
         setLiveResults(prev => {
           const updated = new Map(prev)
-        const existing = updated.get(monitor._id || monitor.id) || { 
-          history: [], 
-          currentStatus: 'unknown', 
-          lastUpdate: null 
-        }
+          const existing = updated.get(monitor._id || monitor.id) || {
+            history: [],
+            currentStatus: 'unknown',
+            lastUpdate: null,
+          }
 
-        const updatedHistory = [...existing.history.slice(-49), errorResult]
-        updated.set(monitor._id || monitor.id, {
-          history: updatedHistory,
-          currentStatus: 'down',
-          lastUpdate: Date.now(),
+          const updatedHistory = [...existing.history.slice(-49), result]
+          updated.set(monitor._id || monitor.id, {
+            history: updatedHistory,
+            currentStatus: pingResult.isUp ? 'up' : 'down',
+            lastUpdate: Date.now(),
+          })
+
+          return updated
         })
 
-        return updated
-      })
+        // Update monitor's last check time in database
+        await updateMonitor(monitor._id || monitor.id, {
+          lastCheck: new Date().toISOString(),
+          lastStatus: pingResult.isUp ? 'up' : 'down',
+        })
 
-      throw err
-    }
-  }, [alerts, companyId, updateMonitor]) // Stable dependencies
+        // Generate alerts if thresholds are exceeded
+        if (
+          !pingResult.isUp ||
+          (pingResult.avgLatency &&
+            pingResult.avgLatency > monitor.latencyWarningThreshold)
+        ) {
+          try {
+            const alertData = {
+              monitorId: monitor._id || monitor.id,
+              monitorName: monitor.name,
+              companyId: monitor.companyId,
+              severity: !pingResult.isUp ? 'critical' : 'warning',
+              condition: !pingResult.isUp
+                ? 'Host is down'
+                : 'High latency detected',
+              triggeredAt: new Date().toISOString(),
+              value: !pingResult.isUp ? 100 : Math.round(pingResult.avgLatency),
+              threshold: !pingResult.isUp
+                ? monitor.lossThreshold
+                : monitor.latencyWarningThreshold,
+              status: 'active',
+            }
+
+            // Check if alert already exists
+            const existingAlert = alerts.find(
+              a =>
+                a.monitorId === (monitor._id || monitor.id) &&
+                a.status === 'active' &&
+                a.severity === alertData.severity
+            )
+
+            if (!existingAlert) {
+              const newAlert = await api.createAlert(
+                alertData,
+                monitor.companyId || companyId
+              )
+              setAlerts(prev => [...prev, newAlert])
+              console.log(
+                `Created ${alertData.severity} alert for ${monitor.name}:`,
+                newAlert
+              )
+            }
+          } catch (alertErr) {
+            console.warn('Failed to create alert:', alertErr)
+          }
+        } else {
+          // Clear alerts if monitor is healthy
+          const activeAlerts = alerts.filter(
+            a =>
+              a.monitorId === (monitor._id || monitor.id) &&
+              a.status === 'active'
+          )
+
+          for (const alert of activeAlerts) {
+            try {
+              await api.updateAlert(alert._id || alert.id, {
+                status: 'resolved',
+              })
+              console.log(`Resolved alert for ${monitor.name}:`, alert)
+            } catch (alertErr) {
+              console.warn('Failed to resolve alert:', alertErr)
+            }
+          }
+
+          setAlerts(prev =>
+            prev.filter(a => a.monitorId !== (monitor._id || monitor.id))
+          )
+        }
+
+        return result
+      } catch (err) {
+        console.error(
+          `Error performing monitor check for ${monitor.name}:`,
+          err
+        )
+
+        // In case of error, create a "down" result
+        const errorResult = {
+          monitorId: monitor._id || monitor.id,
+          timestamp: Date.now(),
+          status: 'down',
+          responseTime: null,
+          packetLoss: 100,
+          avgLatency: null,
+          createdAt: new Date().toISOString(),
+          error: err.message,
+        }
+
+        // Store error result in database
+        try {
+          await api.createMonitorResult(monitor._id || monitor.id, errorResult)
+        } catch (storeErr) {
+          console.error('Failed to store error result:', storeErr)
+        }
+
+        // Update local state to show down status
+        setLiveResults(prev => {
+          const updated = new Map(prev)
+          const existing = updated.get(monitor._id || monitor.id) || {
+            history: [],
+            currentStatus: 'unknown',
+            lastUpdate: null,
+          }
+
+          const updatedHistory = [...existing.history.slice(-49), errorResult]
+          updated.set(monitor._id || monitor.id, {
+            history: updatedHistory,
+            currentStatus: 'down',
+            lastUpdate: Date.now(),
+          })
+
+          return updated
+        })
+
+        throw err
+      }
+    },
+    [alerts, companyId, updateMonitor]
+  ) // Stable dependencies
 
   // Real-time monitoring with database persistence
   useEffect(() => {
     if (monitors.length === 0) return
 
-    console.log('Setting up monitoring intervals for', monitors.length, 'monitors')
+    console.log(
+      'Setting up monitoring intervals for',
+      monitors.length,
+      'monitors'
+    )
     const intervals = new Map()
     const activeMonitors = monitors.filter(m => m.status === 'active')
 
     activeMonitors.forEach(monitor => {
       const intervalMs = monitor.interval * 1000
       console.log(`Setting up ${intervalMs}ms interval for ${monitor.name}`)
-      
+
       // Create a stable function reference for this specific monitor
       const monitorCheckFn = async () => {
         try {
-          console.log(`Performing real ping check for ${monitor.name} (${monitor.ipAddress})`)
-          
+          console.log(
+            `Performing real ping check for ${monitor.name} (${monitor.ipAddress})`
+          )
+
           // Call the real ping API endpoint
           const pingResponse = await fetch(`${API_BASE}/ping`, {
             method: 'POST',
@@ -438,7 +519,7 @@ function useICMPMonitors(companyId = 'default-company-id') {
               ipAddress: monitor.ipAddress,
               count: monitor.packetCount || 3,
               timeout: monitor.timeout || 10,
-            })
+            }),
           })
 
           if (!pingResponse.ok) {
@@ -459,7 +540,8 @@ function useICMPMonitors(companyId = 'default-company-id') {
             avgLatency: pingResult.avgLatency || null,
             minLatency: pingResult.minLatency || null,
             maxLatency: pingResult.maxLatency || null,
-            packetsTransmitted: pingResult.packetsTransmitted || monitor.packetCount || 3,
+            packetsTransmitted:
+              pingResult.packetsTransmitted || monitor.packetCount || 3,
             packetsReceived: pingResult.packetsReceived || 0,
             standardDeviation: pingResult.standardDeviation || 0,
             createdAt: new Date().toISOString(),
@@ -468,17 +550,19 @@ function useICMPMonitors(companyId = 'default-company-id') {
           console.log(`Processed result for ${monitor.name}:`, result)
 
           // Store result in database (fire and forget - don't wait for response)
-          api.createMonitorResult(monitor._id || monitor.id, result).catch(err => {
-            console.warn('Failed to store monitor result:', err)
-          })
+          api
+            .createMonitorResult(monitor._id || monitor.id, result)
+            .catch(err => {
+              console.warn('Failed to store monitor result:', err)
+            })
 
           // Update local live results ONLY (no state changes that trigger re-renders)
           setLiveResults(prev => {
             const updated = new Map(prev)
-            const existing = updated.get(monitor._id || monitor.id) || { 
-              history: [], 
-              currentStatus: 'unknown', 
-              lastUpdate: null 
+            const existing = updated.get(monitor._id || monitor.id) || {
+              history: [],
+              currentStatus: 'unknown',
+              lastUpdate: null,
             }
 
             const updatedHistory = [...existing.history.slice(-49), result]
@@ -496,8 +580,11 @@ function useICMPMonitors(companyId = 'default-company-id') {
 
           return result
         } catch (err) {
-          console.error(`Error performing monitor check for ${monitor.name}:`, err)
-          
+          console.error(
+            `Error performing monitor check for ${monitor.name}:`,
+            err
+          )
+
           // In case of error, create a "down" result
           const errorResult = {
             monitorId: monitor._id || monitor.id,
@@ -511,17 +598,19 @@ function useICMPMonitors(companyId = 'default-company-id') {
           }
 
           // Store error result in database (fire and forget)
-          api.createMonitorResult(monitor._id || monitor.id, errorResult).catch(storeErr => {
-            console.error('Failed to store error result:', storeErr)
-          })
+          api
+            .createMonitorResult(monitor._id || monitor.id, errorResult)
+            .catch(storeErr => {
+              console.error('Failed to store error result:', storeErr)
+            })
 
           // Update local state to show down status
           setLiveResults(prev => {
             const updated = new Map(prev)
-            const existing = updated.get(monitor._id || monitor.id) || { 
-              history: [], 
-              currentStatus: 'unknown', 
-              lastUpdate: null 
+            const existing = updated.get(monitor._id || monitor.id) || {
+              history: [],
+              currentStatus: 'unknown',
+              lastUpdate: null,
             }
 
             const updatedHistory = [...existing.history.slice(-49), errorResult]
@@ -529,16 +618,16 @@ function useICMPMonitors(companyId = 'default-company-id') {
               history: updatedHistory,
               currentStatus: 'down',
               lastUpdate: Date.now(),
-          })
+            })
 
-          return updated
-        })
+            return updated
+          })
+        }
       }
-      }
-      
+
       // Start with an immediate check
       monitorCheckFn()
-      
+
       // Set up the interval
       const intervalId = setInterval(monitorCheckFn, intervalMs)
       intervals.set(monitor._id || monitor.id, intervalId)
@@ -549,7 +638,9 @@ function useICMPMonitors(companyId = 'default-company-id') {
       console.log('Cleaning up monitoring intervals')
       intervals.forEach(intervalId => clearInterval(intervalId))
     }
-  }, [monitors.map(m => `${m._id || m.id}-${m.status}-${m.interval}`).join(',')]) // Removed companyId dependency
+  }, [
+    monitors.map(m => `${m._id || m.id}-${m.status}-${m.interval}`).join(','),
+  ]) // Removed companyId dependency
 
   useEffect(() => {
     refreshData()
@@ -727,7 +818,7 @@ function MonitorCard({ monitor, liveResult, onSelect, onDelete, onEdit }) {
       h(
         'button',
         {
-          onClick: (e) => {
+          onClick: e => {
             e.stopPropagation()
             onEdit(monitor)
           },
@@ -741,11 +832,11 @@ function MonitorCard({ monitor, liveResult, onSelect, onDelete, onEdit }) {
             borderRadius: '4px',
             opacity: 0.7,
           },
-          onMouseOver: (e) => {
+          onMouseOver: e => {
             e.target.style.opacity = 1
             e.target.style.backgroundColor = '#e3f2fd'
           },
-          onMouseOut: (e) => {
+          onMouseOut: e => {
             e.target.style.opacity = 0.7
             e.target.style.backgroundColor = 'transparent'
           },
@@ -757,9 +848,13 @@ function MonitorCard({ monitor, liveResult, onSelect, onDelete, onEdit }) {
       h(
         'button',
         {
-          onClick: (e) => {
+          onClick: e => {
             e.stopPropagation()
-            if (confirm(`Are you sure you want to delete monitor "${monitor.name}"?`)) {
+            if (
+              confirm(
+                `Are you sure you want to delete monitor "${monitor.name}"?`
+              )
+            ) {
               onDelete(monitor._id)
             }
           },
@@ -773,11 +868,11 @@ function MonitorCard({ monitor, liveResult, onSelect, onDelete, onEdit }) {
             borderRadius: '4px',
             opacity: 0.7,
           },
-          onMouseOver: (e) => {
+          onMouseOver: e => {
             e.target.style.opacity = 1
             e.target.style.backgroundColor = '#ffebee'
           },
-          onMouseOut: (e) => {
+          onMouseOut: e => {
             e.target.style.opacity = 0.7
             e.target.style.backgroundColor = 'transparent'
           },
@@ -793,45 +888,45 @@ function MonitorCard({ monitor, liveResult, onSelect, onDelete, onEdit }) {
       {
         onClick: () => onSelect(monitor),
         style: { cursor: 'pointer' },
-    },
-    // Header
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
-            paddingRight: '64px', // Space for action buttons
-        },
       },
+      // Header
       h(
         'div',
-        null,
-        h(
-          'h3',
-          {
-            style: {
-              margin: '0 0 4px 0',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              color: '#333',
-            },
+        {
+          style: {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '12px',
+            paddingRight: '64px', // Space for action buttons
           },
-          monitor.name
-        ),
+        },
         h(
-          'p',
-          {
-            style: {
-              margin: '0',
-              fontSize: '12px',
-              color: '#666',
-              fontFamily: 'monospace',
+          'div',
+          null,
+          h(
+            'h3',
+            {
+              style: {
+                margin: '0 0 4px 0',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                color: '#333',
+              },
             },
-          },
-          monitor.ipAddress
+            monitor.name
+          ),
+          h(
+            'p',
+            {
+              style: {
+                margin: '0',
+                fontSize: '12px',
+                color: '#666',
+                fontFamily: 'monospace',
+              },
+            },
+            monitor.ipAddress
           ),
           // Show status description
           h(
@@ -844,119 +939,123 @@ function MonitorCard({ monitor, liveResult, onSelect, onDelete, onEdit }) {
               },
             },
             monitor.description || 'No description'
+          )
+        ),
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            },
+          },
+          h('span', { style: { fontSize: '20px' } }, status.icon),
+          h(
+            'span',
+            {
+              style: {
+                fontSize: '12px',
+                fontWeight: 'bold',
+                color: status.color,
+              },
+            },
+            status.text
+          )
         )
       ),
+
+      // Status indicator for monitor state
+      monitor.status !== 'active' &&
+        h(
+          'div',
+          {
+            style: {
+              backgroundColor:
+                monitor.status === 'paused' ? '#fff3e0' : '#ffebee',
+              color: monitor.status === 'paused' ? '#f57c00' : '#d32f2f',
+              fontSize: '11px',
+              padding: '4px 8px',
+              borderRadius: '12px',
+              marginBottom: '12px',
+              textAlign: 'center',
+              fontWeight: 'bold',
+            },
+          },
+          monitor.status === 'paused' ? '⏸️ Paused' : '🚫 Disabled'
+        ),
+
+      // Metrics
+      h(
+        'div',
+        {
+          style: {
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '12px',
+            marginBottom: '12px',
+          },
+        },
+        h(
+          'div',
+          null,
+          h(
+            'div',
+            { style: { fontSize: '11px', color: '#666', marginBottom: '4px' } },
+            'Latency'
+          ),
+          h(
+            'div',
+            { style: { fontSize: '14px', fontWeight: 'bold' } },
+            lastData?.avgLatency
+              ? `${Math.round(lastData.avgLatency)}ms`
+              : 'N/A'
+          ),
+          recentData.length > 0 &&
+            h(MiniChart, {
+              data: recentData,
+              type: 'latency',
+              width: 80,
+              height: 25,
+            })
+        ),
+        h(
+          'div',
+          null,
+          h(
+            'div',
+            { style: { fontSize: '11px', color: '#666', marginBottom: '4px' } },
+            'Packet Loss'
+          ),
+          h(
+            'div',
+            { style: { fontSize: '14px', fontWeight: 'bold' } },
+            lastData?.packetLoss ? `${Math.round(lastData.packetLoss)}%` : 'N/A'
+          ),
+          recentData.length > 0 &&
+            h(MiniChart, {
+              data: recentData,
+              type: 'packetloss',
+              width: 80,
+              height: 25,
+            })
+        )
+      ),
+
+      // Footer
       h(
         'div',
         {
           style: {
             display: 'flex',
+            justifyContent: 'space-between',
             alignItems: 'center',
-            gap: '8px',
-          },
-        },
-        h('span', { style: { fontSize: '20px' } }, status.icon),
-        h(
-          'span',
-          {
-            style: {
-              fontSize: '12px',
-              fontWeight: 'bold',
-              color: status.color,
-            },
-          },
-          status.text
-        )
-      )
-    ),
-
-      // Status indicator for monitor state
-      monitor.status !== 'active' && h(
-        'div',
-        {
-          style: {
-            backgroundColor: monitor.status === 'paused' ? '#fff3e0' : '#ffebee',
-            color: monitor.status === 'paused' ? '#f57c00' : '#d32f2f',
             fontSize: '11px',
-            padding: '4px 8px',
-            borderRadius: '12px',
-            marginBottom: '12px',
-            textAlign: 'center',
-            fontWeight: 'bold',
+            color: '#666',
           },
         },
-        monitor.status === 'paused' ? '⏸️ Paused' : '🚫 Disabled'
-      ),
-
-    // Metrics
-    h(
-      'div',
-      {
-        style: {
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '12px',
-          marginBottom: '12px',
-        },
-      },
-      h(
-        'div',
-        null,
-        h(
-          'div',
-          { style: { fontSize: '11px', color: '#666', marginBottom: '4px' } },
-          'Latency'
-        ),
-        h(
-          'div',
-          { style: { fontSize: '14px', fontWeight: 'bold' } },
-          lastData?.avgLatency ? `${Math.round(lastData.avgLatency)}ms` : 'N/A'
-        ),
-        recentData.length > 0 &&
-          h(MiniChart, {
-            data: recentData,
-            type: 'latency',
-            width: 80,
-            height: 25,
-          })
-      ),
-      h(
-        'div',
-        null,
-        h(
-          'div',
-          { style: { fontSize: '11px', color: '#666', marginBottom: '4px' } },
-          'Packet Loss'
-        ),
-        h(
-          'div',
-          { style: { fontSize: '14px', fontWeight: 'bold' } },
-          lastData?.packetLoss ? `${Math.round(lastData.packetLoss)}%` : 'N/A'
-        ),
-        recentData.length > 0 &&
-          h(MiniChart, {
-            data: recentData,
-            type: 'packetloss',
-            width: 80,
-            height: 25,
-          })
-      )
-    ),
-
-    // Footer
-    h(
-      'div',
-      {
-        style: {
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: '11px',
-          color: '#666',
-        },
-      },
-      h('span', null, `Interval: ${monitor.interval}s`),
-      h('span', null, `Last: ${formatTimeAgo(liveResult?.lastUpdate)}`)
+        h('span', null, `Interval: ${monitor.interval}s`),
+        h('span', null, `Last: ${formatTimeAgo(liveResult?.lastUpdate)}`)
       )
     )
   )
@@ -998,14 +1097,16 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
       newErrors.ipAddress = 'IP address is required'
     } else {
       // Basic IP validation
-      const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+      const ipRegex =
+        /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
       if (!ipRegex.test(formData.ipAddress)) {
         newErrors.ipAddress = 'Please enter a valid IP address'
       }
     }
 
     if (formData.interval < 1) {
-      newErrors.interval = 'Interval must be at least 1 second (for realtime monitoring)'
+      newErrors.interval =
+        'Interval must be at least 1 second (for realtime monitoring)'
     }
 
     if (formData.timeout < 1) {
@@ -1020,7 +1121,7 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = e => {
     e.preventDefault()
     if (validateForm()) {
       onSubmit(formData)
@@ -1058,7 +1159,7 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
         alignItems: 'center',
         zIndex: 1000,
       },
-      onClick: (e) => {
+      onClick: e => {
         if (e.target === e.currentTarget) onClose()
       },
     },
@@ -1127,7 +1228,7 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
           h('input', {
             type: 'text',
             value: formData.name,
-            onChange: (e) => handleInputChange('name', e.target.value),
+            onChange: e => handleInputChange('name', e.target.value),
             style: {
               width: '100%',
               padding: '8px 12px',
@@ -1138,11 +1239,14 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             },
             placeholder: 'e.g., Web Server',
           }),
-          errors.name && h(
-            'div',
-            { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-            errors.name
-          )
+          errors.name &&
+            h(
+              'div',
+              {
+                style: { color: '#f44336', fontSize: '12px', marginTop: '4px' },
+              },
+              errors.name
+            )
         ),
 
         // Description
@@ -1164,7 +1268,7 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
           h('input', {
             type: 'text',
             value: formData.description,
-            onChange: (e) => handleInputChange('description', e.target.value),
+            onChange: e => handleInputChange('description', e.target.value),
             style: {
               width: '100%',
               padding: '8px 12px',
@@ -1173,7 +1277,8 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
               fontSize: '14px',
               boxSizing: 'border-box',
             },
-            placeholder: 'Optional description (e.g., Critical server - realtime monitoring)',
+            placeholder:
+              'Optional description (e.g., Critical server - realtime monitoring)',
           })
         ),
 
@@ -1196,7 +1301,7 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
           h('input', {
             type: 'text',
             value: formData.ipAddress,
-            onChange: (e) => handleInputChange('ipAddress', e.target.value),
+            onChange: e => handleInputChange('ipAddress', e.target.value),
             style: {
               width: '100%',
               padding: '8px 12px',
@@ -1208,11 +1313,14 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             },
             placeholder: '192.168.1.1',
           }),
-          errors.ipAddress && h(
-            'div',
-            { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-            errors.ipAddress
-          )
+          errors.ipAddress &&
+            h(
+              'div',
+              {
+                style: { color: '#f44336', fontSize: '12px', marginTop: '4px' },
+              },
+              errors.ipAddress
+            )
         ),
 
         // Two column layout for numbers
@@ -1245,7 +1353,8 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             h('input', {
               type: 'number',
               value: formData.interval,
-              onChange: (e) => handleInputChange('interval', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange('interval', parseInt(e.target.value) || 0),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1257,11 +1366,18 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
               min: '1',
               placeholder: 'e.g., 1 for realtime, 30 for normal',
             }),
-            errors.interval && h(
-              'div',
-              { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-              errors.interval
-            ),
+            errors.interval &&
+              h(
+                'div',
+                {
+                  style: {
+                    color: '#f44336',
+                    fontSize: '12px',
+                    marginTop: '4px',
+                  },
+                },
+                errors.interval
+              ),
             // Add helpful note for realtime monitoring
             h(
               'div',
@@ -1289,7 +1405,8 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             h('input', {
               type: 'number',
               value: formData.timeout,
-              onChange: (e) => handleInputChange('timeout', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange('timeout', parseInt(e.target.value) || 0),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1300,11 +1417,18 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
               },
               min: '1',
             }),
-            errors.timeout && h(
-              'div',
-              { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-              errors.timeout
-            )
+            errors.timeout &&
+              h(
+                'div',
+                {
+                  style: {
+                    color: '#f44336',
+                    fontSize: '12px',
+                    marginTop: '4px',
+                  },
+                },
+                errors.timeout
+              )
           )
         ),
 
@@ -1338,7 +1462,8 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             h('input', {
               type: 'number',
               value: formData.packetCount,
-              onChange: (e) => handleInputChange('packetCount', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange('packetCount', parseInt(e.target.value) || 0),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1349,11 +1474,18 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
               },
               min: '1',
             }),
-            errors.packetCount && h(
-              'div',
-              { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-              errors.packetCount
-            )
+            errors.packetCount &&
+              h(
+                'div',
+                {
+                  style: {
+                    color: '#f44336',
+                    fontSize: '12px',
+                    marginTop: '4px',
+                  },
+                },
+                errors.packetCount
+              )
           ),
 
           // Loss Threshold
@@ -1375,7 +1507,11 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             h('input', {
               type: 'number',
               value: formData.lossThreshold,
-              onChange: (e) => handleInputChange('lossThreshold', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange(
+                  'lossThreshold',
+                  parseInt(e.target.value) || 0
+                ),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1420,7 +1556,11 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             h('input', {
               type: 'number',
               value: formData.latencyWarningThreshold,
-              onChange: (e) => handleInputChange('latencyWarningThreshold', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange(
+                  'latencyWarningThreshold',
+                  parseInt(e.target.value) || 0
+                ),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1452,7 +1592,11 @@ function AddMonitorDialog({ isOpen, onClose, onSubmit }) {
             h('input', {
               type: 'number',
               value: formData.latencyCriticalThreshold,
-              onChange: (e) => handleInputChange('latencyCriticalThreshold', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange(
+                  'latencyCriticalThreshold',
+                  parseInt(e.target.value) || 0
+                ),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1570,7 +1714,8 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
       newErrors.ipAddress = 'IP address is required'
     } else {
       // Basic IP validation
-      const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
+      const ipRegex =
+        /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/
       if (!ipRegex.test(formData.ipAddress)) {
         newErrors.ipAddress = 'Please enter a valid IP address'
       }
@@ -1592,7 +1737,7 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = e => {
     e.preventDefault()
     if (validateForm()) {
       onSubmit(formData)
@@ -1617,7 +1762,7 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
         alignItems: 'center',
         zIndex: 1000,
       },
-      onClick: (e) => {
+      onClick: e => {
         if (e.target === e.currentTarget) onClose()
       },
     },
@@ -1686,7 +1831,7 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
           h('input', {
             type: 'text',
             value: formData.name,
-            onChange: (e) => handleInputChange('name', e.target.value),
+            onChange: e => handleInputChange('name', e.target.value),
             style: {
               width: '100%',
               padding: '8px 12px',
@@ -1697,11 +1842,14 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             },
             placeholder: 'e.g., Web Server',
           }),
-          errors.name && h(
-            'div',
-            { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-            errors.name
-          )
+          errors.name &&
+            h(
+              'div',
+              {
+                style: { color: '#f44336', fontSize: '12px', marginTop: '4px' },
+              },
+              errors.name
+            )
         ),
 
         // Status
@@ -1724,7 +1872,7 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             'select',
             {
               value: formData.status,
-              onChange: (e) => handleInputChange('status', e.target.value),
+              onChange: e => handleInputChange('status', e.target.value),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1759,7 +1907,7 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
           h('input', {
             type: 'text',
             value: formData.description,
-            onChange: (e) => handleInputChange('description', e.target.value),
+            onChange: e => handleInputChange('description', e.target.value),
             style: {
               width: '100%',
               padding: '8px 12px',
@@ -1791,7 +1939,7 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
           h('input', {
             type: 'text',
             value: formData.ipAddress,
-            onChange: (e) => handleInputChange('ipAddress', e.target.value),
+            onChange: e => handleInputChange('ipAddress', e.target.value),
             style: {
               width: '100%',
               padding: '8px 12px',
@@ -1803,11 +1951,14 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             },
             placeholder: '192.168.1.1',
           }),
-          errors.ipAddress && h(
-            'div',
-            { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-            errors.ipAddress
-          )
+          errors.ipAddress &&
+            h(
+              'div',
+              {
+                style: { color: '#f44336', fontSize: '12px', marginTop: '4px' },
+              },
+              errors.ipAddress
+            )
         ),
 
         // Two column layout for numbers
@@ -1840,7 +1991,8 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             h('input', {
               type: 'number',
               value: formData.interval,
-              onChange: (e) => handleInputChange('interval', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange('interval', parseInt(e.target.value) || 0),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1852,11 +2004,18 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
               min: '1',
               placeholder: 'e.g., 5 for realtime, 30 for normal',
             }),
-            errors.interval && h(
-              'div',
-              { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-              errors.interval
-            )
+            errors.interval &&
+              h(
+                'div',
+                {
+                  style: {
+                    color: '#f44336',
+                    fontSize: '12px',
+                    marginTop: '4px',
+                  },
+                },
+                errors.interval
+              )
           ),
 
           // Timeout
@@ -1878,7 +2037,8 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             h('input', {
               type: 'number',
               value: formData.timeout,
-              onChange: (e) => handleInputChange('timeout', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange('timeout', parseInt(e.target.value) || 0),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1889,11 +2049,18 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
               },
               min: '1',
             }),
-            errors.timeout && h(
-              'div',
-              { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-              errors.timeout
-            )
+            errors.timeout &&
+              h(
+                'div',
+                {
+                  style: {
+                    color: '#f44336',
+                    fontSize: '12px',
+                    marginTop: '4px',
+                  },
+                },
+                errors.timeout
+              )
           )
         ),
 
@@ -1927,7 +2094,8 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             h('input', {
               type: 'number',
               value: formData.packetCount,
-              onChange: (e) => handleInputChange('packetCount', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange('packetCount', parseInt(e.target.value) || 0),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -1938,11 +2106,18 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
               },
               min: '1',
             }),
-            errors.packetCount && h(
-              'div',
-              { style: { color: '#f44336', fontSize: '12px', marginTop: '4px' } },
-              errors.packetCount
-            )
+            errors.packetCount &&
+              h(
+                'div',
+                {
+                  style: {
+                    color: '#f44336',
+                    fontSize: '12px',
+                    marginTop: '4px',
+                  },
+                },
+                errors.packetCount
+              )
           ),
 
           // Loss Threshold
@@ -1964,7 +2139,11 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             h('input', {
               type: 'number',
               value: formData.lossThreshold,
-              onChange: (e) => handleInputChange('lossThreshold', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange(
+                  'lossThreshold',
+                  parseInt(e.target.value) || 0
+                ),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -2009,7 +2188,11 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             h('input', {
               type: 'number',
               value: formData.latencyWarningThreshold,
-              onChange: (e) => handleInputChange('latencyWarningThreshold', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange(
+                  'latencyWarningThreshold',
+                  parseInt(e.target.value) || 0
+                ),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -2041,7 +2224,11 @@ function EditMonitorDialog({ isOpen, onClose, onSubmit, monitor }) {
             h('input', {
               type: 'number',
               value: formData.latencyCriticalThreshold,
-              onChange: (e) => handleInputChange('latencyCriticalThreshold', parseInt(e.target.value) || 0),
+              onChange: e =>
+                handleInputChange(
+                  'latencyCriticalThreshold',
+                  parseInt(e.target.value) || 0
+                ),
               style: {
                 width: '100%',
                 padding: '8px 12px',
@@ -2129,14 +2316,14 @@ function ICMPMonitoringDashboard() {
   } = useICMPMonitors()
 
   // Handle adding a new monitor
-  const handleAddMonitor = async (monitorData) => {
+  const handleAddMonitor = async monitorData => {
     try {
       const newMonitor = await addMonitor(monitorData)
       console.log('Successfully added new monitor:', newMonitor)
-      
+
       // Show success message with more details
       const message = `✅ Monitor "${monitorData.name}" is now actively monitoring ${monitorData.ipAddress} every ${monitorData.interval} seconds and storing results in SQLite database!`
-      
+
       // Create a better notification
       if (window.Notification && Notification.permission === 'granted') {
         new Notification('Monitor Added Successfully', {
@@ -2153,22 +2340,30 @@ function ICMPMonitoringDashboard() {
   }
 
   // Handle editing a monitor
-  const handleEditMonitor = (monitor) => {
+  const handleEditMonitor = monitor => {
     console.log('Opening edit dialog for monitor:', monitor)
     setEditingMonitor(monitor)
     setShowEditDialog(true)
   }
 
   // Handle updating a monitor
-  const handleUpdateMonitor = async (monitorData) => {
+  const handleUpdateMonitor = async monitorData => {
     try {
-      console.log('Updating monitor:', editingMonitor._id, 'with data:', monitorData)
-      const updatedMonitor = await updateMonitor(editingMonitor._id || editingMonitor.id, monitorData)
+      console.log(
+        'Updating monitor:',
+        editingMonitor._id,
+        'with data:',
+        monitorData
+      )
+      const updatedMonitor = await updateMonitor(
+        editingMonitor._id || editingMonitor.id,
+        monitorData
+      )
       console.log('Successfully updated monitor:', updatedMonitor)
-      
+
       // Show success message
       const message = `✅ Monitor "${monitorData.name}" has been updated successfully!`
-      
+
       if (window.Notification && Notification.permission === 'granted') {
         new Notification('Monitor Updated Successfully', {
           body: message,
@@ -2181,7 +2376,7 @@ function ICMPMonitoringDashboard() {
       // Close the edit dialog
       setShowEditDialog(false)
       setEditingMonitor(null)
-      
+
       // Refresh data to show changes
       await refreshData()
     } catch (error) {
@@ -2191,11 +2386,11 @@ function ICMPMonitoringDashboard() {
   }
 
   // Handle deleting a monitor
-  const handleDeleteMonitor = async (monitorId) => {
+  const handleDeleteMonitor = async monitorId => {
     try {
       await removeMonitor(monitorId)
       console.log('Successfully removed monitor:', monitorId)
-      
+
       // Show success message
       if (window.Notification && Notification.permission === 'granted') {
         new Notification('Monitor Deleted', {
@@ -2589,7 +2784,11 @@ function ICMPMonitoringDashboard() {
               ? h(
                   'div',
                   null,
-                  h('div', { style: { fontSize: '48px', marginBottom: '16px' } }, '🌐'),
+                  h(
+                    'div',
+                    { style: { fontSize: '48px', marginBottom: '16px' } },
+                    '🌐'
+                  ),
                   h(
                     'h3',
                     { style: { margin: '0 0 8px 0', color: '#333' } },

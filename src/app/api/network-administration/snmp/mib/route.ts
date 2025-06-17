@@ -17,7 +17,10 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
   const pathname = url.pathname
 
   // Handle requests for MIB browsing
-  if (pathname.startsWith('/api/network-administration/snmp/mib') && method === 'POST') {
+  if (
+    pathname.startsWith('/api/network-administration/snmp/mib') &&
+    method === 'POST'
+  ) {
     try {
       const data = await req.json()
       const companyId = data.companyId
@@ -64,7 +67,7 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
           authProtocol,
           authKey,
           privProtocol,
-          privKey
+          privKey,
         } = data
 
         if (!username) {
@@ -95,7 +98,8 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
             if (!authKey || !privKey) {
               return new Response(
                 JSON.stringify({
-                  error: 'authPriv security level requires both authKey and privKey',
+                  error:
+                    'authPriv security level requires both authKey and privKey',
                 }),
                 {
                   status: 400,
@@ -135,7 +139,7 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
         try {
           session = snmp.createV3Session(host, {
             name: username,
-            ...options
+            ...options,
           })
           mibResults = await browseMIB(session, targetOidPath)
         } catch (error) {
@@ -153,7 +157,7 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
       } else {
         // SNMPv1 or SNMPv2c
         const community = data.community || 'public'
-        
+
         try {
           session = snmp.createSession(host, community, {
             port: data.port || 161,
@@ -179,7 +183,7 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
       // Process any existing OIDs to add metadata
       const oidRepository = new SNMPOIDRepository()
       const existingOids = await oidRepository.getForCompany(companyId)
-      
+
       // Add 'exists' flag to any OIDs that are already in the database
       const resultsWithMetadata = mibResults.map(item => {
         const existingOid = existingOids.find(oid => oid.oid === item.oid)
@@ -187,7 +191,7 @@ export async function handleSNMPMIBRequest(req: Request): Promise<Response> {
           ...item,
           existsInDatabase: !!existingOid,
           existingName: existingOid?.oidName,
-          existingDescription: existingOid?.description
+          existingDescription: existingOid?.description,
         }
       })
 
@@ -229,32 +233,37 @@ async function browseMIB(session, oidPath: string): Promise<any[]> {
   return new Promise((resolve, reject) => {
     const results: any[] = []
 
-    session.subtree(oidPath, 10, (varbinds) => {
-      for (const vb of varbinds) {
-        if (snmp.isVarbindError(vb)) {
-          // Skip errors like endOfMibView
-          continue
+    session.subtree(
+      oidPath,
+      10,
+      varbinds => {
+        for (const vb of varbinds) {
+          if (snmp.isVarbindError(vb)) {
+            // Skip errors like endOfMibView
+            continue
+          }
+
+          // Format the OID and add metadata about its type
+          results.push({
+            oid: vb.oid,
+            value: formatValue(vb.value, vb.type),
+            type: vb.type,
+            typeName: getTypeName(vb.type),
+            displayName: vb.oid.split('.').pop(), // Just the last part of the OID
+          })
         }
-        
-        // Format the OID and add metadata about its type
-        results.push({
-          oid: vb.oid,
-          value: formatValue(vb.value, vb.type),
-          type: vb.type,
-          typeName: getTypeName(vb.type),
-          displayName: vb.oid.split('.').pop(), // Just the last part of the OID
-        })
+      },
+      error => {
+        if (error) {
+          reject(error)
+        } else {
+          resolve(results)
+        }
+
+        // Close the session
+        session.close()
       }
-    }, (error) => {
-      if (error) {
-        reject(error)
-      } else {
-        resolve(results)
-      }
-      
-      // Close the session
-      session.close()
-    })
+    )
   })
 }
 
@@ -263,14 +272,14 @@ async function browseMIB(session, oidPath: string): Promise<any[]> {
  */
 function getAuthProtocol(protocol: string) {
   const protocols = {
-    'MD5': snmp.AuthProtocols.md5,
-    'SHA': snmp.AuthProtocols.sha,
+    MD5: snmp.AuthProtocols.md5,
+    SHA: snmp.AuthProtocols.sha,
     'SHA-224': snmp.AuthProtocols.sha224,
     'SHA-256': snmp.AuthProtocols.sha256,
     'SHA-384': snmp.AuthProtocols.sha384,
     'SHA-512': snmp.AuthProtocols.sha512,
   }
-  
+
   return protocols[protocol] || snmp.AuthProtocols.md5
 }
 
@@ -279,11 +288,11 @@ function getAuthProtocol(protocol: string) {
  */
 function getPrivProtocol(protocol: string) {
   const protocols = {
-    'DES': snmp.PrivProtocols.des,
-    'AES': snmp.PrivProtocols.aes,
+    DES: snmp.PrivProtocols.des,
+    AES: snmp.PrivProtocols.aes,
     'AES-256': snmp.PrivProtocols.aes256,
   }
-  
+
   return protocols[protocol] || snmp.PrivProtocols.des
 }
 
@@ -305,9 +314,9 @@ function getTypeName(type: number): string {
     70: 'Counter64',
     128: 'NoSuchObject',
     129: 'NoSuchInstance',
-    130: 'EndOfMibView'
+    130: 'EndOfMibView',
   }
-  
+
   return typeMap[type] || `Unknown(${type})`
 }
 
@@ -318,7 +327,7 @@ function formatValue(value: any, type: number): string {
   if (value === null || value === undefined) {
     return 'N/A'
   }
-  
+
   // Handle special formats based on type
   switch (type) {
     case 4: // OctetString
@@ -333,17 +342,17 @@ function formatValue(value: any, type: number): string {
         }
       }
       return String(value)
-    
+
     case 6: // OID
       return value.toString()
-    
+
     case 64: // IpAddress
       // Format as IP address if it's a buffer
       if (Buffer.isBuffer(value) && value.length === 4) {
         return Array.from(value).join('.')
       }
       return String(value)
-    
+
     case 67: // TimeTicks (convert to time format)
       // TimeTicks are in hundredths of a second
       const seconds = Math.floor(value / 100)
@@ -351,9 +360,9 @@ function formatValue(value: any, type: number): string {
       const hours = Math.floor((seconds % 86400) / 3600)
       const minutes = Math.floor((seconds % 3600) / 60)
       const remainingSeconds = seconds % 60
-      
+
       return `${days}d ${hours}h ${minutes}m ${remainingSeconds}s (${value} timeticks)`
-    
+
     default:
       return String(value)
   }

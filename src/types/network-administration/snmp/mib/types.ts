@@ -7,28 +7,28 @@
  */
 export interface MIBEntry {
   /** The full OID string */
-  oid: string;
-  
+  oid: string
+
   /** The value of the OID */
-  value: string;
-  
+  value: string
+
   /** The numeric SNMP data type */
-  type: number;
-  
+  type: number
+
   /** Human readable name of the data type */
-  typeName: string;
-  
+  typeName: string
+
   /** The display name (last part of the OID) */
-  displayName: string;
-  
+  displayName: string
+
   /** Whether this OID already exists in the database */
-  existsInDatabase?: boolean;
-  
+  existsInDatabase?: boolean
+
   /** The name of the OID if it exists in the database */
-  existingName?: string;
-  
+  existingName?: string
+
   /** The description of the OID if it exists in the database */
-  existingDescription?: string;
+  existingDescription?: string
 }
 
 /**
@@ -36,43 +36,43 @@ export interface MIBEntry {
  */
 export interface MIBBrowserRequest {
   /** Company ID for authorization and scoping */
-  companyId: string;
-  
+  companyId: string
+
   /** Target device hostname or IP address */
-  host: string;
-  
+  host: string
+
   /** Target SNMP port (default: 161) */
-  port?: number;
-  
+  port?: number
+
   /** OID path to browse (default: 1.3.6.1.2.1.1 - system MIB) */
-  oidPath?: string;
-  
+  oidPath?: string
+
   /** SNMP version to use (1, 2c, or 3) */
-  snmpVersion: '1' | '2c' | '3';
-  
+  snmpVersion: '1' | '2c' | '3'
+
   /** Community string for SNMPv1/v2c */
-  community?: string;
-  
+  community?: string
+
   /** Username for SNMPv3 */
-  username?: string;
-  
+  username?: string
+
   /** Security level for SNMPv3 (noAuthNoPriv, authNoPriv, authPriv) */
-  securityLevel?: 'noAuthNoPriv' | 'authNoPriv' | 'authPriv';
-  
+  securityLevel?: 'noAuthNoPriv' | 'authNoPriv' | 'authPriv'
+
   /** Authentication protocol for SNMPv3 */
-  authProtocol?: 'MD5' | 'SHA' | 'SHA-224' | 'SHA-256' | 'SHA-384' | 'SHA-512';
-  
+  authProtocol?: 'MD5' | 'SHA' | 'SHA-224' | 'SHA-256' | 'SHA-384' | 'SHA-512'
+
   /** Authentication key for SNMPv3 */
-  authKey?: string;
-  
+  authKey?: string
+
   /** Privacy protocol for SNMPv3 */
-  privProtocol?: 'DES' | 'AES' | 'AES-256';
-  
+  privProtocol?: 'DES' | 'AES' | 'AES-256'
+
   /** Privacy key for SNMPv3 */
-  privKey?: string;
-  
+  privKey?: string
+
   /** Optional template ID to use for authentication */
-  templateId?: string;
+  templateId?: string
 }
 
 /**
@@ -80,8 +80,8 @@ export interface MIBBrowserRequest {
  */
 export interface MIBBrowserResponse {
   /** Array of MIB entries found */
-  results: MIBEntry[];
-  
+  results: MIBEntry[]
+
   /** Error message if an error occurred */
-  error?: string;
+  error?: string
 }

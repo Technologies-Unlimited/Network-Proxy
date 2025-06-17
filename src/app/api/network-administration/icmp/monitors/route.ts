@@ -53,7 +53,9 @@ interface PingTestRequest {
   timeout?: number
 }
 
-export async function handleICMPMonitorsRequest(req: Request): Promise<Response> {
+export async function handleICMPMonitorsRequest(
+  req: Request
+): Promise<Response> {
   const repository = new ICMPMonitorRepository()
   const url = new URL(req.url)
   const method = req.method
@@ -85,16 +87,16 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
     if (pathname === '/api/ping') {
       if (method === 'POST') {
         try {
-          const body = await req.json() as PingTestRequest
+          const body = (await req.json()) as PingTestRequest
           console.log('Performing real ping to:', body.ipAddress)
-          
+
           const pingResult = await performPing(body.ipAddress, {
             count: body.count || 3,
             timeout: body.timeout || 10,
           })
-          
+
           console.log('Ping result:', pingResult)
-          
+
           return new Response(JSON.stringify(pingResult), {
             status: 200,
             headers: corsHeaders,
@@ -103,7 +105,10 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
           console.error('Error performing ping:', error)
           return new Response(
             JSON.stringify({
-              error: error instanceof Error ? error.message : 'Failed to perform ping',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to perform ping',
             }),
             {
               status: 500,
@@ -157,25 +162,31 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
       // POST /api/monitors - Create a new monitor
       if (method === 'POST') {
         try {
-          const body = await req.json() as CreateMonitorRequest
+          const body = (await req.json()) as CreateMonitorRequest
           console.log('Received monitor creation request:')
           console.log('Company ID:', companyId)
           console.log('Request body:', body)
-          
+
           // Create the monitor
           const newMonitor = repository.createMonitor(companyId, body)
           console.log('Successfully created monitor:', newMonitor)
-          
+
           return new Response(JSON.stringify(newMonitor), {
             status: 201,
             headers: corsHeaders,
           })
         } catch (error) {
           console.error('Error creating monitor:', error)
-          console.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
+          console.error(
+            'Error stack:',
+            error instanceof Error ? error.stack : 'No stack'
+          )
           return new Response(
             JSON.stringify({
-              error: error instanceof Error ? error.message : 'Failed to create monitor',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to create monitor',
             }),
             {
               status: 400,
@@ -240,9 +251,13 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
       // PUT /api/monitors/:id - Update a monitor
       if (method === 'PUT') {
         try {
-          const body = await req.json() as UpdateMonitorRequest
-          const updatedMonitor = repository.updateMonitor(monitorId, companyId, body)
-          
+          const body = (await req.json()) as UpdateMonitorRequest
+          const updatedMonitor = repository.updateMonitor(
+            monitorId,
+            companyId,
+            body
+          )
+
           if (!updatedMonitor) {
             return new Response(
               JSON.stringify({
@@ -263,7 +278,10 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
           console.error('Error updating monitor:', error)
           return new Response(
             JSON.stringify({
-              error: error instanceof Error ? error.message : 'Failed to update monitor',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to update monitor',
             }),
             {
               status: 400,
@@ -277,7 +295,7 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
       if (method === 'DELETE') {
         try {
           const success = repository.deleteMonitor(monitorId, companyId)
-          
+
           if (!success) {
             return new Response(
               JSON.stringify({
@@ -324,7 +342,12 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
       // GET /api/monitors/:id/results - Get monitor history/results
       if (method === 'GET') {
         try {
-          const results = repository.getMonitorHistory(monitorId, undefined, undefined, limit)
+          const results = repository.getMonitorHistory(
+            monitorId,
+            undefined,
+            undefined,
+            limit
+          )
           return new Response(JSON.stringify(results), {
             status: 200,
             headers: corsHeaders,
@@ -346,7 +369,7 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
       // POST /api/monitors/:id/results - Store a new monitor result
       if (method === 'POST') {
         try {
-          const body = await req.json() as CreateResultRequest
+          const body = (await req.json()) as CreateResultRequest
           const result = repository.addMonitorHistory({
             monitorId,
             timestamp: body.timestamp || Date.now(),
@@ -360,7 +383,7 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
             avgLatency: body.avgLatency || body.responseTime || null,
             standardDeviation: 0,
           })
-          
+
           return new Response(JSON.stringify(result), {
             status: 201,
             headers: corsHeaders,
@@ -369,7 +392,10 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
           console.error('Error storing monitor result:', error)
           return new Response(
             JSON.stringify({
-              error: error instanceof Error ? error.message : 'Failed to store monitor result',
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to store monitor result',
             }),
             {
               status: 400,
@@ -390,7 +416,6 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
         headers: corsHeaders,
       }
     )
-
   } catch (error) {
     console.error('ICMP Monitors API error:', error)
     return new Response(
@@ -403,4 +428,4 @@ export async function handleICMPMonitorsRequest(req: Request): Promise<Response>
       }
     )
   }
-} 
+}

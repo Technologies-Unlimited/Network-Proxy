@@ -33,7 +33,7 @@ export async function performPing(
 ): Promise<PingResult> {
   const { count = 3, timeout = 10 } = options
 
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     let command: string
     let args: string[]
 
@@ -41,7 +41,13 @@ export async function performPing(
     if (process.platform === 'win32') {
       // Windows ping command - reduce timeout to be more responsive
       command = 'ping'
-      args = ['-n', count.toString(), '-w', Math.min(timeout * 1000, 5000).toString(), target]
+      args = [
+        '-n',
+        count.toString(),
+        '-w',
+        Math.min(timeout * 1000, 5000).toString(),
+        target,
+      ]
     } else {
       // Unix/Linux/macOS ping command
       command = 'ping'
@@ -75,7 +81,7 @@ export async function performPing(
         const exitCode = code || 0
         console.log(`Ping completed with code ${exitCode}`)
         console.log('Stdout:', stdout)
-        
+
         if (stderr) {
           console.log('Stderr:', stderr)
         }
@@ -85,7 +91,7 @@ export async function performPing(
       }
     })
 
-    pingProcess.on('error', (error) => {
+    pingProcess.on('error', error => {
       console.error('Ping process error:', error)
       resolveOnce({
         isUp: false,
@@ -128,7 +134,11 @@ function parsePingOutput(
   console.log('Parsing ping output:', { stdout, stderr, exitCode })
 
   // Check for obvious failure conditions
-  if (stderr.includes('unreachable') || stderr.includes('failed') || stderr.includes('could not find host')) {
+  if (
+    stderr.includes('unreachable') ||
+    stderr.includes('failed') ||
+    stderr.includes('could not find host')
+  ) {
     return {
       isUp: false,
       latency: undefined,
@@ -162,7 +172,10 @@ function parsePingOutput(
 /**
  * Parse Windows ping output
  */
-function parseWindowsPingOutput(output: string, expectedPackets: number): PingResult {
+function parseWindowsPingOutput(
+  output: string,
+  expectedPackets: number
+): PingResult {
   const lines = output.split('\n')
   const latencies: number[] = []
   let packetsReceived = 0
@@ -182,9 +195,12 @@ function parseWindowsPingOutput(output: string, expectedPackets: number): PingRe
         packetsReceived++
       }
     }
-    
+
     // Also check for timeout messages
-    if (line.includes('Request timed out') || line.includes('Destination host unreachable')) {
+    if (
+      line.includes('Request timed out') ||
+      line.includes('Destination host unreachable')
+    ) {
       // These count as transmitted but not received
       continue
     }
@@ -197,23 +213,32 @@ function parseWindowsPingOutput(output: string, expectedPackets: number): PingRe
     packetLoss = parseInt(lossMatch[1])
   } else {
     // Calculate packet loss from received vs transmitted
-    packetLoss = Math.round(((expectedPackets - packetsReceived) / expectedPackets) * 100)
+    packetLoss = Math.round(
+      ((expectedPackets - packetsReceived) / expectedPackets) * 100
+    )
   }
 
   // Calculate statistics
   const isUp = packetsReceived > 0 // Host is up if we received ANY replies
-  const avgLatency = latencies.length > 0 ? latencies.reduce((a, b) => a + b, 0) / latencies.length : undefined
+  const avgLatency =
+    latencies.length > 0
+      ? latencies.reduce((a, b) => a + b, 0) / latencies.length
+      : undefined
   const minLatency = latencies.length > 0 ? Math.min(...latencies) : undefined
   const maxLatency = latencies.length > 0 ? Math.max(...latencies) : undefined
 
   // Calculate standard deviation
   let standardDeviation: number | undefined
   if (latencies.length > 1 && avgLatency !== undefined) {
-    const variance = latencies.reduce((acc, val) => acc + Math.pow(val - avgLatency, 2), 0) / latencies.length
+    const variance =
+      latencies.reduce((acc, val) => acc + Math.pow(val - avgLatency, 2), 0) /
+      latencies.length
     standardDeviation = Math.sqrt(variance)
   }
 
-  console.log(`Windows ping result: isUp=${isUp}, packetsReceived=${packetsReceived}/${expectedPackets}, avgLatency=${avgLatency}`)
+  console.log(
+    `Windows ping result: isUp=${isUp}, packetsReceived=${packetsReceived}/${expectedPackets}, avgLatency=${avgLatency}`
+  )
 
   return {
     isUp,
@@ -231,7 +256,10 @@ function parseWindowsPingOutput(output: string, expectedPackets: number): PingRe
 /**
  * Parse Unix/Linux/macOS ping output
  */
-function parseUnixPingOutput(output: string, expectedPackets: number): PingResult {
+function parseUnixPingOutput(
+  output: string,
+  expectedPackets: number
+): PingResult {
   const lines = output.split('\n')
   const latencies: number[] = []
   let packetsReceived = 0
@@ -256,7 +284,9 @@ function parseUnixPingOutput(output: string, expectedPackets: number): PingResul
     packetLoss = parseInt(lossMatch[1])
   } else {
     // Calculate from received vs transmitted
-    packetLoss = Math.round(((expectedPackets - packetsReceived) / expectedPackets) * 100)
+    packetLoss = Math.round(
+      ((expectedPackets - packetsReceived) / expectedPackets) * 100
+    )
   }
 
   // Extract round-trip statistics (min/avg/max/stddev)
@@ -265,7 +295,9 @@ function parseUnixPingOutput(output: string, expectedPackets: number): PingResul
   let maxLatency: number | undefined
   let standardDeviation: number | undefined
 
-  const statsMatch = output.match(/min\/avg\/max\/(?:stddev|mdev) = ([0-9.]+)\/([0-9.]+)\/([0-9.]+)\/([0-9.]+)/i)
+  const statsMatch = output.match(
+    /min\/avg\/max\/(?:stddev|mdev) = ([0-9.]+)\/([0-9.]+)\/([0-9.]+)\/([0-9.]+)/i
+  )
   if (statsMatch) {
     minLatency = parseFloat(statsMatch[1])
     avgLatency = parseFloat(statsMatch[2])
@@ -276,16 +308,22 @@ function parseUnixPingOutput(output: string, expectedPackets: number): PingResul
     avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length
     minLatency = Math.min(...latencies)
     maxLatency = Math.max(...latencies)
-    
+
     if (latencies.length > 1) {
-      const variance = latencies.reduce((acc, val) => acc + Math.pow(val - avgLatency!, 2), 0) / latencies.length
+      const variance =
+        latencies.reduce(
+          (acc, val) => acc + Math.pow(val - avgLatency!, 2),
+          0
+        ) / latencies.length
       standardDeviation = Math.sqrt(variance)
     }
   }
 
   const isUp = packetsReceived > 0 // Host is up if we received ANY replies
 
-  console.log(`Unix ping result: isUp=${isUp}, packetsReceived=${packetsReceived}/${expectedPackets}, avgLatency=${avgLatency}`)
+  console.log(
+    `Unix ping result: isUp=${isUp}, packetsReceived=${packetsReceived}/${expectedPackets}, avgLatency=${avgLatency}`
+  )
 
   return {
     isUp,
@@ -298,4 +336,4 @@ function parseUnixPingOutput(output: string, expectedPackets: number): PingResul
     avgLatency,
     standardDeviation,
   }
-} 
+}

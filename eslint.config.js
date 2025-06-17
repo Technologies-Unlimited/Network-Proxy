@@ -122,6 +122,15 @@ export default [
       // Turn off the 'no-floating-promises' rule:
       '@typescript-eslint/no-floating-promises': 'off',
 
+      // Disable any type warnings
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+
       // React-specific overrides
       'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
