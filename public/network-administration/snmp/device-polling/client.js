@@ -384,7 +384,7 @@ const DevicePolling = () => {
     h(
       'button',
       {
-        onClick: () => (window.location.href = '/'),
+        onClick: () => (window.location.href = '/network-administration/snmp'),
         style: {
           marginBottom: '16px',
           padding: '8px 16px',
@@ -395,34 +395,7 @@ const DevicePolling = () => {
           cursor: 'pointer',
         },
       },
-      '← Back to Home'
-    ),
-
-    h(
-      'nav',
-      {
-        style: {
-          marginBottom: '16px',
-          fontSize: '14px',
-          color: '#666',
-        },
-      },
-      h(
-        'a',
-        { href: '/', style: { color: '#1976d2', textDecoration: 'none' } },
-        'Home'
-      ),
-      ' > ',
-      h(
-        'a',
-        {
-          href: '/network-administration',
-          style: { color: '#1976d2', textDecoration: 'none' },
-        },
-        'Network Administration'
-      ),
-      ' > ',
-      h('span', { style: { color: '#333' } }, 'SNMP Device Polling')
+      '← Back to SNMP Management'
     ),
 
     h(

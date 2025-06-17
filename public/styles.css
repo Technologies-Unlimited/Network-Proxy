@@ -1,6 +1,9 @@
 /**
- * Main styles for Network-Proxy application
+ * Thoth/Egyptian-themed styles for Network-Proxy application
  */
+
+/* Import Google Fonts: Cinzel for Egyptian-style headers, Roboto for body */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Roboto:wght@300;400;500&display=swap');
 
 /* Reset and base styles */
 * {
@@ -9,13 +12,24 @@
   padding: 0;
 }
 
+/* Egyptian color palette:
+ * Primary: #d4af37 (Egyptian Gold)
+ * Secondary: #1f4e5f (Nile Blue)
+ * Accent: #a41c1b (Egyptian Red)
+ * Neutrals: #f8f0dd (Papyrus)
+ * Text: #2c1608 (Hieroglyph Black)
+ */
+
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu,
     Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   line-height: 1.6;
-  color: #333;
-  background-color: #f5f5f5;
+  color: #2c1608;
+  background-color: #f8f0dd;
+  background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NiIgaGVpZ2h0PSIxMDAiPgo8cmVjdCB3aWR0aD0iNTYiIGhlaWdodD0iMTAwIiBmaWxsPSIjZjhmMGRkIj48L3JlY3Q+CjxwYXRoIGQ9Ik0yOCA2NkwwIDUwTDAgMTZMMjggMEw1NiAxNkw1NiA1MEwyOCA2NkwyOCAxMDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Q0YWYzNyIgc3Ryb2tlLXdpZHRoPSIxIj48L3BhdGg+Cjwvc3ZnPg==');
+  background-attachment: fixed;
+  background-size: 150px;
+  background-blend-mode: overlay;
 }
 
 /* Layout */
@@ -25,40 +39,248 @@ body {
   padding: 2rem;
 }
 
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f8f0dd;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4af37;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a41c1b;
+}
+
 /* Typography */
-h1 {
-  font-size: 2.5rem;
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
   margin-bottom: 1rem;
-  color: #1976d2;
+  color: #1f4e5f;
+  text-shadow: 1px 1px 0px rgba(212, 175, 55, 0.3);
+}
+
+h1 {
+  font-size: 3rem;
+  letter-spacing: 0.05em;
+  color: #a41c1b;
+  margin-bottom: 1rem;
+  position: relative;
+}
+
+h1::after {
+  content: '';
+  display: block;
+  width: 100px;
+  height: 4px;
+  background: linear-gradient(90deg, #d4af37, transparent);
+  margin: 10px auto 0;
 }
 
 p {
   margin-bottom: 1.5rem;
 }
 
+/* Egyptian-style decorative elements */
+.divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #d4af37, transparent);
+  margin: 2rem 0;
+}
+
 /* Navigation */
 nav {
   margin: 2rem 0;
-  padding: 1rem;
-  background-color: #fff;
+  padding: 1.5rem;
+  background-color: #1f4e5f;
   border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  border: 1px solid #d4af37;
+  position: relative;
+}
+
+nav::before, nav::after {
+  content: '☥';
+  font-size: 24px;
+  color: #d4af37;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+nav::before {
+  left: 10px;
+}
+
+nav::after {
+  right: 10px;
 }
 
 nav ul {
   list-style: none;
   display: flex;
   gap: 1.5rem;
+  justify-content: center;
 }
 
 nav a {
   text-decoration: none;
-  color: #1976d2;
+  color: #f8f0dd;
   font-weight: 500;
-  transition: color 0.2s ease;
+  transition: all 0.3s ease;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  position: relative;
 }
 
 nav a:hover {
-  color: #0d47a1;
-  text-decoration: underline;
+  color: #d4af37;
+  background-color: rgba(212, 175, 55, 0.1);
+}
+
+nav a::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: #d4af37;
+  transition: all 0.3s ease;
+  transform: translateX(-50%);
+}
+
+nav a:hover::after {
+  width: 80%;
+}
+
+/* Buttons and interactive elements */
+button, .button {
+  background-color: #1f4e5f;
+  color: #f8f0dd;
+  border: 1px solid #d4af37;
+  padding: 0.75rem 1.5rem;
+  font-family: 'Cinzel', serif;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+button:hover, .button:hover {
+  background-color: #d4af37;
+  color: #1f4e5f;
+}
+
+button:before, .button:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: all 0.5s ease;
+}
+
+button:hover:before, .button:hover:before {
+  left: 100%;
+}
+
+/* Card/panel styles */
+.card {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #d4af37;
+  margin-bottom: 1.5rem;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* Form elements */
+input, select, textarea {
+  width: 100%;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border: 1px solid #d4af37;
+  background-color: #f8f0dd;
+  border-radius: 2px;
+  font-family: 'Roboto', sans-serif;
+  color: #2c1608;
+  transition: all 0.3s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #1f4e5f;
+  box-shadow: 0 0 0 2px rgba(31, 78, 95, 0.2);
+}
+
+/* Footer */
+footer {
+  margin-top: 3rem;
+  padding: 2rem 0;
+  text-align: center;
+  border-top: 1px solid #d4af37;
+  color: #1f4e5f;
+  position: relative;
+}
+
+footer::before {
+  content: '☥';
+  font-size: 24px;
+  color: #d4af37;
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #f8f0dd;
+  padding: 0 10px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 2.2rem;
+  }
+  
+  nav ul {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+/* Network Administration Styles */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Discovered servers in dropdown */
+.discovered-server {
+  color: #28a745;
+  font-weight: bold;
+}
+
+/* Help text for buttons */
+.help-text {
+  font-size: 0.8em;
+  color: #6c757d;
+  margin-top: 5px;
 }

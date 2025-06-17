@@ -28,6 +28,13 @@ const NetworkTools = () => {
       category: 'Connectivity',
     },
     {
+      id: 'iperf',
+      name: 'iPerf3',
+      description: 'Test network performance between proxy servers',
+      icon: '⚡',
+      category: 'Performance',
+    },
+    {
       id: 'discover',
       name: 'Device Discovery',
       description: 'Discover devices on the network',
@@ -67,6 +74,9 @@ const NetworkTools = () => {
         break
       case 'traceroute':
         window.location.href = '/network-administration/tools/traceroute'
+        break
+      case 'iperf':
+        window.location.href = '/network-administration/tools/iperf'
         break
       case 'discover':
         window.location.href = '/network-administration/tools/discover-devices'

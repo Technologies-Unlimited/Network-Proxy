@@ -12,6 +12,13 @@ import { promisify } from 'util'
 import { exec, spawn } from 'child_process'
 import net from 'node:net'
 import dns from 'node:dns'
+import { 
+  runIperfTest, 
+  stopIperfTest, 
+  getIperfTestStatus, 
+  listIperfTests, 
+  type IperfTestParams 
+} from './src/services/iperf'
 
 const execAsync = promisify(exec)
 
@@ -68,6 +75,33 @@ interface SNMPWalkRequest {
   version?: string
   oid: string
   user?: SNMPUser
+}
+
+interface IperfStartRequest {
+  sourceServer: string
+  destServer: string
+  duration?: number
+  protocol?: 'tcp' | 'udp'
+  parallel?: number
+  windowSize?: number
+  port?: number
+  bidirectional?: boolean
+  reverse?: boolean
+  bandwidth?: number
+  buffer?: number
+  interval?: number
+  mss?: number
+  tos?: number
+  zerocopy?: boolean
+  title?: string
+}
+
+interface IperfStopRequest {
+  testId: string
+}
+
+interface IperfStatusRequest {
+  testId: string
 }
 
 interface PingResult {
@@ -189,17 +223,168 @@ function getErrorMessage(error: unknown): string {
   return String(error)
 }
 
-// Start the Bun server
-const server = serve({
-  port: HTTP_PORT,
+// Start the Bun server with automatic port selection if default is in use
+let httpPort = HTTP_PORT;
+let server;
 
-  // Define the routes
+const startHttpServer = () => {
+  try {
+    server = serve({
+      port: httpPort,
+
+      // Define the routes
   routes: {
     // API routes
     '/api/network': {
       GET() {
         // Placeholder for network data API
         return Response.json({ status: 'ok' })
+      },
+    },
+    '/api/iperf/start': {
+      async POST(req) {
+        console.log('=== IPERF START API REQUEST ===')
+        try {
+          const body = (await req.json()) as IperfStartRequest
+          console.log('iPerf start request body:', body)
+          
+          const { sourceServer, destServer, ...options } = body
+          
+          if (!sourceServer || !destServer) {
+            console.log('Error: Source and destination servers are required')
+            return Response.json(
+              { error: 'Source and destination servers are required' },
+              { status: 400 }
+            )
+          }
+          
+          // Validate server addresses (basic validation)
+          if (!validateTarget(sourceServer) || !validateTarget(destServer)) {
+            console.log('Error: Invalid server address format')
+            return Response.json(
+              { error: 'Invalid server address format' },
+              { status: 400 }
+            )
+          }
+          
+          console.log(`Starting iperf test from ${sourceServer} to ${destServer}`)
+          
+          const testParams: IperfTestParams = {
+            sourceServerId: sourceServer,
+            destinationServerId: destServer,
+            ...options
+          }
+          
+          const result = await runIperfTest(testParams)
+          
+          return Response.json({
+            success: result.status !== 'failed',
+            testId: result.id,
+            message: result.status === 'failed' ? result.error : 'Test started successfully',
+          })
+        } catch (error) {
+          console.error('iPerf start API error:', error)
+          return Response.json(
+            { success: false, error: 'Internal server error' },
+            { status: 500 }
+          )
+        }
+      },
+    },
+    '/api/iperf/stop': {
+      async POST(req) {
+        console.log('=== IPERF STOP API REQUEST ===')
+        try {
+          const body = (await req.json()) as IperfStopRequest
+          console.log('iPerf stop request body:', body)
+          
+          const { testId } = body
+          
+          if (!testId) {
+            console.log('Error: Test ID is required')
+            return Response.json(
+              { error: 'Test ID is required' },
+              { status: 400 }
+            )
+          }
+          
+          console.log(`Stopping iperf test ${testId}`)
+          
+          const result = await stopIperfTest(testId)
+          
+          return Response.json({
+            success: result,
+            message: result ? 'Test stopped successfully' : 'Failed to stop test or test not found',
+          })
+        } catch (error) {
+          console.error('iPerf stop API error:', error)
+          return Response.json(
+            { success: false, error: 'Internal server error' },
+            { status: 500 }
+          )
+        }
+      },
+    },
+    '/api/iperf/status': {
+      async POST(req) {
+        console.log('=== IPERF STATUS API REQUEST ===')
+        try {
+          const body = (await req.json()) as IperfStatusRequest
+          console.log('iPerf status request body:', body)
+          
+          const { testId } = body
+          
+          if (!testId) {
+            console.log('Error: Test ID is required')
+            return Response.json(
+              { error: 'Test ID is required' },
+              { status: 400 }
+            )
+          }
+          
+          console.log(`Getting status for iperf test ${testId}`)
+          
+          const test = getIperfTestStatus(testId)
+          
+          if (!test) {
+            return Response.json({
+              success: false,
+              message: 'Test not found',
+            }, { status: 404 })
+          }
+          
+          return Response.json({
+            success: true,
+            test,
+          })
+        } catch (error) {
+          console.error('iPerf status API error:', error)
+          return Response.json(
+            { success: false, error: 'Internal server error' },
+            { status: 500 }
+          )
+        }
+      },
+    },
+    '/api/iperf/list': {
+      GET() {
+        console.log('=== IPERF LIST API REQUEST ===')
+        try {
+          console.log('Getting list of iperf tests')
+          
+          const tests = listIperfTests()
+          
+          return Response.json({
+            success: true,
+            tests,
+          })
+        } catch (error) {
+          console.error('iPerf list API error:', error)
+          return Response.json(
+            { success: false, error: 'Internal server error' },
+            { status: 500 }
+          )
+        }
       },
     },
     '/api/ping': {
@@ -2163,7 +2348,30 @@ const server = serve({
         )
       )
     }
+    
+    if (pathname === '/network-administration/tools/iperf') {
+      return new Response(
+        Bun.file(
+          path.join(
+            publicDir,
+            'network-administration/tools/iperf/index.html'
+          )
+        )
+      )
+    }
 
+    // Handle SNMP home page
+    if (pathname === '/network-administration/snmp') {
+      return new Response(
+        Bun.file(
+          path.join(
+            publicDir,
+            'network-administration/snmp/index.html'
+          )
+        )
+      )
+    }
+    
     // Handle SNMP device polling path
     if (pathname === '/network-administration/snmp/device-polling') {
       return new Response(
@@ -2171,6 +2379,54 @@ const server = serve({
           path.join(
             publicDir,
             'network-administration/snmp/device-polling/index.html'
+          )
+        )
+      )
+    }
+    
+    // Handle SNMP settings path
+    if (pathname === '/network-administration/snmp/settings') {
+      return new Response(
+        Bun.file(
+          path.join(
+            publicDir,
+            'network-administration/snmp/settings/index.html'
+          )
+        )
+      )
+    }
+    
+    // Handle SNMP OID management path
+    if (pathname === '/network-administration/snmp/oid') {
+      return new Response(
+        Bun.file(
+          path.join(
+            publicDir,
+            'network-administration/snmp/oid/index.html'
+          )
+        )
+      )
+    }
+    
+    // Handle SNMP templates path
+    if (pathname === '/network-administration/snmp/templates') {
+      return new Response(
+        Bun.file(
+          path.join(
+            publicDir,
+            'network-administration/snmp/templates/index.html'
+          )
+        )
+      )
+    }
+    
+    // Handle SNMP polling templates path
+    if (pathname === '/network-administration/snmp/polling-templates') {
+      return new Response(
+        Bun.file(
+          path.join(
+            publicDir,
+            'network-administration/snmp/polling-templates/index.html'
           )
         )
       )
@@ -2282,7 +2538,19 @@ const server = serve({
       }
     )
   },
-})
+    });
+    return true;
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') {
+      console.log(`Port ${httpPort} is in use, trying ${httpPort + 1}...`);
+      httpPort++;
+      return startHttpServer(); // Recursively try the next port
+    } else {
+      console.error('Failed to start HTTP server:', error);
+      return false;
+    }
+  }
+}
 
 // Handle graceful shutdown
 const handleShutdown = () => {
@@ -2292,6 +2560,15 @@ const handleShutdown = () => {
 
 process.on('SIGINT', handleShutdown)
 process.on('SIGTERM', handleShutdown)
+
+// Call the startHttpServer function
+startHttpServer();
+
+// Handle HTTP server errors and retry with different port
+if (!server) {
+  console.error('Failed to start HTTP server. Exiting.');
+  process.exit(1);
+}
 
 console.log(`Frontend server is running on ${server.url}`)
 console.log(`WebSocket server is running on ws://localhost:${actualWsPort}`)

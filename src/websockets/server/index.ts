@@ -16,6 +16,7 @@ import { handleIPSubnetRequest } from '@/app/api/network-administration/ipam/sub
 import { handleIPSupernetRequest } from '@/app/api/network-administration/ipam/supernet/route'
 import { handleVLANRequest } from '@/app/api/network-administration/ipam/vlan/route'
 import { handleSNMPOIDRequest } from '@/app/api/network-administration/snmp/oid/route'
+import { handleSNMPMIBRequest } from '@/app/api/network-administration/snmp/mib/route'
 import { handleSNMPv2PollingTemplateRequest } from '@/app/api/network-administration/snmp/polling/template/snmpv2/route'
 import { handleSNMPv3PollingTemplateRequest } from '@/app/api/network-administration/snmp/polling/template/snmpv3/route'
 import { handleSNMPv2Request } from '@/app/api/network-administration/snmp/snmpv2/route'
@@ -27,6 +28,7 @@ import { handleSNMPv3TemplateRequest } from '@/app/api/network-administration/sn
 export interface NetworkMonitoringData {
   companyId: string
   createdAt: number
+  tool?: string
 }
 
 type StatusUpdate = ICMPStatusUpdate | SNMPStatusUpdate
@@ -166,6 +168,24 @@ export function startWebSocketServer(port: number = 3001): Server {
 
         return undefined
       }
+      
+      // Handle WebSocket upgrades for iperf tool
+      if (url.pathname === '/ws/tools/iperf') {
+        // For tools, we may not need a companyId
+        // Upgrade the connection to WebSocket
+        const upgraded = server.upgrade(req, {
+          data: {
+            createdAt: Date.now(),
+            tool: 'iperf',
+          },
+        })
+
+        if (!upgraded) {
+          return new Response('WebSocket upgrade failed', { status: 500 })
+        }
+
+        return undefined
+      }
 
       // Handle HTTP API requests for network administration
       if (url.pathname.startsWith('/api/network-administration')) {
@@ -243,6 +263,9 @@ export function startWebSocketServer(port: number = 3001): Server {
         if (url.pathname.startsWith('/api/network-administration/snmp')) {
           if (url.pathname.startsWith('/api/network-administration/snmp/oid')) {
             return handleSNMPOIDRequest(req)
+          }
+          if (url.pathname.startsWith('/api/network-administration/snmp/mib')) {
+            return handleSNMPMIBRequest(req)
           }
           if (
             url.pathname.startsWith(
@@ -378,6 +401,13 @@ export function startWebSocketServer(port: number = 3001): Server {
         try {
           const data = JSON.parse(message.toString())
           const companyId = ws.data.companyId
+          const toolType = ws.data.tool
+
+          // Handle iperf tool messages
+          if (toolType === 'iperf') {
+            handleIperfMessage(ws, data)
+            return
+          }
 
           // Handle different message types
           if (data.type === 'ping') {
@@ -1240,5 +1270,293 @@ export function broadcastSNMPUpdate(
     update.networkInventoryIds.forEach(deviceId => {
       server.publish(`device-${deviceId}`, JSON.stringify(message))
     })
+  }
+}
+
+/**
+ * Handle iperf tool messages
+ * @param ws WebSocket connection
+ * @param data Message data
+ */
+function handleIperfMessage(ws: ServerWebSocket<NetworkMonitoringData>, data: any) {
+  try {
+    console.log('Handling iperf message:', data.type)
+    
+    // Import iperf service functions
+    const { 
+      runIperfTest, 
+      stopIperfTest, 
+      getIperfTestStatus, 
+      discoverIperfServers, 
+      checkIperfServerAvailability,
+      getLocalAddress
+    } = require('../../services/iperf')
+    
+    switch (data.type) {
+      case 'startTest':
+        // Start a new iperf test
+        if (!data.params) {
+          ws.send(JSON.stringify({
+            type: 'testError',
+            message: 'Test parameters are required'
+          }))
+          return
+        }
+        
+        // Validate parameters
+        const { sourceServerId, destinationServerId } = data.params
+        if (!sourceServerId || !destinationServerId) {
+          ws.send(JSON.stringify({
+            type: 'testError',
+            message: 'Source and destination servers are required'
+          }))
+          return
+        }
+        
+        // Start the test asynchronously
+        console.log('Starting iperf test:', data.params)
+        runIperfTest(data.params)
+          .then(test => {
+            // Send initial test started notification
+            ws.send(JSON.stringify({
+              type: 'testStarted',
+              testId: test.id,
+              timestamp: Date.now()
+            }))
+            
+            // Set up polling to send test progress updates
+            const pollInterval = setInterval(() => {
+              const updatedTest = getIperfTestStatus(test.id)
+              
+              if (!updatedTest) {
+                clearInterval(pollInterval)
+                return
+              }
+              
+              // Check if the test has results to send
+              if (updatedTest.results.length > 0) {
+                // Send the latest result
+                const latestResult = updatedTest.results[updatedTest.results.length - 1]
+                ws.send(JSON.stringify({
+                  type: 'testProgress',
+                  testId: test.id,
+                  result: latestResult,
+                  timestamp: Date.now()
+                }))
+              }
+              
+              // Check if the test is completed
+              if (updatedTest.status === 'completed' || updatedTest.status === 'failed' || updatedTest.status === 'stopped') {
+                clearInterval(pollInterval)
+                
+                if (updatedTest.status === 'completed' && updatedTest.summary) {
+                  ws.send(JSON.stringify({
+                    type: 'testComplete',
+                    testId: test.id,
+                    summary: updatedTest.summary,
+                    timestamp: Date.now()
+                  }))
+                } else if (updatedTest.status === 'failed') {
+                  ws.send(JSON.stringify({
+                    type: 'testError',
+                    testId: test.id,
+                    message: updatedTest.error || 'Test failed',
+                    timestamp: Date.now()
+                  }))
+                } else if (updatedTest.status === 'stopped') {
+                  ws.send(JSON.stringify({
+                    type: 'testStopped',
+                    testId: test.id,
+                    timestamp: Date.now()
+                  }))
+                }
+              }
+            }, 1000) // Poll every second
+            
+            // Clean up interval on connection close
+            ws.addEventListener('close', () => {
+              clearInterval(pollInterval)
+            })
+          })
+          .catch(error => {
+            ws.send(JSON.stringify({
+              type: 'testError',
+              message: error.message || 'Failed to start test',
+              timestamp: Date.now()
+            }))
+          })
+        break
+        
+      case 'stopTest':
+        // Stop a running test
+        if (!data.testId) {
+          ws.send(JSON.stringify({
+            type: 'testError',
+            message: 'Test ID is required'
+          }))
+          return
+        }
+        
+        console.log('Stopping iperf test:', data.testId)
+        stopIperfTest(data.testId)
+          .then(success => {
+            if (success) {
+              ws.send(JSON.stringify({
+                type: 'testStopped',
+                testId: data.testId,
+                timestamp: Date.now()
+              }))
+            } else {
+              ws.send(JSON.stringify({
+                type: 'testError',
+                message: 'Failed to stop test or test not found',
+                timestamp: Date.now()
+              }))
+            }
+          })
+          .catch(error => {
+            ws.send(JSON.stringify({
+              type: 'testError',
+              message: error.message || 'Error stopping test',
+              timestamp: Date.now()
+            }))
+          })
+        break
+        
+      case 'getStatus':
+        // Get test status
+        if (!data.testId) {
+          ws.send(JSON.stringify({
+            type: 'testError',
+            message: 'Test ID is required'
+          }))
+          return
+        }
+        
+        const test = getIperfTestStatus(data.testId)
+        if (!test) {
+          ws.send(JSON.stringify({
+            type: 'testError',
+            message: 'Test not found',
+            timestamp: Date.now()
+          }))
+          return
+        }
+        
+        ws.send(JSON.stringify({
+          type: 'testStatus',
+          test,
+          timestamp: Date.now()
+        }))
+        break
+
+      case 'discoverServers':
+        // Discover iperf servers on the network
+        console.log('WebSocket received discoverServers request')
+        const port = data.port || 5201
+        const forceRefresh = data.forceRefresh || false
+        
+        console.log(`Discovery parameters - port: ${port}, forceRefresh: ${forceRefresh}`)
+        
+        // Send an immediate response to let the client know discovery is in progress
+        try {
+          console.log('Sending discoveryStarted message to client')
+          ws.send(JSON.stringify({
+            type: 'discoveryStarted',
+            timestamp: Date.now()
+          }))
+        } catch (err) {
+          console.error('Error sending discoveryStarted message:', err)
+        }
+        
+        try {
+          // Start the discovery process
+          console.log('Starting iperf server discovery process')
+          discoverIperfServers(port, forceRefresh)
+            .then(servers => {
+              console.log(`Discovery completed successfully, found ${servers.length} servers`)
+              
+              // Send the complete list of servers
+              console.log('Sending discoveryComplete message to client')
+              ws.send(JSON.stringify({
+                type: 'discoveryComplete',
+                servers,
+                timestamp: Date.now()
+              }))
+            })
+            .catch(error => {
+              console.error('Error during iperf server discovery:', error)
+              try {
+                console.log('Sending discoveryError message to client')
+                ws.send(JSON.stringify({
+                  type: 'discoveryError',
+                  message: error.message || 'Error discovering servers',
+                  timestamp: Date.now()
+                }))
+              } catch (err) {
+                console.error('Error sending error message to client:', err)
+              }
+            })
+        } catch (error) {
+          console.error('Error starting discovery process:', error)
+          try {
+            ws.send(JSON.stringify({
+              type: 'discoveryError',
+              message: 'Failed to start discovery process',
+              timestamp: Date.now()
+            }))
+          } catch (err) {
+            console.error('Error sending error message to client:', err)
+          }
+        }
+        break
+
+      case 'checkServer':
+        // Check if a specific server is available
+        if (!data.address) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Server address is required',
+            timestamp: Date.now()
+          }))
+          return
+        }
+        
+        const serverPort = data.port || 5201
+        console.log(`Checking iperf server availability: ${data.address}:${serverPort}`)
+        
+        checkIperfServerAvailability(data.address, serverPort)
+          .then(isAvailable => {
+            ws.send(JSON.stringify({
+              type: 'serverCheckResult',
+              address: data.address,
+              port: serverPort,
+              available: isAvailable,
+              timestamp: Date.now()
+            }))
+          })
+          .catch(error => {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: error.message || 'Error checking server',
+              timestamp: Date.now()
+            }))
+          })
+        break
+        
+      default:
+        ws.send(JSON.stringify({
+          type: 'error',
+          message: 'Unknown message type',
+          timestamp: Date.now()
+        }))
+    }
+  } catch (error) {
+    console.error('Error handling iperf message:', error)
+    ws.send(JSON.stringify({
+      type: 'error',
+      message: 'Error processing message',
+      timestamp: Date.now()
+    }))
   }
 }

@@ -2291,7 +2291,7 @@ function ICMPMonitoringDashboard() {
     h(
       'button',
       {
-        onClick: () => (window.location.href = '/network-administration'),
+        onClick: () => (window.location.href = '/'),
         style: {
           marginBottom: '16px',
           padding: '8px 16px',
@@ -2302,7 +2302,7 @@ function ICMPMonitoringDashboard() {
           cursor: 'pointer',
         },
       },
-      '← Back to Network Administration'
+      '← Back to Home'
     ),
 
     h(
@@ -2318,15 +2318,6 @@ function ICMPMonitoringDashboard() {
         'a',
         { href: '/', style: { color: '#1976d2', textDecoration: 'none' } },
         'Home'
-      ),
-      ' > ',
-      h(
-        'a',
-        {
-          href: '/network-administration',
-          style: { color: '#1976d2', textDecoration: 'none' },
-        },
-        'Network Administration'
       ),
       ' > ',
       h('span', { style: { color: '#333' } }, 'ICMP Network Monitoring')
