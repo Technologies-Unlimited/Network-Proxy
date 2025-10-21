@@ -1,0 +1,44 @@
+package models
+
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+// SNMPTemplate defines SNMP polling configuration
+type SNMPTemplate struct {
+	ID          string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	Name        string         `gorm:"not null;uniqueIndex"`
+	Description string
+	Version     string         `gorm:"not null"` // v1, v2c, v3
+	Community   string         // For v1/v2c
+	Username    string         // For v3
+	AuthProtocol string        // For v3: MD5, SHA, SHA224, SHA256, SHA384, SHA512
+	AuthPassword string        // For v3
+	PrivProtocol string        // For v3: DES, AES, AES192, AES256
+	PrivPassword string        // For v3
+	CreatedAt   time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt   time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt   gorm.DeletedAt `gorm:"index"`
+
+	// Relationships
+	OIDs    []OID    `gorm:"many2many:snmp_template_oids;"`
+	Devices []Device `gorm:"foreignKey:SNMPTemplateID"`
+}
+
+// OID represents an SNMP Object Identifier to poll
+type OID struct {
+	ID          string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	OID         string         `gorm:"not null;uniqueIndex"`
+	Name        string         `gorm:"not null"`
+	Description string
+	Unit        string         // Mbps, %, C, etc.
+	DataType    string         // integer, string, counter, gauge
+	CreatedAt   time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt   time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt   gorm.DeletedAt `gorm:"index"`
+
+	// Relationships
+	Templates []SNMPTemplate `gorm:"many2many:snmp_template_oids;"`
+}

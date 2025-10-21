@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/agents">Agents</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Dashboard</h2>
+
+            <div class="stats">
+                <div class="stat-card" hx-get="/api/v1/devices" hx-trigger="load, every 10s" hx-target="#device-count">
+                    <h3>Total Devices</h3>
+                    <p id="device-count" class="stat-value">-</p>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Devices Up</h3>
+                    <p class="stat-value stat-success">-</p>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Devices Down</h3>
+                    <p class="stat-value stat-danger">-</p>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Active Alerts</h3>
+                    <p class="stat-value stat-warning">-</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Recent Alerts</h3>
+                <div id="alerts-list" hx-get="/api/v1/alerts?status=active" hx-trigger="load, every 30s">
+                    Loading alerts...
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Quick Actions</h3>
+                <div class="actions">
+                    <a href="/devices" class="btn btn-primary">Add Device</a>
+                    <a href="/agents" class="btn btn-secondary">View Agents</a>
+                    <a href="http://localhost:9091" class="btn btn-secondary" target="_blank">Open Prometheus</a>
+                    <a href="http://localhost:3000" class="btn btn-secondary" target="_blank">Open Grafana</a>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go 🐹</p>
+        </footer>
+    </div>
+</body>
+</html>

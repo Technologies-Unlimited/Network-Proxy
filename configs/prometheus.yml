@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape from network monitor agents
+  - job_name: 'network-monitor-agents'
+    static_configs:
+      - targets: ['agent:9090']
+        labels:
+          agent: 'agent-1'
+          environment: 'development'
+
+  # Scrape from server health endpoint
+  - job_name: 'network-monitor-server'
+    static_configs:
+      - targets: ['server:8080']
+        labels:
+          environment: 'development'

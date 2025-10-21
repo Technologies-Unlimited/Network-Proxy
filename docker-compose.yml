@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: network-monitor-db
+    environment:
+      POSTGRES_DB: network_monitor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Network Monitor Server
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: network-monitor-server
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/network_monitor?sslmode=disable
+      PORT: 8080
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Network Monitor Agent
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: network-monitor-agent
+    ports:
+      - "9090:9090"
+    environment:
+      METRICS_PORT: 9090
+      LOG_LEVEL: info
+      ICMP_POLL_INTERVAL: 60
+      SNMP_POLL_INTERVAL: 60
+    restart: unless-stopped
+    # Required for raw ICMP sockets
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+  # Prometheus (Optional - for metrics storage)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: network-monitor-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+
+  # Grafana (Optional - for visualization)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: network-monitor-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: network-monitor-net
