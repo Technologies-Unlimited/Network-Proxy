@@ -204,9 +204,14 @@ for (let i = 0; i < MAX_PORT_ATTEMPTS; i++) {
 }
 
 // Ensure public directory exists
-const publicDir = path.join(import.meta.dir, 'public')
+// Use process.cwd() for compiled executables
+const publicDir = path.join(process.cwd(), 'public')
 if (!fs.existsSync(publicDir)) {
-  fs.mkdirSync(publicDir, { recursive: true })
+  try {
+    fs.mkdirSync(publicDir, { recursive: true })
+  } catch (error) {
+    console.log('Public directory already exists or cannot be created:', error)
+  }
 }
 
 // Helper function to validate target format

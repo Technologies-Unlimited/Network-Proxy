@@ -79,7 +79,7 @@ export const icmpMonitorSchema = z.object({
   companyId: z.string(),
   name: z.string(),
   description: z.string().optional(),
-  ipAddress: z.string().ip(),
+  ipAddress: z.string().regex(/^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/),
   networkInventoryId: z.string().optional(),
 
   // Monitoring parameters

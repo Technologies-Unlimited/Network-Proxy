@@ -43,3 +43,7 @@ next-env.d.ts
 # logging
 /logs
 **/.claude/settings.local.json
+
+# Compiled binaries
+network-proxy.exe
+*.exe
