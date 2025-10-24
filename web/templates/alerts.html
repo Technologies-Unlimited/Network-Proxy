@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alerts - Network Monitor</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts" class="active">Alerts</a>
+                <a href="/agents">Agents</a>
+                <a href="/visualize">Visualize</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Alerts & Notifications</h2>
+
+            <!-- Alert Filters -->
+            <div class="section">
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <button class="btn btn-secondary" hx-get="/api/v1/alerts" hx-target="#alerts-list" hx-swap="innerHTML">All</button>
+                    <button class="btn btn-secondary" hx-get="/api/v1/alerts?status=active" hx-target="#alerts-list" hx-swap="innerHTML">Active</button>
+                    <button class="btn btn-secondary" hx-get="/api/v1/alerts?status=acknowledged" hx-target="#alerts-list" hx-swap="innerHTML">Acknowledged</button>
+                    <button class="btn btn-secondary" hx-get="/api/v1/alerts?status=resolved" hx-target="#alerts-list" hx-swap="innerHTML">Resolved</button>
+                </div>
+
+                <div id="alerts-list" hx-get="/api/v1/alerts?status=active" hx-trigger="load, every 30s" hx-swap="innerHTML">
+                    Loading alerts...
+                </div>
+            </div>
+
+            <!-- Alert Rules -->
+            <div class="section" style="margin-top: 30px;">
+                <h3>Alert Rules</h3>
+                <button class="btn btn-primary" style="margin-bottom: 15px;" onclick="showAddRuleForm()">+ Add Rule</button>
+
+                <!-- Add Rule Form -->
+                <div id="add-rule-form" style="display: none; margin-bottom: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
+                    <h4>Create Alert Rule</h4>
+                    <form hx-post="/api/v1/alert-rules" hx-target="#rules-list" hx-swap="outerHTML">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label>Rule Name *</label>
+                                <input type="text" name="name" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                            <div>
+                                <label>Severity *</label>
+                                <select name="severity" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                                    <option value="critical">Critical</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="info">Info</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Metric *</label>
+                                <select name="metric" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                                    <option value="device_status">Device Status</option>
+                                    <option value="ping_latency">Ping Latency</option>
+                                    <option value="snmp_value">SNMP Value</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Condition *</label>
+                                <select name="condition" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                                    <option value="eq">Equals (=)</option>
+                                    <option value="ne">Not Equals (≠)</option>
+                                    <option value="gt">Greater Than (>)</option>
+                                    <option value="lt">Less Than (<)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Threshold *</label>
+                                <input type="text" name="threshold" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                            <div>
+                                <label>Duration (seconds)</label>
+                                <input type="number" name="duration" value="300" style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="submit" class="btn btn-primary">Create Rule</button>
+                            <button type="button" class="btn btn-secondary" onclick="hideAddRuleForm()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Edit Rule Form -->
+                <div id="edit-rule-form" style="display: none; margin-bottom: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
+                    <h4>Edit Alert Rule</h4>
+                    <form id="edit-rule-form-element" hx-put="" hx-target="#rules-list" hx-swap="outerHTML">
+                        <input type="hidden" id="edit-rule-id" name="id">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <label>Rule Name *</label>
+                                <input type="text" id="edit-rule-name" name="name" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                            <div>
+                                <label>Severity *</label>
+                                <select id="edit-rule-severity" name="severity" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                                    <option value="critical">Critical</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="info">Info</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Metric *</label>
+                                <select id="edit-rule-metric" name="metric" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                                    <option value="device_status">Device Status</option>
+                                    <option value="ping_latency">Ping Latency</option>
+                                    <option value="snmp_value">SNMP Value</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Condition *</label>
+                                <select id="edit-rule-condition" name="condition" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                                    <option value="eq">Equals (=)</option>
+                                    <option value="ne">Not Equals (≠)</option>
+                                    <option value="gt">Greater Than (>)</option>
+                                    <option value="lt">Less Than (<)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Threshold *</label>
+                                <input type="text" id="edit-rule-threshold" name="threshold" required style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                            <div>
+                                <label>Duration (seconds)</label>
+                                <input type="number" id="edit-rule-duration" name="duration" value="300" style="width: 100%; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;">
+                            </div>
+                            <div style="grid-column: 1 / -1;">
+                                <label style="display: flex; align-items: center; gap: 5px;">
+                                    <input type="checkbox" id="edit-rule-enabled" name="enabled">
+                                    <span>Rule Enabled</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="submit" class="btn btn-primary">Save Changes</button>
+                            <button type="button" class="btn btn-secondary" onclick="hideEditRuleForm()">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="rules-list" hx-get="/api/v1/alert-rules" hx-trigger="load" hx-swap="innerHTML">
+                    Loading alert rules...
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go</p>
+        </footer>
+    </div>
+
+    <script>
+        function showAddRuleForm() {
+            document.getElementById('add-rule-form').style.display = 'block';
+            document.getElementById('edit-rule-form').style.display = 'none';
+        }
+        function hideAddRuleForm() {
+            document.getElementById('add-rule-form').style.display = 'none';
+        }
+
+        function showEditRuleForm(ruleId) {
+            // Hide add form
+            document.getElementById('add-rule-form').style.display = 'none';
+
+            // Fetch rule data
+            fetch(`/api/v1/alert-rules/${ruleId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const rule = data.rule;
+                    console.log('Rule data:', rule); // Debug log
+
+                    // Populate form fields - Go JSON uses PascalCase field names
+                    document.getElementById('edit-rule-id').value = rule.ID || '';
+                    document.getElementById('edit-rule-name').value = rule.Name || '';
+                    document.getElementById('edit-rule-severity').value = rule.Severity || 'warning';
+                    document.getElementById('edit-rule-metric').value = rule.Metric || 'device_status';
+                    document.getElementById('edit-rule-condition').value = rule.Condition || 'eq';
+                    document.getElementById('edit-rule-threshold').value = rule.Threshold || '';
+                    document.getElementById('edit-rule-duration').value = rule.Duration || 300;
+                    document.getElementById('edit-rule-enabled').checked = rule.Enabled || false;
+
+                    // Set the form action URL
+                    document.getElementById('edit-rule-form-element').setAttribute('hx-put', `/api/v1/alert-rules/${ruleId}`);
+                    htmx.process(document.getElementById('edit-rule-form-element'));
+
+                    // Show edit form
+                    document.getElementById('edit-rule-form').style.display = 'block';
+                    document.getElementById('edit-rule-form').scrollIntoView({ behavior: 'smooth' });
+                })
+                .catch(error => {
+                    console.error('Error fetching rule:', error);
+                    alert('Failed to load rule data');
+                });
+        }
+
+        function hideEditRuleForm() {
+            document.getElementById('edit-rule-form').style.display = 'none';
+        }
+
+        function deleteRule(ruleId, ruleName) {
+            if (confirm(`Are you sure you want to delete the rule "${ruleName}"?`)) {
+                fetch(`/api/v1/alert-rules/${ruleId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Refresh the rules list
+                    htmx.trigger('#rules-list', 'load');
+                })
+                .catch(error => {
+                    console.error('Error deleting rule:', error);
+                    alert('Failed to delete rule');
+                });
+            }
+        }
+
+        // Handle htmx response
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.detail.target.id === 'rules-list') {
+                hideAddRuleForm();
+                hideEditRuleForm();
+            }
+        });
+    </script>
+</body>
+</html>

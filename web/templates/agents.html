@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agents - Network Monitor</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/agents" class="active">Agents</a>
+                <a href="/visualize">Visualize</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Monitoring Agents</h2>
+
+            <div class="section">
+                <p style="color: var(--text-secondary); margin-bottom: 20px;">
+                    This application includes a built-in monitoring agent. Additional remote agents can be deployed for distributed monitoring.
+                </p>
+
+                <div id="agents-list" hx-get="/api/v1/agents" hx-trigger="load, every 10s" hx-swap="innerHTML">
+                    Loading agents...
+                </div>
+            </div>
+
+            <!-- Agent Capabilities -->
+            <div class="section" style="margin-top: 30px;">
+                <h3>Built-in Agent Capabilities</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 15px;">
+                    <div style="padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
+                        <h4 style="color: var(--success); margin-bottom: 10px;">ICMP Monitoring</h4>
+                        <p style="color: var(--text-secondary); font-size: 14px;">Raw socket ping polling with concurrent goroutines for high-performance device availability monitoring.</p>
+                    </div>
+                    <div style="padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
+                        <h4 style="color: var(--success); margin-bottom: 10px;">SNMP Polling</h4>
+                        <p style="color: var(--text-secondary); font-size: 14px;">SNMPv2c and SNMPv3 support with template-based OID polling and metrics collection.</p>
+                    </div>
+                    <div style="padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
+                        <h4 style="color: var(--success); margin-bottom: 10px;">Network Discovery</h4>
+                        <p style="color: var(--text-secondary); font-size: 14px;">Automatic device discovery via CIDR range scanning, ARP tables, and service detection.</p>
+                    </div>
+                    <div style="padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
+                        <h4 style="color: var(--success); margin-bottom: 10px;">Prometheus Metrics</h4>
+                        <p style="color: var(--text-secondary); font-size: 14px;">Native Prometheus metrics export on port 9090 for AI/ML integration and visualization.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics Export -->
+            <div class="section" style="margin-top: 30px;">
+                <h3>Prometheus Metrics</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 15px;">
+                    Metrics are available at <code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 3px;">http://localhost:9090/metrics</code>
+                </p>
+                <a href="http://localhost:9090/metrics" target="_blank" class="btn btn-primary">View Metrics</a>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go</p>
+        </footer>
+    </div>
+</body>
+</html>

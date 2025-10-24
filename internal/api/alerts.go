@@ -23,14 +23,56 @@ func listAlerts(srv *server.Server) gin.HandlerFunc {
 		result := query.Order("triggered_at DESC").Find(&alerts)
 
 		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading alerts</p>`))
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"alerts": alerts,
-			"count":  len(alerts),
-		})
+		if len(alerts) == 0 {
+			c.Data(http.StatusOK, "text/html", []byte(`
+				<div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+					<h3>No Alerts Found</h3>
+					<p>Alerts will appear here when monitoring detects issues</p>
+				</div>
+			`))
+			return
+		}
+
+		html := ""
+		for _, alert := range alerts {
+			severityColor := "var(--warning)"
+			if alert.Severity == "critical" {
+				severityColor = "var(--danger)"
+			} else if alert.Severity == "info" {
+				severityColor = "var(--success)"
+			}
+
+			hostname := "Unknown"
+			if alert.Device != nil {
+				hostname = alert.Device.Hostname
+			}
+
+			statusBadge := ""
+			if alert.Status == "acknowledged" {
+				statusBadge = `<span style="padding: 4px 8px; background: var(--warning); color: white; border-radius: 8px; font-size: 11px; margin-left: 10px;">ACKNOWLEDGED</span>`
+			} else if alert.Status == "resolved" {
+				statusBadge = `<span style="padding: 4px 8px; background: var(--success); color: white; border-radius: 8px; font-size: 11px; margin-left: 10px;">RESOLVED</span>`
+			}
+
+			html += `<div style="padding: 15px; margin-bottom: 10px; background: var(--bg-secondary); border-left: 4px solid ` + severityColor + `; border-radius: 4px;">
+				<div style="display: flex; justify-content: space-between; align-items: start;">
+					<div style="flex: 1;">
+						<h4 style="margin: 0 0 5px 0; color: ` + severityColor + `;">` + alert.Title + statusBadge + `</h4>
+						<p style="margin: 0 0 5px 0; color: var(--text-secondary); font-size: 14px;">` + alert.Message + `</p>
+						<p style="margin: 0; color: var(--text-secondary); font-size: 12px;">Device: ` + hostname + ` | Triggered: ` + alert.TriggeredAt.Format("2006-01-02 15:04") + `</p>
+					</div>
+					<div style="display: flex; gap: 8px; margin-left: 10px;">
+						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; white-space: nowrap;">` + alert.Severity + `</span>
+					</div>
+				</div>
+			</div>`
+		}
+
+		c.Data(http.StatusOK, "text/html", []byte(html))
 	}
 }
 
@@ -109,14 +151,77 @@ func listAlertRules(srv *server.Server) gin.HandlerFunc {
 		result := srv.DB.Find(&rules)
 
 		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading alert rules</p>`))
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"rules": rules,
-			"count": len(rules),
-		})
+		if len(rules) == 0 {
+			c.Data(http.StatusOK, "text/html", []byte(`
+				<div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+					<h3>No Alert Rules Configured</h3>
+					<p>Click the Add Rule button above to create your first alert rule</p>
+				</div>
+			`))
+			return
+		}
+
+		html := `<table style="width: 100%; border-collapse: collapse;">
+			<thead>
+				<tr style="border-bottom: 2px solid var(--border);">
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">Rule Name</th>
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">Metric</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Condition</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Threshold</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Severity</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Enabled</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Actions</th>
+				</tr>
+			</thead>
+			<tbody>`
+
+		for _, rule := range rules {
+			severityColor := "var(--warning)"
+			if rule.Severity == "critical" {
+				severityColor = "var(--danger)"
+			} else if rule.Severity == "info" {
+				severityColor = "var(--success)"
+			}
+
+			enabledBadge := `<span style="padding: 4px 12px; background: var(--danger); color: white; border-radius: 12px; font-size: 12px;">DISABLED</span>`
+			if rule.Enabled {
+				enabledBadge = `<span style="padding: 4px 12px; background: var(--success); color: white; border-radius: 12px; font-size: 12px;">ENABLED</span>`
+			}
+
+			conditionSymbol := "="
+			switch rule.Condition {
+			case "gt":
+				conditionSymbol = ">"
+			case "lt":
+				conditionSymbol = "<"
+			case "ne":
+				conditionSymbol = "≠"
+			}
+
+			html += `
+				<tr style="border-bottom: 1px solid var(--border);">
+					<td style="padding: 12px; color: var(--text-primary);">` + rule.Name + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + rule.Metric + `</td>
+					<td style="padding: 12px; text-align: center; color: var(--text-primary);">` + conditionSymbol + `</td>
+					<td style="padding: 12px; text-align: center; color: var(--text-primary);">` + rule.Threshold + `</td>
+					<td style="padding: 12px; text-align: center;">
+						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + rule.Severity + `</span>
+					</td>
+					<td style="padding: 12px; text-align: center;">` + enabledBadge + `</td>
+					<td style="padding: 12px; text-align: center;">
+						<button onclick="showEditRuleForm('` + rule.ID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
+						<button onclick="deleteRule('` + rule.ID + `', '` + rule.Name + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
+					</td>
+				</tr>`
+		}
+
+		html += `</tbody></table>`
+
+		c.Data(http.StatusOK, "text/html", []byte(html))
 	}
 }
 

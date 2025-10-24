@@ -3,13 +3,14 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // Alert represents a monitoring alert
 type Alert struct {
-	ID          string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	DeviceID    string         `gorm:"type:uuid;not null;index"`
+	ID          string         `gorm:"primaryKey"`
+	DeviceID    string         `gorm:"not null;index"`
 	Device      *Device        `gorm:"foreignKey:DeviceID"`
 	Severity    string         `gorm:"not null"` // critical, warning, info
 	Status      string         `gorm:"default:'active'"` // active, acknowledged, resolved
@@ -21,16 +22,24 @@ type Alert struct {
 	Threshold   string         // Threshold that was exceeded
 	TriggeredAt time.Time      `gorm:"not null"`
 	AckedAt     *time.Time
-	AckedBy     *string        `gorm:"type:uuid"`
+	AckedBy     *string
 	ResolvedAt  *time.Time
 	CreatedAt   time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt   time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt   gorm.DeletedAt `gorm:"index"`
 }
 
+// BeforeCreate generates UUID for new alerts
+func (a *Alert) BeforeCreate(tx *gorm.DB) error {
+	if a.ID == "" {
+		a.ID = uuid.New().String()
+	}
+	return nil
+}
+
 // AlertRule defines conditions for triggering alerts
 type AlertRule struct {
-	ID          string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ID          string         `gorm:"primaryKey"`
 	Name        string         `gorm:"not null;uniqueIndex"`
 	Description string
 	Enabled     bool           `gorm:"default:true"`
@@ -48,4 +57,12 @@ type AlertRule struct {
 	NotifyEmail   bool
 	NotifyWebhook bool
 	WebhookURL    string
+}
+
+// BeforeCreate generates UUID for new alert rules
+func (r *AlertRule) BeforeCreate(tx *gorm.DB) error {
+	if r.ID == "" {
+		r.ID = uuid.New().String()
+	}
+	return nil
 }

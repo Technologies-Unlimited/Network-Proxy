@@ -17,14 +17,73 @@ func listDevices(srv *server.Server) gin.HandlerFunc {
 		result := srv.DB.Preload("SNMPTemplate").Find(&devices)
 
 		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading devices</p>`))
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"devices": devices,
-			"count":   len(devices),
-		})
+		if len(devices) == 0 {
+			c.Data(http.StatusOK, "text/html", []byte(`
+				<div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+					<h3>No Devices Found</h3>
+					<p>Click the Add Device button above to add your first device</p>
+				</div>
+			`))
+			return
+		}
+
+		// Build HTML table
+		html := `
+		<table style="width: 100%; border-collapse: collapse;">
+			<thead>
+				<tr style="border-bottom: 2px solid var(--border);">
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">Hostname</th>
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">IP Address / FQDN</th>
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">Type</th>
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">Location</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Status</th>
+					<th style="padding: 12px; text-align: left; color: var(--text-secondary);">Last Seen</th>
+					<th style="padding: 12px; text-align: center; color: var(--text-secondary);">Actions</th>
+				</tr>
+			</thead>
+			<tbody>`
+
+		for _, device := range devices {
+			statusColor := "var(--text-secondary)"
+			statusText := device.Status
+			if device.Status == "up" {
+				statusColor = "var(--success)"
+			} else if device.Status == "down" {
+				statusColor = "var(--danger)"
+			}
+
+			lastSeen := "Never"
+			if device.LastSeen != nil {
+				lastSeen = device.LastSeen.Format("2006-01-02 15:04")
+			}
+
+			html += `
+				<tr style="border-bottom: 1px solid var(--border);">
+					<td style="padding: 12px; color: var(--text-primary);">` + device.Hostname + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + device.IPAddress + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + device.DeviceType + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + device.Location + `</td>
+					<td style="padding: 12px; text-align: center;">
+						<span style="padding: 4px 12px; background: ` + statusColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + statusText + `</span>
+					</td>
+					<td style="padding: 12px; color: var(--text-secondary);">` + lastSeen + `</td>
+					<td style="padding: 12px; text-align: center;">
+						<a href="/visualize?device=` + device.ID + `" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px; text-decoration: none;">View</a>
+						<button onclick="showEditDeviceForm('` + device.ID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
+						<button onclick="deleteDevice('` + device.ID + `', '` + device.Hostname + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
+					</td>
+				</tr>`
+		}
+
+		html += `
+			</tbody>
+		</table>`
+
+		c.Data(http.StatusOK, "text/html", []byte(html))
 	}
 }
 

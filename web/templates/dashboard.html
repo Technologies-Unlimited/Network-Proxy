@@ -16,6 +16,8 @@
                 <a href="/devices">Devices</a>
                 <a href="/alerts">Alerts</a>
                 <a href="/agents">Agents</a>
+                <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
             </nav>
         </header>
 
@@ -23,30 +25,30 @@
             <h2>Dashboard</h2>
 
             <div class="stats">
-                <div class="stat-card" hx-get="/api/v1/devices" hx-trigger="load, every 10s" hx-target="#device-count">
+                <div class="stat-card">
                     <h3>Total Devices</h3>
-                    <p id="device-count" class="stat-value">-</p>
+                    <p id="device-count" class="stat-value" hx-get="/api/v1/dashboard/device-count" hx-trigger="load, every 10s">-</p>
                 </div>
 
                 <div class="stat-card">
                     <h3>Devices Up</h3>
-                    <p class="stat-value stat-success">-</p>
+                    <p id="devices-up" class="stat-value stat-success" hx-get="/api/v1/dashboard/devices-up" hx-trigger="load, every 10s">-</p>
                 </div>
 
                 <div class="stat-card">
                     <h3>Devices Down</h3>
-                    <p class="stat-value stat-danger">-</p>
+                    <p id="devices-down" class="stat-value stat-danger" hx-get="/api/v1/dashboard/devices-down" hx-trigger="load, every 10s">-</p>
                 </div>
 
                 <div class="stat-card">
                     <h3>Active Alerts</h3>
-                    <p class="stat-value stat-warning">-</p>
+                    <p id="active-alerts" class="stat-value stat-warning" hx-get="/api/v1/dashboard/active-alerts-count" hx-trigger="load, every 10s">-</p>
                 </div>
             </div>
 
             <div class="section">
                 <h3>Recent Alerts</h3>
-                <div id="alerts-list" hx-get="/api/v1/alerts?status=active" hx-trigger="load, every 30s">
+                <div id="alerts-list" hx-get="/api/v1/dashboard/recent-alerts" hx-trigger="load, every 30s">
                     Loading alerts...
                 </div>
             </div>
@@ -56,8 +58,8 @@
                 <div class="actions">
                     <a href="/devices" class="btn btn-primary">Add Device</a>
                     <a href="/agents" class="btn btn-secondary">View Agents</a>
-                    <a href="http://localhost:9091" class="btn btn-secondary" target="_blank">Open Prometheus</a>
-                    <a href="http://localhost:3000" class="btn btn-secondary" target="_blank">Open Grafana</a>
+                    <a href="http://localhost:9090/metrics" class="btn btn-secondary" target="_blank">View Metrics</a>
+                    <a href="/reports" class="btn btn-secondary">Reports</a>
                 </div>
             </div>
         </main>

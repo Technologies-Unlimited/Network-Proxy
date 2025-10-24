@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} - Network Monitor</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .report-form {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group select,
+        .form-group input[type="date"],
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .btn-generate {
+            flex: 1;
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .btn-csv {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-csv:hover {
+            background-color: #218838;
+        }
+
+        .btn-json {
+            background-color: #17a2b8;
+            color: white;
+        }
+
+        .btn-json:hover {
+            background-color: #138496;
+        }
+
+        .btn-pdf {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-pdf:hover {
+            background-color: #c82333;
+        }
+
+        .report-types {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .report-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .report-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .report-card.selected {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+
+        .report-card h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+
+        .report-card p {
+            color: #666;
+            margin-bottom: 0;
+        }
+
+        .preview-area {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 2rem;
+            display: none;
+        }
+
+        .preview-area.active {
+            display: block;
+        }
+
+        .preview-content {
+            overflow-x: auto;
+        }
+
+        .preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .preview-table th,
+        .preview-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .preview-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .preview-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .loading::after {
+            content: "...";
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: "."; }
+            40% { content: ".."; }
+            60%, 100% { content: "..."; }
+        }
+
+        .quick-export {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .export-buttons a {
+            flex: 1;
+            text-align: center;
+            padding: 0.75rem;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: opacity 0.3s;
+        }
+
+        .export-buttons a:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/agents">Agents</a>
+                <a href="/reports" class="active">Reports</a>
+                <a href="/visualize">Visualize</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Reports & Exports</h2>
+
+            <!-- Quick Export Section -->
+            <div class="quick-export">
+                <h3>Quick Export</h3>
+                <p>Export all current data without date filtering</p>
+                <div class="export-buttons">
+                    <a href="/api/v1/export/devices?format=csv" class="btn-csv">
+                        Export All Devices (CSV)
+                    </a>
+                    <a href="/api/v1/export/devices?format=json" class="btn-json">
+                        Export All Devices (JSON)
+                    </a>
+                    <a href="/api/v1/export/metrics?format=json" class="btn-json">
+                        Export Metrics (JSON)
+                    </a>
+                </div>
+            </div>
+
+            <!-- Report Type Selection -->
+            <h3>Generate Custom Report</h3>
+            <div class="report-types">
+                <div class="report-card" onclick="selectReportType('devices')">
+                    <h3>Device Report</h3>
+                    <p>Complete inventory of all monitored devices with status and configuration</p>
+                </div>
+
+                <div class="report-card" onclick="selectReportType('uptime')">
+                    <h3>Uptime Report</h3>
+                    <p>Uptime statistics and availability metrics for devices</p>
+                </div>
+
+                <div class="report-card" onclick="selectReportType('alerts')">
+                    <h3>Alert Report</h3>
+                    <p>Historical alert data with severity and resolution information</p>
+                </div>
+
+                <div class="report-card" onclick="selectReportType('performance')">
+                    <h3>Performance Report</h3>
+                    <p>Performance metrics including latency, CPU, memory, and other SNMP data</p>
+                </div>
+            </div>
+
+            <!-- Report Configuration Form -->
+            <div class="report-form" id="reportForm" style="display: none;">
+                <h3 id="reportTitle">Configure Report</h3>
+
+                <div class="form-group" id="deviceIdGroup" style="display: none;">
+                    <label for="deviceId">Device ID (Optional)</label>
+                    <input type="text" id="deviceId" placeholder="Leave empty for all devices">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="startDate">Start Date</label>
+                        <input type="date" id="startDate" value="">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="endDate">End Date</label>
+                        <input type="date" id="endDate" value="">
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-generate btn-csv" onclick="generateReport('csv')">
+                        Download CSV
+                    </button>
+                    <button class="btn-generate btn-json" onclick="generateReport('json')">
+                        Download JSON
+                    </button>
+                    <button class="btn-generate btn-pdf" onclick="generateReport('pdf')">
+                        Download PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Preview Area -->
+            <div class="preview-area" id="previewArea">
+                <h3>Report Preview</h3>
+                <div class="preview-content" id="previewContent">
+                    <div class="loading">Loading preview</div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go</p>
+        </footer>
+    </div>
+
+    <script>
+        let selectedReportType = null;
+
+        // Set default date range (last 30 days)
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        document.getElementById('endDate').valueAsDate = today;
+        document.getElementById('startDate').valueAsDate = thirtyDaysAgo;
+
+        function selectReportType(type) {
+            selectedReportType = type;
+
+            // Update UI
+            document.querySelectorAll('.report-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+
+            // Show form
+            const reportForm = document.getElementById('reportForm');
+            reportForm.style.display = 'block';
+
+            // Update title
+            const titles = {
+                'devices': 'Device Report Configuration',
+                'uptime': 'Uptime Report Configuration',
+                'alerts': 'Alert Report Configuration',
+                'performance': 'Performance Report Configuration'
+            };
+            document.getElementById('reportTitle').textContent = titles[type];
+
+            // Show/hide device ID field
+            const deviceIdGroup = document.getElementById('deviceIdGroup');
+            if (type === 'uptime' || type === 'performance') {
+                deviceIdGroup.style.display = 'block';
+            } else {
+                deviceIdGroup.style.display = 'none';
+            }
+
+            // Load preview
+            loadPreview();
+        }
+
+        function generateReport(format) {
+            if (!selectedReportType) {
+                alert('Please select a report type first');
+                return;
+            }
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const deviceId = document.getElementById('deviceId').value;
+
+            let url = `/api/v1/reports/${selectedReportType}?format=${format}`;
+
+            if (startDate) url += `&start=${startDate}`;
+            if (endDate) url += `&end=${endDate}`;
+            if (deviceId && (selectedReportType === 'uptime' || selectedReportType === 'performance')) {
+                url += `&device_id=${deviceId}`;
+            }
+
+            // Trigger download
+            window.location.href = url;
+        }
+
+        function loadPreview() {
+            if (!selectedReportType) return;
+
+            const previewArea = document.getElementById('previewArea');
+            const previewContent = document.getElementById('previewContent');
+
+            previewArea.classList.add('active');
+            previewContent.innerHTML = '<div class="loading">Loading preview</div>';
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const deviceId = document.getElementById('deviceId').value;
+
+            let url = `/api/v1/reports/${selectedReportType}?format=json`;
+
+            if (startDate) url += `&start=${startDate}`;
+            if (endDate) url += `&end=${endDate}`;
+            if (deviceId && (selectedReportType === 'uptime' || selectedReportType === 'performance')) {
+                url += `&device_id=${deviceId}`;
+            }
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    displayPreview(data);
+                })
+                .catch(error => {
+                    previewContent.innerHTML = `<p style="color: #dc3545;">Error loading preview: ${error.message}</p>`;
+                });
+        }
+
+        function displayPreview(data) {
+            const previewContent = document.getElementById('previewContent');
+
+            // Display as formatted JSON with summary
+            let html = '<h4>Preview (First 10 rows)</h4>';
+
+            // Add summary information
+            if (data.total_count !== undefined) {
+                html += `<p><strong>Total Records:</strong> ${data.total_count}</p>`;
+            }
+
+            if (data.summary) {
+                html += '<h4>Summary</h4>';
+                html += '<pre>' + JSON.stringify(data.summary, null, 2) + '</pre>';
+            }
+
+            // Display data based on report type
+            let records = [];
+            if (data.devices) records = data.devices.slice(0, 10);
+            else if (data.uptime_data) records = data.uptime_data.slice(0, 10);
+            else if (data.alerts) records = data.alerts.slice(0, 10);
+            else if (data.metrics) records = data.metrics.slice(0, 10);
+
+            if (records.length > 0) {
+                html += '<div style="max-height: 400px; overflow-y: auto;">';
+                html += '<pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; font-size: 0.85rem;">';
+                html += JSON.stringify(records, null, 2);
+                html += '</pre></div>';
+            }
+
+            previewContent.innerHTML = html;
+        }
+
+        // Auto-refresh preview when dates change
+        document.getElementById('startDate').addEventListener('change', () => {
+            if (selectedReportType) loadPreview();
+        });
+
+        document.getElementById('endDate').addEventListener('change', () => {
+            if (selectedReportType) loadPreview();
+        });
+
+        document.getElementById('deviceId').addEventListener('input', () => {
+            if (selectedReportType) {
+                // Debounce the preview reload
+                clearTimeout(window.previewTimeout);
+                window.previewTimeout = setTimeout(loadPreview, 500);
+            }
+        });
+    </script>
+</body>
+</html>

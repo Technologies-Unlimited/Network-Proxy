@@ -3,12 +3,13 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // SNMPTemplate defines SNMP polling configuration
 type SNMPTemplate struct {
-	ID          string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ID          string         `gorm:"primaryKey"`
 	Name        string         `gorm:"not null;uniqueIndex"`
 	Description string
 	Version     string         `gorm:"not null"` // v1, v2c, v3
@@ -27,9 +28,17 @@ type SNMPTemplate struct {
 	Devices []Device `gorm:"foreignKey:SNMPTemplateID"`
 }
 
+// BeforeCreate generates UUID for new SNMP templates
+func (s *SNMPTemplate) BeforeCreate(tx *gorm.DB) error {
+	if s.ID == "" {
+		s.ID = uuid.New().String()
+	}
+	return nil
+}
+
 // OID represents an SNMP Object Identifier to poll
 type OID struct {
-	ID          string         `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ID          string         `gorm:"primaryKey"`
 	OID         string         `gorm:"not null;uniqueIndex"`
 	Name        string         `gorm:"not null"`
 	Description string
@@ -41,4 +50,12 @@ type OID struct {
 
 	// Relationships
 	Templates []SNMPTemplate `gorm:"many2many:snmp_template_oids;"`
+}
+
+// BeforeCreate generates UUID for new OIDs
+func (o *OID) BeforeCreate(tx *gorm.DB) error {
+	if o.ID == "" {
+		o.ID = uuid.New().String()
+	}
+	return nil
 }

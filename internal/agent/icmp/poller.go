@@ -7,22 +7,25 @@ import (
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/metrics"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
-	"github.com/go-ping/ping"
+	probing "github.com/prometheus-community/pro-bing"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // Collector handles ICMP ping polling for devices
 type Collector struct {
 	metrics  *metrics.Registry
+	db       *gorm.DB
 	devices  map[string]*models.Device
 	mu       sync.RWMutex
 	interval time.Duration
 }
 
 // NewCollector creates a new ICMP collector
-func NewCollector(registry *metrics.Registry) *Collector {
+func NewCollector(registry *metrics.Registry, db *gorm.DB) *Collector {
 	return &Collector{
 		metrics:  registry,
+		db:       db,
 		devices:  make(map[string]*models.Device),
 		interval: 60 * time.Second, // Default 60 second interval
 	}
@@ -101,17 +104,18 @@ func (c *Collector) pollAllDevices(ctx context.Context) {
 
 // pollDevice performs a single ping to a device
 func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
-	pinger, err := ping.NewPinger(device.IPAddress)
+	pinger, err := probing.NewPinger(device.IPAddress)
 	if err != nil {
 		log.Error().Err(err).Str("device", device.Hostname).Msg("Failed to create pinger")
 		c.metrics.RecordPingFailure(device.ID, device.IPAddress)
 		return
 	}
 
-	// Set privileged mode based on OS (false for Windows, needs raw sockets)
-	pinger.SetPrivileged(false)
-	pinger.Count = 1
-	pinger.Timeout = 3 * time.Second
+	// Windows requires SetPrivileged(true) to avoid socket errors
+	// Despite the name, this works on Windows 10 without admin privileges
+	pinger.SetPrivileged(true)
+	pinger.Count = 4
+	pinger.Timeout = 5 * time.Second
 
 	startTime := time.Now()
 	err = pinger.Run()
@@ -136,6 +140,13 @@ func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
 
 		c.metrics.RecordPingSuccess(device.ID, device.IPAddress, float64(latency))
 		c.metrics.RecordDeviceStatus(device.ID, device.IPAddress, 1) // Up
+
+		// Update device status in database
+		now := time.Now()
+		c.db.Model(&models.Device{}).Where("id = ?", device.ID).Updates(map[string]interface{}{
+			"status":    "up",
+			"last_seen": now,
+		})
 	} else {
 		log.Warn().
 			Str("device", device.Hostname).
@@ -144,6 +155,9 @@ func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
 
 		c.metrics.RecordPingFailure(device.ID, device.IPAddress)
 		c.metrics.RecordDeviceStatus(device.ID, device.IPAddress, 0) // Down
+
+		// Update device status in database
+		c.db.Model(&models.Device{}).Where("id = ?", device.ID).Update("status", "down")
 	}
 }
 

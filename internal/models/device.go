@@ -3,12 +3,13 @@ package models
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 // Device represents a monitored network device
 type Device struct {
-	ID          string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ID          string `gorm:"primaryKey"`
 	Hostname    string `gorm:"not null;index"`
 	IPAddress   string `gorm:"not null;uniqueIndex"`
 	MACAddress  string
@@ -18,7 +19,7 @@ type Device struct {
 	Description string
 	Status      string `gorm:"default:'unknown'"` // up, down, unknown
 	LastSeen    *time.Time
-	AgentID     string         `gorm:"type:uuid;index"`
+	AgentID     string         `gorm:"index"`
 	CreatedAt   time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt   time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt   gorm.DeletedAt `gorm:"index"`
@@ -34,9 +35,17 @@ type Device struct {
 	Alerts []Alert `gorm:"foreignKey:DeviceID"`
 }
 
+// BeforeCreate generates UUID for new devices
+func (d *Device) BeforeCreate(tx *gorm.DB) error {
+	if d.ID == "" {
+		d.ID = uuid.New().String()
+	}
+	return nil
+}
+
 // Agent represents a monitoring agent
 type Agent struct {
-	ID        string    `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ID        string    `gorm:"primaryKey"`
 	Name      string    `gorm:"not null;uniqueIndex"`
 	Hostname  string    `gorm:"not null"`
 	IPAddress string    `gorm:"not null"`
@@ -54,4 +63,12 @@ type Agent struct {
 
 	// Relationships
 	Devices []Device `gorm:"foreignKey:AgentID"`
+}
+
+// BeforeCreate generates UUID for new agents
+func (a *Agent) BeforeCreate(tx *gorm.DB) error {
+	if a.ID == "" {
+		a.ID = uuid.New().String()
+	}
+	return nil
 }

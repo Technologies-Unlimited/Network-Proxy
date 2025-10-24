@@ -23,9 +23,12 @@ vendor/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 network-proxy.db
+network-monitor.db
 
 # IDE
 .vscode/
@@ -37,6 +40,9 @@ network-proxy.db
 
 # Misc
 *.pem
+*.manifest
+*.syso
+nul
 **/.claude/settings.local.json
 
 # Legacy (old Bun/TypeScript files)

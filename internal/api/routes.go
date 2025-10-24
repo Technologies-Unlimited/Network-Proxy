@@ -74,17 +74,76 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 
 		// Metrics proxy to Prometheus
 		v1.GET("/metrics/query", queryMetrics(srv))
+
+		// Discovery routes
+		discovery := v1.Group("/discovery")
+		{
+			discovery.POST("/scan", scanNetwork(srv))
+			discovery.GET("/status", getScanStatus(srv))
+			discovery.GET("/devices", getDiscoveredDevices(srv))
+			discovery.DELETE("/cache", clearScanCache(srv))
+		}
+
+		// Visualization metrics routes
+		metrics := v1.Group("/metrics")
+		{
+			metrics.GET("/device-status", getDeviceStatusMetrics(srv))
+			metrics.GET("/ping-history", getPingHistoryMetrics(srv))
+			metrics.GET("/alert-stats", getAlertStatsMetrics(srv))
+			metrics.GET("/uptime", getUptimeMetrics(srv))
+			metrics.GET("/outage-history", getOutageHistory(srv))
+		}
+
+		// JSON devices endpoint for visualization
+		v1.GET("/devices-json", getDevicesJSON(srv))
+
+		// Network Tools routes
+		toolsAPI := v1.Group("/tools")
+		{
+			toolsAPI.POST("/traceroute", traceroute(srv))
+			toolsAPI.POST("/dns-lookup", dnsLookup(srv))
+			toolsAPI.POST("/port-scan", portScan(srv))
+			toolsAPI.POST("/whois", whoisLookup(srv))
+			toolsAPI.POST("/bandwidth-test", bandwidthTest(srv))
+			toolsAPI.POST("/ping", ping(srv))
+			toolsAPI.GET("/common-ports", commonPorts(srv))
+		}
+
+		// Report routes
+		reports := v1.Group("/reports")
+		{
+			reports.GET("/devices", generateDeviceReport(srv))
+			reports.GET("/uptime", generateUptimeReport(srv))
+			reports.GET("/alerts", generateAlertReport(srv))
+			reports.GET("/performance", generatePerformanceReport(srv))
+		}
+
+		// Export routes
+		exports := v1.Group("/export")
+		{
+			exports.GET("/devices", exportDevices(srv))
+			exports.GET("/metrics", exportMetrics(srv))
+		}
 	}
 
-	// Serve static files and web UI
-	router.Static("/static", "./web/static")
-	router.LoadHTMLGlob("web/templates/*")
+	// Dashboard API endpoints
+	dashboard := v1.Group("/dashboard")
+	{
+		dashboard.GET("/device-count", getDashboardDeviceCount(srv))
+		dashboard.GET("/devices-up", getDashboardDevicesUp(srv))
+		dashboard.GET("/devices-down", getDashboardDevicesDown(srv))
+		dashboard.GET("/active-alerts-count", getDashboardActiveAlerts(srv))
+		dashboard.GET("/recent-alerts", getDashboardRecentAlerts(srv))
+	}
 
-	// Web UI routes
+	// Web UI routes (templates and static files loaded in main.go)
 	router.GET("/", dashboardPage)
 	router.GET("/devices", devicesPage)
 	router.GET("/alerts", alertsPage)
 	router.GET("/agents", agentsPage)
+	router.GET("/visualize", visualizePage)
+	router.GET("/tools", toolsPage)
+	router.GET("/reports", reportsPage)
 }
 
 // healthCheck is a simple health check endpoint

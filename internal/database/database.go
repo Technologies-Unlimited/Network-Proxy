@@ -6,30 +6,21 @@ import (
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
+	"github.com/glebarez/sqlite"
 	"github.com/rs/zerolog/log"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 // Initialize sets up the database connection and runs migrations
 func Initialize() (*gorm.DB, error) {
-	// Get database connection string from environment
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		// Fallback to individual parameters
-		host := getEnv("DB_HOST", "localhost")
-		port := getEnv("DB_PORT", "5432")
-		user := getEnv("DB_USER", "postgres")
-		password := getEnv("DB_PASSWORD", "postgres")
-		dbname := getEnv("DB_NAME", "network_monitor")
-		sslmode := getEnv("DB_SSLMODE", "disable")
-
-		dsn = fmt.Sprintf(
-			"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
-			host, user, password, dbname, port, sslmode,
-		)
+	// Get database file path from environment or use default
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./network-monitor.db"
 	}
+
+	log.Info().Str("path", dbPath).Msg("Initializing SQLite database")
 
 	// Configure GORM logger
 	gormLogger := logger.New(
@@ -42,8 +33,9 @@ func Initialize() (*gorm.DB, error) {
 		},
 	)
 
-	// Connect to database
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	// Connect to SQLite database (using pure-Go driver)
+	dsn := fmt.Sprintf("%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)", dbPath)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger:                 gormLogger,
 		SkipDefaultTransaction: true,
 		PrepareStmt:            true,
@@ -75,11 +67,6 @@ func Initialize() (*gorm.DB, error) {
 // runMigrations runs all database migrations
 func runMigrations(db *gorm.DB) error {
 	log.Info().Msg("Running database migrations")
-
-	// Enable UUID extension for PostgreSQL
-	if err := db.Exec("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"").Error; err != nil {
-		return fmt.Errorf("failed to create uuid extension: %w", err)
-	}
 
 	// Auto-migrate all models
 	models := []interface{}{
