@@ -10,8 +10,9 @@ import (
 // Device represents a monitored network device
 type Device struct {
 	ID          string `gorm:"primaryKey"`
+	CompanyID   string `gorm:"not null;index"` // ThothOS company ID for multi-tenancy
 	Hostname    string `gorm:"not null;index"`
-	IPAddress   string `gorm:"not null;uniqueIndex"`
+	IPAddress   string `gorm:"not null;index"` // Changed from uniqueIndex to allow same IP across companies
 	MACAddress  string
 	Vendor      string
 	DeviceType  string // router, switch, server, etc.
@@ -19,7 +20,7 @@ type Device struct {
 	Description string
 	Status      string `gorm:"default:'unknown'"` // up, down, unknown
 	LastSeen    *time.Time
-	AgentID     string         `gorm:"index"`
+	NodeID      string         `gorm:"index"` // Reference to monitoring node
 	CreatedAt   time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt   time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt   gorm.DeletedAt `gorm:"index"`
@@ -43,32 +44,3 @@ func (d *Device) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// Agent represents a monitoring agent
-type Agent struct {
-	ID        string    `gorm:"primaryKey"`
-	Name      string    `gorm:"not null;uniqueIndex"`
-	Hostname  string    `gorm:"not null"`
-	IPAddress string    `gorm:"not null"`
-	Version   string
-	Status    string `gorm:"default:'offline'"` // online, offline
-	LastSeen  *time.Time
-	CreatedAt time.Time      `gorm:"autoCreateTime"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-
-	// Capabilities
-	SupportsICMP      bool `gorm:"default:true"`
-	SupportsSNMP      bool `gorm:"default:true"`
-	SupportsDiscovery bool `gorm:"default:true"`
-
-	// Relationships
-	Devices []Device `gorm:"foreignKey:AgentID"`
-}
-
-// BeforeCreate generates UUID for new agents
-func (a *Agent) BeforeCreate(tx *gorm.DB) error {
-	if a.ID == "" {
-		a.ID = uuid.New().String()
-	}
-	return nil
-}

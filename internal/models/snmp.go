@@ -10,7 +10,9 @@ import (
 // SNMPTemplate defines SNMP polling configuration
 type SNMPTemplate struct {
 	ID          string         `gorm:"primaryKey"`
-	Name        string         `gorm:"not null;uniqueIndex"`
+	CompanyID   string         `gorm:"not null;index"` // ThothOS company ID for multi-tenancy
+	ThothOSID   string         `gorm:"index"`          // ID from ThothOS for syncing
+	Name        string         `gorm:"not null;index"` // Changed from uniqueIndex to allow same name across companies
 	Description string
 	Version     string         `gorm:"not null"` // v1, v2c, v3
 	Community   string         // For v1/v2c
@@ -39,7 +41,9 @@ func (s *SNMPTemplate) BeforeCreate(tx *gorm.DB) error {
 // OID represents an SNMP Object Identifier to poll
 type OID struct {
 	ID          string         `gorm:"primaryKey"`
-	OID         string         `gorm:"not null;uniqueIndex"`
+	CompanyID   string         `gorm:"not null;index"` // ThothOS company ID for multi-tenancy
+	ThothOSID   string         `gorm:"index"`          // ID from ThothOS for syncing
+	OID         string         `gorm:"not null;index"` // Changed from uniqueIndex to allow same OID across companies
 	Name        string         `gorm:"not null"`
 	Description string
 	Unit        string         // Mbps, %, C, etc.

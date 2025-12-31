@@ -71,11 +71,16 @@ func runMigrations(db *gorm.DB) error {
 	// Auto-migrate all models
 	models := []interface{}{
 		&models.Device{},
-		&models.Agent{},
+		&models.Node{},
+		&models.NodePeer{},
+		&models.BandwidthTestResult{},
+		&models.ScheduledTest{},
 		&models.SNMPTemplate{},
 		&models.OID{},
 		&models.Alert{},
 		&models.AlertRule{},
+		&models.ProxyConfig{},
+		&models.Settings{},
 	}
 
 	for _, model := range models {
@@ -86,14 +91,6 @@ func runMigrations(db *gorm.DB) error {
 
 	log.Info().Msg("Database migrations completed")
 	return nil
-}
-
-// getEnv gets environment variable or returns default
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 // gormLogWriter adapts GORM logger to zerolog

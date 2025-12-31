@@ -10,6 +10,7 @@ import (
 // Alert represents a monitoring alert
 type Alert struct {
 	ID          string         `gorm:"primaryKey"`
+	CompanyID   string         `gorm:"not null;index"` // ThothOS company ID for multi-tenancy
 	DeviceID    string         `gorm:"not null;index"`
 	Device      *Device        `gorm:"foreignKey:DeviceID"`
 	Severity    string         `gorm:"not null"` // critical, warning, info
@@ -40,7 +41,8 @@ func (a *Alert) BeforeCreate(tx *gorm.DB) error {
 // AlertRule defines conditions for triggering alerts
 type AlertRule struct {
 	ID          string         `gorm:"primaryKey"`
-	Name        string         `gorm:"not null;uniqueIndex"`
+	CompanyID   string         `gorm:"not null;index"` // ThothOS company ID for multi-tenancy
+	Name        string         `gorm:"not null;index"` // Changed from uniqueIndex to allow same name across companies
 	Description string
 	Enabled     bool           `gorm:"default:true"`
 	Severity    string         `gorm:"not null"` // critical, warning, info
