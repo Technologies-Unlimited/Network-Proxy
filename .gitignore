@@ -44,6 +44,7 @@ network-monitor.db
 *.syso
 nul
 **/.claude/settings.local.json
+claude.md
 
 # Legacy (old Bun/TypeScript files)
 /node_modules

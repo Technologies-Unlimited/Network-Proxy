@@ -1,200 +1,180 @@
 # Network Monitor
 
-A high-performance network monitoring and management system built in Go. Designed to be a better, more scalable alternative to Zabbix.
+A high-performance network monitoring solution built in Go. Designed to be faster and more scalable than Zabbix.
 
 ## Features
 
+- **Distributed Node Architecture** - Central server with multiple monitoring nodes connected via gRPC
+- **High-Speed Bandwidth Testing** - 10+ Gbps throughput with 6 parallel gRPC streams
 - **Real-time ICMP Monitoring** - Raw socket ping monitoring for 100,000+ devices
 - **SNMP Polling** - SNMPv2c and SNMPv3 support with template-based polling
 - **Network Discovery** - Automatic device discovery on network ranges
-- **Prometheus Integration** - Native Prometheus metrics for AI/ML pipelines
-- **Distributed Agents** - Deploy agents near monitored devices for low latency
+- **Network Tools** - Traceroute, DNS lookup, port scanning, WHOIS, and more
 - **Alert Engine** - Rule-based alerting with multiple notification channels
+- **Modern Web UI** - htmx-based dashboard with dark/light theme support
 - **REST API** - Full-featured API for automation and integration
-- **Web UI** - Modern htmx-based dashboard
+- **SQLite Database** - Zero-configuration embedded database
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│  Central Server (network-monitor-server)│
-│  ├── HTTP API (port 8080)               │
-│  ├── Web UI                             │
-│  ├── PostgreSQL (devices, alerts, etc.) │
-│  └── Alert Engine                       │
-└─────────────────────────────────────────┘
-                    ▲
-                    │ HTTP/gRPC
-        ┌───────────┼───────────┐
-        │           │           │
-┌───────▼─────┐ ┌──▼────────┐ ┌▼──────────┐
-│  Agent 1    │ │  Agent 2  │ │  Agent 3  │
-│  ├─ ICMP    │ │ (remote)  │ │ (remote)  │
-│  ├─ SNMP    │ └───────────┘ └───────────┘
-│  └─ Metrics │
-│  :9090      │
-└─────────────┘
-        │
-        ▼
-  Prometheus/VictoriaMetrics
+┌──────────────────────────────────────────────────────────┐
+│           Central Server (network-monitor server)         │
+│  ├── HTTP API & Web UI (port 8080)                       │
+│  ├── SQLite Database (network-monitor.db)                │
+│  ├── Node Registration & Heartbeat Management            │
+│  └── Bandwidth Test Coordination                         │
+└──────────────────────────────────────────────────────────┘
+                         ▲
+                         │ HTTP/gRPC
+         ┌───────────────┼───────────────┐
+         │               │               │
+┌────────▼─────┐  ┌──────▼──────┐  ┌─────▼───────┐
+│  Node-Alpha  │  │  Node-Beta  │  │  Node-Gamma │
+│  :50051      │  │  :50052     │  │  :50053     │
+│  (gRPC)      │  │  (gRPC)     │  │  (gRPC)     │
+└──────────────┘  └─────────────┘  └─────────────┘
 ```
 
 ## Prerequisites
 
 - **Go 1.21+** - [Install Go](https://go.dev/doc/install)
-- **PostgreSQL 14+** - For device/alert storage
-- **Prometheus or VictoriaMetrics** (optional) - For time-series metrics
 
 ## Quick Start
 
-### 1. Install Go
-
-**Windows:**
-```powershell
-# Using winget
-winget install GoLang.Go
-
-# Or download from https://go.dev/dl/
-```
-
-**Linux:**
-```bash
-wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin
-```
-
-### 2. Clone and Build
+### 1. Build
 
 ```bash
-git clone https://github.com/Technologies-Unlimited/Network-Proxy.git
-cd Network-Proxy
+# Clone the repository
+git clone https://github.com/Technologies-Unlimited/Network-Monitor.git
+cd Network-Monitor
 
 # Download dependencies
 go mod download
 
-# Build server
-go build -o network-monitor-server.exe ./cmd/server
-
-# Build agent
-go build -o network-monitor-agent.exe ./cmd/agent
+# Build the unified binary
+go build -o network-monitor.exe .
 ```
 
-### 3. Set Up Database
+### 2. Start the Server
 
 ```bash
-# Create PostgreSQL database
-createdb network_monitor
-
-# Copy environment file
-cp .env.example .env
-
-# Edit .env with your database credentials
-DATABASE_URL=postgres://postgres:password@localhost:5432/network_monitor?sslmode=disable
-```
-
-### 4. Run
-
-**Start Server:**
-```bash
-./network-monitor-server.exe
+./network-monitor.exe server
 # Server running on http://localhost:8080
 ```
 
-**Start Agent (in another terminal):**
-```bash
-./network-monitor-agent.exe
-# Agent metrics on http://localhost:9090/metrics
-```
-
-**Access Web UI:**
-Open http://localhost:8080 in your browser
-
-## Building for Production
-
-### Single Binary (Windows .exe)
+### 3. Start Monitoring Nodes
 
 ```bash
-# Server
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/network-monitor-server.exe ./cmd/server
+# Start first node
+./network-monitor.exe node --name Node-Alpha --grpc-port 50051
 
-# Agent
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/network-monitor-agent.exe ./cmd/agent
+# Start second node (in another terminal)
+./network-monitor.exe node --name Node-Beta --grpc-port 50052
 ```
 
-### Cross-Platform Builds
+### 4. Access Web UI
+
+Open http://localhost:8080 in your browser.
+
+## CLI Usage
+
+Network Monitor uses a unified binary with subcommands:
 
 ```bash
-# Linux
-GOOS=linux GOARCH=amd64 go build -o dist/network-monitor-server-linux ./cmd/server
-GOOS=linux GOARCH=amd64 go build -o dist/network-monitor-agent-linux ./cmd/agent
+# Start the central server
+./network-monitor.exe server
 
-# macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o dist/network-monitor-server-macos ./cmd/server
+# Start a monitoring node
+./network-monitor.exe node --name <name> [options]
 
-# macOS (Intel)
-GOOS=darwin GOARCH=amd64 go build -o dist/network-monitor-server-macos-intel ./cmd/server
+# Node options:
+#   -n, --name        Node name (required, must be unique)
+#   -p, --grpc-port   gRPC port for peer connections (default: 50051)
+#   -s, --server      Central server address (default: http://localhost:8080)
+#   -c, --company     Company ID (default: default)
 ```
 
-### Using Makefile
+## Web UI Navigation
 
-```bash
-# Build all targets
-make build
+The web interface includes the following sections:
 
-# Build server only
-make server
+| Page | Description |
+|------|-------------|
+| **Dashboard** | Overview with device counts, status, and active alerts |
+| **Devices** | Manage monitored network devices (routers, switches, servers) |
+| **Alerts** | View and manage active and historical alerts |
+| **Nodes** | Distributed monitoring nodes, peer connections, and bandwidth tests |
+| **Visualize** | Network topology and metrics visualization |
+| **Tools** | Network diagnostic tools (see below) |
+| **Reports** | Generate device, uptime, alert, and performance reports |
+| **Settings** | Theme settings and configuration |
 
-# Build agent only
-make agent
+## Network Tools
 
-# Build for all platforms
-make build-all
+The Tools page provides 13 network diagnostic utilities:
 
-# Run tests
-make test
+| Tool | Description |
+|------|-------------|
+| **Traceroute** | Trace the network path to a destination |
+| **DNS Lookup** | Query DNS records (A, AAAA, MX, TXT, etc.) |
+| **Port Scan** | Scan for open ports on a target host |
+| **WHOIS** | Look up domain registration information |
+| **Bandwidth Test** | Test network throughput to external servers |
+| **Ping** | ICMP ping with statistics |
+| **SNMP Query** | Query SNMP OIDs from devices |
+| **MAC Lookup** | Look up vendor information from MAC addresses |
+| **Connection Test** | Test TCP/UDP connectivity to a host:port |
+| **HTTP Test** | Test HTTP/HTTPS endpoints with response details |
+| **SSL Check** | Validate SSL certificates and expiration |
+| **ARP Scan** | Discover devices on the local network |
+| **MTU Discovery** | Find the maximum transmission unit for a path |
 
-# Clean build artifacts
-make clean
-```
+## Distributed Bandwidth Testing
 
-## Docker Deployment
+### High-Performance Testing
 
-### Using Docker Compose (Recommended for Development)
+Bandwidth tests between nodes use 6 parallel gRPC bidirectional streams:
+- Achieves **10+ Gbps** on capable hardware
+- Each stream sends/receives 4MB chunks
+- Real-time latency sampling for time-series charts
 
-```bash
-# Start all services (server, agent, PostgreSQL, Prometheus)
-docker-compose up -d
+### Network Path Modes
 
-# View logs
-docker-compose logs -f
+Tests support three network path modes:
 
-# Stop all services
-docker-compose down
-```
+| Mode | Description |
+|------|-------------|
+| **Direct** | Connect directly to target node's IP (default) |
+| **Local** | Force traffic through localhost/loopback (127.0.0.1) |
+| **Gateway** | Route through a specified gateway address |
 
-### Manual Docker Build
+### Running a Bandwidth Test
 
-```bash
-# Build server image
-docker build -f Dockerfile.server -t network-monitor-server:latest .
+1. Navigate to **Nodes** page
+2. Ensure at least 2 nodes are online
+3. Create a peer connection between nodes
+4. Click **Run Test** and select:
+   - Source and target nodes
+   - Test type (bidirectional, upload, download)
+   - Network path mode
+   - Duration (5-300 seconds)
 
-# Build agent image
-docker build -f Dockerfile.agent -t network-monitor-agent:latest .
+## Node Management
 
-# Run server
-docker run -d \
-  -p 8080:8080 \
-  -e DATABASE_URL=postgres://postgres:password@db:5432/network_monitor \
-  --name monitor-server \
-  network-monitor-server:latest
+### Node Registration
 
-# Run agent
-docker run -d \
-  -p 9090:9090 \
-  --name monitor-agent \
-  network-monitor-agent:latest
-```
+- Nodes register with the server on startup using their unique name
+- If a node with the same name exists, the existing record is updated
+- Node status is tracked via heartbeats (every 30 seconds)
+
+### Node Status Lifecycle
+
+| Status | Condition |
+|--------|-----------|
+| **Online** | Actively sending heartbeats |
+| **Offline** | No heartbeat for 5+ minutes |
+| **Deleted** | Automatically removed after 15+ minutes without heartbeat |
 
 ## Configuration
 
@@ -203,24 +183,54 @@ docker run -d \
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server HTTP port | `8080` |
-| `DATABASE_URL` | PostgreSQL connection string | Required |
-| `METRICS_PORT` | Agent Prometheus port | `9090` |
-| `PROMETHEUS_URL` | Prometheus server URL | Optional |
-| `LOG_LEVEL` | Logging level (debug\|info\|warn\|error) | `info` |
-| `ICMP_POLL_INTERVAL` | ICMP polling interval (seconds) | `60` |
-| `SNMP_POLL_INTERVAL` | SNMP polling interval (seconds) | `60` |
+| `THOTHOS_URL` | ThothOS integration URL | Optional |
+| `THOTHOS_API_KEY` | ThothOS API key | Optional |
 
-### Database Schema
+### Standalone Mode
 
-The application automatically creates and migrates database tables on startup:
-- `devices` - Monitored network devices
-- `agents` - Distributed monitoring agents
-- `snmp_templates` - SNMP polling templates
-- `oids` - SNMP OID definitions
-- `alerts` - Active and historical alerts
-- `alert_rules` - Alert rule definitions
+When ThothOS is not configured, the server runs in standalone mode with authentication bypassed.
 
-## API Usage
+## API Examples
+
+### List Nodes
+
+```bash
+curl http://localhost:8080/api/v1/nodes
+```
+
+### Start Bandwidth Test
+
+```bash
+# Direct mode
+curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_node_id": "uuid-1",
+    "target_node_id": "uuid-2",
+    "test_type": "bidirectional",
+    "duration": 10,
+    "test_mode": "direct"
+  }'
+
+# Local mode (loopback)
+curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_node_id": "uuid-1",
+    "target_node_id": "uuid-2",
+    "test_mode": "local"
+  }'
+
+# Gateway mode
+curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_node_id": "uuid-1",
+    "target_node_id": "uuid-2",
+    "test_mode": "gateway",
+    "gateway_address": "192.168.1.1:50051"
+  }'
+```
 
 ### Add a Device
 
@@ -231,152 +241,69 @@ curl -X POST http://localhost:8080/api/v1/devices \
     "hostname": "router-1",
     "ip_address": "192.168.1.1",
     "device_type": "router",
-    "icmp_enabled": true,
-    "icmp_interval": 60
+    "icmp_enabled": true
   }'
 ```
 
-### List Devices
+## Project Structure
+
+```
+Network-Monitor/
+├── main.go                  # Unified CLI entry point (server + node)
+├── internal/
+│   ├── api/                 # HTTP API handlers
+│   ├── database/            # SQLite database initialization
+│   ├── grpc/                # gRPC server for node communication
+│   │   └── pb/              # Generated protobuf files
+│   ├── models/              # GORM data models
+│   ├── middleware/          # Authentication middleware
+│   └── server/              # Server state management
+├── proto/
+│   └── node/                # Protobuf definitions
+├── web/
+│   ├── templates/           # HTML templates (htmx)
+│   └── static/              # CSS, JS, images
+└── network-monitor.db       # SQLite database (created at runtime)
+```
+
+## Database Schema
+
+Uses SQLite with GORM ORM. Key tables:
+
+| Table | Description |
+|-------|-------------|
+| `nodes` | Registered monitoring nodes |
+| `node_peers` | Peer connections between nodes |
+| `bandwidth_test_results` | Historical bandwidth test results |
+| `scheduled_tests` | Scheduled/recurring bandwidth tests |
+| `devices` | Monitored network devices |
+| `alerts` | Active and historical alerts |
+| `alert_rules` | Alert rule definitions |
+| `snmp_templates` | SNMP polling templates |
+| `oids` | SNMP OID definitions |
+
+## Cross-Platform Builds
 
 ```bash
-curl http://localhost:8080/api/v1/devices
-```
+# Windows
+go build -o network-monitor.exe .
 
-### Create SNMP Template
+# Linux
+GOOS=linux GOARCH=amd64 go build -o network-monitor-linux .
 
-```bash
-curl -X POST http://localhost:8080/api/v1/snmp/templates \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Cisco Router",
-    "version": "v2c",
-    "community": "public"
-  }'
-```
+# macOS (Apple Silicon)
+GOOS=darwin GOARCH=arm64 go build -o network-monitor-macos .
 
-### View Metrics
-
-```bash
-# Agent Prometheus metrics
-curl http://localhost:9090/metrics
-```
-
-## Prometheus Integration
-
-### Configure Prometheus Scraping
-
-Add to `prometheus.yml`:
-
-```yaml
-scrape_configs:
-  - job_name: 'network-monitor-agents'
-    static_configs:
-      - targets: ['agent-1:9090', 'agent-2:9090']
-```
-
-### Example PromQL Queries
-
-```promql
-# Device status
-network_device_status{ip_address="192.168.1.1"}
-
-# Average ping latency
-avg(network_ping_latency_milliseconds)
-
-# Devices down
-count(network_device_status == 0)
-
-# SNMP value for specific OID
-network_snmp_value{oid_name="ifInOctets"}
-```
-
-## AI Integration
-
-Metrics are exposed in Prometheus format for easy integration with AI/ML pipelines:
-
-```python
-# Example: Anomaly detection with Python
-import requests
-import pandas as pd
-
-# Query Prometheus
-response = requests.get('http://localhost:9090/api/v1/query', params={
-    'query': 'network_ping_latency_milliseconds'
-})
-
-data = pd.DataFrame(response.json()['data']['result'])
-
-# Train anomaly detection model
-# ...
+# macOS (Intel)
+GOOS=darwin GOARCH=amd64 go build -o network-monitor-macos-intel .
 ```
 
 ## Performance
 
+- **10+ Gbps** bandwidth testing between nodes
 - **100,000+ devices** supported per server
 - **Sub-second polling** with raw ICMP sockets
-- **<10ms latency** for local agents
-- **Horizontal scaling** via multiple agents
-- **~100MB RAM** base usage, ~1KB per monitored device
-
-## Development
-
-### Project Structure
-
-```
-Network-Proxy/
-├── cmd/
-│   ├── server/          # Server entry point
-│   └── agent/           # Agent entry point
-├── internal/
-│   ├── api/             # HTTP API handlers
-│   ├── agent/           # Agent monitoring logic
-│   │   ├── icmp/        # ICMP poller
-│   │   ├── snmp/        # SNMP walker
-│   │   └── collector/   # Collector orchestration
-│   ├── database/        # Database layer
-│   ├── metrics/         # Prometheus metrics
-│   ├── models/          # Data models
-│   └── server/          # Server logic
-├── web/
-│   ├── templates/       # HTML templates
-│   └── static/          # CSS/JS assets
-├── pkg/                 # Public packages
-├── configs/             # Configuration files
-└── docs/                # Documentation
-```
-
-### Running Tests
-
-```bash
-go test ./...
-```
-
-### Code Formatting
-
-```bash
-go fmt ./...
-```
-
-### Linting
-
-```bash
-golangci-lint run
-```
-
-## Roadmap
-
-- [x] ICMP monitoring
-- [x] SNMPv2c/v3 polling
-- [x] PostgreSQL storage
-- [x] Prometheus metrics
-- [x] REST API
-- [ ] Network discovery
-- [ ] Alert engine
-- [ ] htmx Web UI
-- [ ] Agent registration
-- [ ] AI anomaly detection
-- [ ] Grafana dashboards
-- [ ] Mobile app
+- **~100MB RAM** base usage
 
 ## License
 
@@ -386,11 +313,6 @@ MIT License - see LICENSE file
 
 Contributions welcome! Please open an issue or PR.
 
-## Support
-
-- GitHub Issues: https://github.com/Technologies-Unlimited/Network-Proxy/issues
-- Documentation: https://github.com/Technologies-Unlimited/Network-Proxy/wiki
-
 ---
 
-**Built with Go 🐹 | Faster than Zabbix ⚡**
+**Built with Go | Faster than Zabbix**
