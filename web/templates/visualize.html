@@ -7,6 +7,7 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
     <style>
         .visualize-container {
             padding: 20px;
@@ -15,7 +16,7 @@
         }
 
         .time-range-selector {
-            background: #1e1e1e;
+            background: var(--bg-secondary);
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
@@ -26,29 +27,29 @@
         }
 
         .time-range-selector label {
-            color: #e0e0e0;
+            color: var(--text-primary);
             font-weight: 600;
         }
 
         .time-btn {
             padding: 8px 16px;
-            background: #2d2d2d;
-            color: #e0e0e0;
-            border: 1px solid #404040;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
             border-radius: 4px;
             cursor: pointer;
             transition: all 0.3s;
         }
 
         .time-btn:hover {
-            background: #3d3d3d;
-            border-color: #4a9eff;
+            background: var(--bg-secondary);
+            border-color: var(--accent);
         }
 
         .time-btn.active {
-            background: #4a9eff;
-            border-color: #4a9eff;
-            color: white;
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--accent-text);
         }
 
         .custom-range {
@@ -59,9 +60,9 @@
 
         .custom-range input {
             padding: 8px;
-            background: #2d2d2d;
-            color: #e0e0e0;
-            border: 1px solid #404040;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
             border-radius: 4px;
         }
 
@@ -73,16 +74,16 @@
         }
 
         .metric-panel {
-            background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+            background: var(--bg-card);
             padding: 20px;
             border-radius: 8px;
-            border: 1px solid #404040;
+            border: 1px solid var(--border);
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
 
         .metric-panel h3 {
             margin: 0 0 10px 0;
-            color: #a0a0a0;
+            color: var(--text-secondary);
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -91,25 +92,25 @@
         .metric-value {
             font-size: 36px;
             font-weight: bold;
-            color: #4a9eff;
+            color: var(--accent);
             margin: 10px 0;
         }
 
         .metric-subtitle {
-            color: #808080;
+            color: var(--text-secondary);
             font-size: 12px;
         }
 
         .metric-value.success {
-            color: #4caf50;
+            color: var(--success);
         }
 
         .metric-value.warning {
-            color: #ff9800;
+            color: var(--warning);
         }
 
         .metric-value.danger {
-            color: #f44336;
+            color: var(--danger);
         }
 
         .charts-grid {
@@ -120,16 +121,16 @@
         }
 
         .chart-container {
-            background: #1e1e1e;
+            background: var(--bg-card);
             padding: 20px;
             border-radius: 8px;
-            border: 1px solid #404040;
+            border: 1px solid var(--border);
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
 
         .chart-container h3 {
             margin: 0 0 15px 0;
-            color: #e0e0e0;
+            color: var(--text-primary);
             font-size: 18px;
         }
 
@@ -145,7 +146,7 @@
         .loading-spinner {
             text-align: center;
             padding: 40px;
-            color: #808080;
+            color: var(--text-secondary);
         }
 
         @keyframes spin {
@@ -156,8 +157,8 @@
             display: inline-block;
             width: 40px;
             height: 40px;
-            border: 4px solid #404040;
-            border-top-color: #4a9eff;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -166,8 +167,8 @@
             position: fixed;
             top: 20px;
             right: 20px;
-            background: #4a9eff;
-            color: white;
+            background: var(--accent);
+            color: var(--accent-text);
             padding: 10px 20px;
             border-radius: 4px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -199,8 +200,11 @@
                 <a href="/">Dashboard</a>
                 <a href="/devices">Devices</a>
                 <a href="/alerts">Alerts</a>
-                <a href="/agents">Agents</a>
-                <a href="/visualize" class="active">Visualize</a>
+                <a href="/nodes">Nodes</a>
+                <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
             </nav>
         </header>
 
@@ -219,7 +223,7 @@
                 <div class="custom-range">
                     <label>Custom:</label>
                     <input type="datetime-local" id="start-time">
-                    <span style="color: #808080;">to</span>
+                    <span style="color: var(--text-secondary);">to</span>
                     <input type="datetime-local" id="end-time">
                     <button class="time-btn" onclick="setCustomRange()">Apply</button>
                 </div>
@@ -816,6 +820,7 @@
                 clearInterval(refreshInterval);
             }
         });
+
     </script>
 </body>
 </html>

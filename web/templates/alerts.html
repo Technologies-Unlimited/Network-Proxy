@@ -6,6 +6,7 @@
     <title>Alerts - Network Monitor</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
 </head>
 <body>
     <div class="container">
@@ -14,9 +15,12 @@
             <nav>
                 <a href="/">Dashboard</a>
                 <a href="/devices">Devices</a>
-                <a href="/alerts" class="active">Alerts</a>
-                <a href="/agents">Agents</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/nodes">Nodes</a>
                 <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
             </nav>
         </header>
 
@@ -232,6 +236,7 @@
                 hideEditRuleForm();
             }
         });
+
     </script>
 </body>
 </html>

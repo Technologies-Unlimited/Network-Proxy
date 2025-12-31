@@ -6,13 +6,15 @@
     <title>{{.title}} - Network Monitor</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
     <style>
         .report-form {
-            background: white;
+            background: var(--bg-card);
             padding: 2rem;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
             margin-bottom: 2rem;
+            border: 1px solid var(--border);
         }
 
         .form-group {
@@ -23,7 +25,7 @@
             display: block;
             margin-bottom: 0.5rem;
             font-weight: 600;
-            color: #333;
+            color: var(--text-primary);
         }
 
         .form-group select,
@@ -31,9 +33,17 @@
         .form-group input[type="text"] {
             width: 100%;
             padding: 0.75rem;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border);
             border-radius: 4px;
             font-size: 1rem;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
         }
 
         .form-row {
@@ -56,34 +66,34 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            transition: background-color 0.3s;
+            transition: opacity 0.3s;
         }
 
         .btn-csv {
-            background-color: #28a745;
+            background-color: var(--success);
             color: white;
         }
 
         .btn-csv:hover {
-            background-color: #218838;
+            opacity: 0.9;
         }
 
         .btn-json {
-            background-color: #17a2b8;
-            color: white;
+            background-color: var(--accent);
+            color: var(--accent-text);
         }
 
         .btn-json:hover {
-            background-color: #138496;
+            opacity: 0.9;
         }
 
         .btn-pdf {
-            background-color: #dc3545;
+            background-color: var(--danger);
             color: white;
         }
 
         .btn-pdf:hover {
-            background-color: #c82333;
+            opacity: 0.9;
         }
 
         .report-types {
@@ -94,42 +104,44 @@
         }
 
         .report-card {
-            background: white;
+            background: var(--bg-card);
             padding: 1.5rem;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
-            border: 2px solid transparent;
+            border: 2px solid var(--border);
         }
 
         .report-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border-color: var(--accent);
         }
 
         .report-card.selected {
-            border-color: #007bff;
-            background-color: #f0f8ff;
+            border-color: var(--accent);
+            background-color: var(--bg-secondary);
         }
 
         .report-card h3 {
             margin-top: 0;
-            color: #007bff;
+            color: var(--accent);
         }
 
         .report-card p {
-            color: #666;
+            color: var(--text-secondary);
             margin-bottom: 0;
         }
 
         .preview-area {
-            background: white;
+            background: var(--bg-card);
             padding: 2rem;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
             margin-top: 2rem;
             display: none;
+            border: 1px solid var(--border);
         }
 
         .preview-area.active {
@@ -150,23 +162,23 @@
         .preview-table td {
             padding: 0.75rem;
             text-align: left;
-            border-bottom: 1px solid #ddd;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
         }
 
         .preview-table th {
-            background-color: #f8f9fa;
+            background-color: var(--bg-secondary);
             font-weight: 600;
-            color: #333;
         }
 
         .preview-table tbody tr:hover {
-            background-color: #f8f9fa;
+            background-color: var(--bg-secondary);
         }
 
         .loading {
             text-align: center;
             padding: 2rem;
-            color: #666;
+            color: var(--text-secondary);
         }
 
         .loading::after {
@@ -181,11 +193,20 @@
         }
 
         .quick-export {
-            background: white;
+            background: var(--bg-card);
             padding: 2rem;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
             margin-bottom: 2rem;
+            border: 1px solid var(--border);
+        }
+
+        .quick-export h3 {
+            color: var(--text-primary);
+        }
+
+        .quick-export p {
+            color: var(--text-secondary);
         }
 
         .export-buttons {
@@ -207,6 +228,21 @@
         .export-buttons a:hover {
             opacity: 0.8;
         }
+
+        .preview-area h3,
+        .preview-area h4 {
+            color: var(--text-primary);
+        }
+
+        .preview-area p {
+            color: var(--text-secondary);
+        }
+
+        .preview-area pre {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
     </style>
 </head>
 <body>
@@ -217,9 +253,11 @@
                 <a href="/">Dashboard</a>
                 <a href="/devices">Devices</a>
                 <a href="/alerts">Alerts</a>
-                <a href="/agents">Agents</a>
-                <a href="/reports" class="active">Reports</a>
+                <a href="/nodes">Nodes</a>
                 <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
             </nav>
         </header>
 
@@ -409,7 +447,7 @@
                     displayPreview(data);
                 })
                 .catch(error => {
-                    previewContent.innerHTML = `<p style="color: #dc3545;">Error loading preview: ${error.message}</p>`;
+                    previewContent.innerHTML = `<p style="color: var(--danger);">Error loading preview: ${error.message}</p>`;
                 });
         }
 
@@ -438,7 +476,7 @@
 
             if (records.length > 0) {
                 html += '<div style="max-height: 400px; overflow-y: auto;">';
-                html += '<pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; font-size: 0.85rem;">';
+                html += '<pre style="background: var(--bg-secondary); padding: 1rem; border-radius: 4px; font-size: 0.85rem; color: var(--text-primary); border: 1px solid var(--border);">';
                 html += JSON.stringify(records, null, 2);
                 html += '</pre></div>';
             }
@@ -462,6 +500,7 @@
                 window.previewTimeout = setTimeout(loadPreview, 500);
             }
         });
+
     </script>
 </body>
 </html>
