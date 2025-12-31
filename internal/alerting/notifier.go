@@ -354,7 +354,7 @@ func (n *SlackNotifier) Send(alert *models.Alert) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Slack returned status %d", resp.StatusCode)
+		return fmt.Errorf("slack returned status %d", resp.StatusCode)
 	}
 
 	log.Info().
@@ -426,7 +426,7 @@ func (n *TeamsNotifier) Send(alert *models.Alert) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Teams returned status %d", resp.StatusCode)
+		return fmt.Errorf("teams returned status %d", resp.StatusCode)
 	}
 
 	log.Info().

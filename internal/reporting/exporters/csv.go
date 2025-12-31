@@ -15,7 +15,7 @@ func ExportDevicesCSV(data []DeviceReportData) ([]byte, error) {
 	// Write header
 	header := []string{
 		"ID", "Hostname", "IP Address", "MAC Address", "Vendor",
-		"Device Type", "Location", "Status", "Last Seen", "Agent ID",
+		"Device Type", "Location", "Status", "Last Seen", "Node ID",
 		"Created At", "Uptime Hours",
 	}
 	if err := writer.Write(header); err != nil {
@@ -39,7 +39,7 @@ func ExportDevicesCSV(data []DeviceReportData) ([]byte, error) {
 			device.Location,
 			device.Status,
 			lastSeen,
-			device.AgentID,
+			device.NodeID,
 			device.CreatedAt.Format(time.RFC3339),
 			fmt.Sprintf("%.2f", device.UptimeHours),
 		}

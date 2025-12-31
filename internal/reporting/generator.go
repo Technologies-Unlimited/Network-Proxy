@@ -52,7 +52,7 @@ func (g *Generator) GenerateDeviceReport(format string, startDate, endDate time.
 			Location:    device.Location,
 			Status:      device.Status,
 			LastSeen:    device.LastSeen,
-			AgentID:     device.AgentID,
+			NodeID:      device.NodeID,
 			CreatedAt:   device.CreatedAt,
 			UptimeHours: uptimeHours,
 		})

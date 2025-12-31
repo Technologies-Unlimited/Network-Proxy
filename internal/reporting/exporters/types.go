@@ -13,7 +13,7 @@ type DeviceReportData struct {
 	Location    string
 	Status      string
 	LastSeen    *time.Time
-	AgentID     string
+	NodeID      string
 	CreatedAt   time.Time
 	UptimeHours float64
 }
