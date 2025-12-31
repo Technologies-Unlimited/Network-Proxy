@@ -6,6 +6,7 @@
     <title>{{.title}}</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
     <style>
         .tools-container {
             max-width: 1400px;
@@ -16,29 +17,33 @@
         .tabs {
             display: flex;
             gap: 10px;
-            border-bottom: 2px solid #e0e0e0;
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         .tab {
-            padding: 12px 24px;
-            background: none;
-            border: none;
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 16px;
-            color: #666;
-            border-bottom: 3px solid transparent;
+            font-size: 14px;
+            color: var(--text-primary);
             transition: all 0.3s;
         }
 
         .tab:hover {
-            color: #333;
-            background: #f5f5f5;
+            background: var(--bg-secondary);
+            border-color: var(--accent);
         }
 
         .tab.active {
-            color: #2196F3;
-            border-bottom-color: #2196F3;
+            background: var(--accent);
+            border-color: var(--accent);
+            color: var(--accent-text);
         }
 
         .tab-content {
@@ -56,11 +61,18 @@
         }
 
         .tool-form {
-            background: white;
+            background: var(--bg-card);
             padding: 25px;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             margin-bottom: 20px;
+        }
+
+        .tool-form h3 {
+            color: var(--accent);
+            margin-top: 0;
+            margin-bottom: 15px;
         }
 
         .form-group {
@@ -71,16 +83,52 @@
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #333;
+            color: var(--text-primary);
         }
 
         .form-group input,
         .form-group select {
             width: 100%;
             padding: 10px;
-            border: 1px solid #ddd;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
             border-radius: 4px;
             font-size: 14px;
+            color: var(--text-primary);
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .form-group select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23b0b0b0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+            cursor: pointer;
+        }
+
+        .form-group select:hover {
+            border-color: var(--text-secondary);
+            background-color: var(--bg-card);
+        }
+
+        .form-group select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 10px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.15);
+        }
+
+        .form-group input::placeholder {
+            color: var(--text-secondary);
         }
 
         .form-row {
@@ -93,10 +141,16 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            color: var(--text-primary);
         }
 
         .checkbox-group input[type="checkbox"] {
             width: auto;
+            accent-color: var(--accent);
+        }
+
+        .checkbox-group label {
+            margin-bottom: 0;
         }
 
         .btn {
@@ -110,41 +164,47 @@
         }
 
         .btn-primary {
-            background: #2196F3;
-            color: white;
+            background: var(--accent);
+            color: var(--accent-text);
         }
 
         .btn-primary:hover {
-            background: #1976D2;
+            opacity: 0.9;
         }
 
         .btn-secondary {
-            background: #757575;
-            color: white;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
         }
 
         .btn-secondary:hover {
-            background: #616161;
+            background: var(--bg-secondary);
         }
 
         .result-container {
-            background: white;
+            background: var(--bg-card);
             padding: 25px;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             margin-top: 20px;
         }
 
         .result-container h3 {
             margin-top: 0;
             margin-bottom: 20px;
-            color: #333;
+            color: var(--text-primary);
+        }
+
+        .result-container p {
+            color: var(--text-secondary);
         }
 
         .loading {
             text-align: center;
             padding: 40px;
-            color: #666;
+            color: var(--text-secondary);
         }
 
         .loading::after {
@@ -159,21 +219,21 @@
         }
 
         .error {
-            background: #ffebee;
-            color: #c62828;
+            background: rgba(244, 67, 54, 0.1);
+            color: var(--danger);
             padding: 15px;
             border-radius: 4px;
             margin-bottom: 15px;
-            border-left: 4px solid #c62828;
+            border-left: 4px solid var(--danger);
         }
 
         .success {
-            background: #e8f5e9;
-            color: #2e7d32;
+            background: rgba(76, 175, 80, 0.1);
+            color: var(--success);
             padding: 15px;
             border-radius: 4px;
             margin-bottom: 15px;
-            border-left: 4px solid #2e7d32;
+            border-left: 4px solid var(--success);
         }
 
         .hop-table, .dns-table, .port-table {
@@ -183,37 +243,39 @@
         }
 
         .hop-table th, .dns-table th, .port-table th {
-            background: #f5f5f5;
+            background: var(--bg-secondary);
             padding: 12px;
             text-align: left;
             font-weight: 600;
-            border-bottom: 2px solid #ddd;
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border);
         }
 
         .hop-table td, .dns-table td, .port-table td {
             padding: 10px 12px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
         }
 
         .hop-table tr:hover, .dns-table tr:hover, .port-table tr:hover {
-            background: #f9f9f9;
+            background: var(--bg-secondary);
         }
 
         .status-open {
-            color: #4CAF50;
+            color: var(--success);
             font-weight: 600;
         }
 
         .status-closed {
-            color: #757575;
+            color: var(--text-secondary);
         }
 
         .status-filtered {
-            color: #FF9800;
+            color: var(--warning);
         }
 
         .whois-response {
-            background: #f5f5f5;
+            background: var(--bg-secondary);
             padding: 15px;
             border-radius: 4px;
             font-family: monospace;
@@ -222,6 +284,8 @@
             max-height: 600px;
             overflow-y: auto;
             line-height: 1.6;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
         }
 
         .bandwidth-stats {
@@ -232,27 +296,31 @@
         }
 
         .stat-box {
-            background: #f5f5f5;
+            background: var(--bg-card);
             padding: 20px;
             border-radius: 8px;
             text-align: center;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
 
         .stat-box .label {
             font-size: 14px;
-            color: #666;
-            margin-bottom: 8px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         .stat-box .value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #2196F3;
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--accent);
         }
 
         .stat-box .unit {
             font-size: 14px;
-            color: #999;
+            color: var(--text-secondary);
             margin-left: 4px;
         }
 
@@ -263,29 +331,49 @@
             margin-top: 10px;
         }
 
+        .quick-ports > span {
+            color: var(--text-secondary) !important;
+        }
+
         .quick-port {
             padding: 6px 12px;
-            background: #e3f2fd;
-            border: 1px solid #2196F3;
+            background: var(--bg-card);
+            border: 1px solid var(--accent);
             border-radius: 4px;
             cursor: pointer;
             font-size: 13px;
+            color: var(--accent);
             transition: all 0.2s;
         }
 
         .quick-port:hover {
-            background: #2196F3;
-            color: white;
+            background: var(--accent);
+            color: var(--accent-text);
         }
 
         .info-box {
-            background: #e3f2fd;
+            background: rgba(74, 158, 255, 0.1);
             padding: 15px;
             border-radius: 4px;
             margin-bottom: 15px;
-            border-left: 4px solid #2196F3;
+            border-left: 4px solid var(--accent);
             font-size: 14px;
-            color: #1565C0;
+            color: var(--accent);
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .tabs {
+                flex-direction: column;
+            }
+
+            .tab {
+                width: 100%;
+                text-align: center;
+            }
         }
     </style>
 </head>
@@ -297,9 +385,11 @@
                 <a href="/">Dashboard</a>
                 <a href="/devices">Devices</a>
                 <a href="/alerts">Alerts</a>
-                <a href="/agents">Agents</a>
+                <a href="/nodes">Nodes</a>
                 <a href="/visualize">Visualize</a>
-                <a href="/tools" class="active">Tools</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
             </nav>
         </header>
 
@@ -313,6 +403,13 @@
                 <button class="tab" onclick="switchTab('whois')">WHOIS</button>
                 <button class="tab" onclick="switchTab('bandwidth')">Bandwidth Test</button>
                 <button class="tab" onclick="switchTab('ping')">Ping</button>
+                <button class="tab" onclick="switchTab('snmp')">MIB Browser</button>
+                <button class="tab" onclick="switchTab('mac')">MAC Lookup</button>
+                <button class="tab" onclick="switchTab('conntest')">Connection Test</button>
+                <button class="tab" onclick="switchTab('http')">HTTP Tester</button>
+                <button class="tab" onclick="switchTab('ssl')">SSL Checker</button>
+                <button class="tab" onclick="switchTab('arp')">ARP Table</button>
+                <button class="tab" onclick="switchTab('mtu')">MTU Discovery</button>
             </div>
 
             <!-- Traceroute Tab -->
@@ -403,7 +500,7 @@
                             <label for="portscan-ports">Ports (comma-separated or range):</label>
                             <input type="text" id="portscan-ports" name="ports" placeholder="e.g., 22,80,443 or 1-1024" required>
                             <div class="quick-ports">
-                                <span style="margin-right: 10px; font-size: 13px; color: #666;">Quick select:</span>
+                                <span style="margin-right: 10px; font-size: 13px; color: var(--text-secondary);">Quick select:</span>
                                 <button type="button" class="quick-port" onclick="setPorts('22,80,443,8080,8443')">Web</button>
                                 <button type="button" class="quick-port" onclick="setPorts('21,22,23,25,53,110,143,445,3389')">Common</button>
                                 <button type="button" class="quick-port" onclick="setPorts('1-1024')">Well-known</button>
@@ -507,6 +604,351 @@
                 <div id="ping-loading" class="loading htmx-indicator">Pinging host</div>
                 <div id="ping-result"></div>
             </div>
+
+            <!-- MIB Browser Tab -->
+            <div id="snmp-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>SNMP MIB Browser</h3>
+                    <div class="info-box">
+                        Query SNMP-enabled devices to browse MIB trees and retrieve OID values. Supports SNMPv1, v2c, and v3.
+                    </div>
+                    <form id="snmp-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="snmp-target">Target (IP or Hostname):</label>
+                                <input type="text" id="snmp-target" name="target" placeholder="e.g., 192.168.1.1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="snmp-port">Port:</label>
+                                <input type="number" id="snmp-port" name="port" value="161" min="1" max="65535">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="snmp-oid">OID:</label>
+                            <input type="text" id="snmp-oid" name="oid" placeholder="e.g., 1.3.6.1.2.1.1.1.0 or .1.3.6.1.2.1.1" required>
+                            <div class="quick-ports" style="margin-top: 10px; margin-bottom: 15px;">
+                                <span style="margin-right: 10px; font-size: 13px;">Common OIDs:</span>
+                                <button type="button" class="quick-port" onclick="setOID('1.3.6.1.2.1.1.1.0')">sysDescr</button>
+                                <button type="button" class="quick-port" onclick="setOID('1.3.6.1.2.1.1.3.0')">sysUpTime</button>
+                                <button type="button" class="quick-port" onclick="setOID('1.3.6.1.2.1.1.5.0')">sysName</button>
+                                <button type="button" class="quick-port" onclick="setOID('1.3.6.1.2.1.1')">system (walk)</button>
+                                <button type="button" class="quick-port" onclick="setOID('1.3.6.1.2.1.2.2')">interfaces (walk)</button>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="snmp-version">SNMP Version:</label>
+                                <select id="snmp-version" name="version" onchange="toggleSNMPv3Fields()">
+                                    <option value="v1">SNMPv1</option>
+                                    <option value="v2c" selected>SNMPv2c</option>
+                                    <option value="v3">SNMPv3</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="snmp-operation">Operation:</label>
+                                <select id="snmp-operation" name="operation">
+                                    <option value="get">GET (single OID)</option>
+                                    <option value="getnext">GETNEXT (next OID)</option>
+                                    <option value="walk">WALK (subtree)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- SNMPv1/v2c Community -->
+                        <div id="snmp-community-group" class="form-group">
+                            <label for="snmp-community">Community String:</label>
+                            <input type="text" id="snmp-community" name="community" value="public" placeholder="e.g., public">
+                        </div>
+
+                        <!-- SNMPv3 Fields (hidden by default) -->
+                        <div id="snmpv3-fields" style="display: none;">
+                            <div class="form-group">
+                                <label for="snmp-username">Username:</label>
+                                <input type="text" id="snmp-username" name="username" placeholder="SNMPv3 username">
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="snmp-auth-protocol">Auth Protocol:</label>
+                                    <select id="snmp-auth-protocol" name="auth_protocol">
+                                        <option value="">None</option>
+                                        <option value="MD5">MD5</option>
+                                        <option value="SHA">SHA</option>
+                                        <option value="SHA224">SHA-224</option>
+                                        <option value="SHA256">SHA-256</option>
+                                        <option value="SHA384">SHA-384</option>
+                                        <option value="SHA512">SHA-512</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="snmp-auth-password">Auth Password:</label>
+                                    <input type="password" id="snmp-auth-password" name="auth_password" placeholder="Authentication password">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="snmp-priv-protocol">Privacy Protocol:</label>
+                                    <select id="snmp-priv-protocol" name="priv_protocol">
+                                        <option value="">None</option>
+                                        <option value="DES">DES</option>
+                                        <option value="AES">AES-128</option>
+                                        <option value="AES192">AES-192</option>
+                                        <option value="AES256">AES-256</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="snmp-priv-password">Privacy Password:</label>
+                                    <input type="password" id="snmp-priv-password" name="priv_password" placeholder="Privacy password">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="snmp-timeout">Timeout (seconds):</label>
+                            <input type="number" id="snmp-timeout" name="timeout" value="5" min="1" max="30">
+                        </div>
+
+                        <button type="button" class="btn btn-primary" onclick="performSNMPQuery()">Query SNMP</button>
+                    </form>
+                </div>
+                <div id="snmp-loading" class="loading" style="display: none;">Querying SNMP device</div>
+                <div id="snmp-result"></div>
+            </div>
+
+            <!-- MAC Lookup Tab -->
+            <div id="mac-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>MAC Address Vendor Lookup</h3>
+                    <div class="info-box">
+                        Look up the manufacturer/vendor of a network device by its MAC address. Supports various formats (AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF, AABBCCDDEEFF).
+                    </div>
+                    <form id="mac-form">
+                        <div class="form-group">
+                            <label for="mac-address">MAC Address:</label>
+                            <input type="text" id="mac-address" name="mac" placeholder="e.g., 00:1A:2B:3C:4D:5E or 001A2B3C4D5E" required>
+                            <div class="quick-ports">
+                                <span style="margin-right: 10px; font-size: 13px;">Examples:</span>
+                                <button type="button" class="quick-port" onclick="setMAC('00:00:5E:00:53:01')">IANA</button>
+                                <button type="button" class="quick-port" onclick="setMAC('00:1A:2B:3C:4D:5E')">Sample</button>
+                                <button type="button" class="quick-port" onclick="setMAC('00:50:56:C0:00:08')">VMware</button>
+                                <button type="button" class="quick-port" onclick="setMAC('00:0C:29:AB:CD:EF')">VMware VM</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="performMACLookup()">Lookup Vendor</button>
+                    </form>
+                </div>
+                <div id="mac-loading" class="loading" style="display: none;">Looking up vendor</div>
+                <div id="mac-result"></div>
+            </div>
+
+            <!-- Connection Test Tab -->
+            <div id="conntest-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>TCP/UDP Connection Test</h3>
+                    <div class="info-box">
+                        Test TCP or UDP connectivity to a specific host and port. Can optionally send data and receive a response.
+                    </div>
+                    <form id="conntest-form">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 2;">
+                                <label for="conntest-target">Target (IP or Hostname):</label>
+                                <input type="text" id="conntest-target" name="target" placeholder="e.g., 192.168.1.1 or example.com" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="conntest-port">Port:</label>
+                                <input type="number" id="conntest-port" name="port" placeholder="e.g., 80" min="1" max="65535" required>
+                            </div>
+                        </div>
+                        <div class="quick-ports" style="margin-bottom: 15px;">
+                            <span style="margin-right: 10px; font-size: 13px;">Common ports:</span>
+                            <button type="button" class="quick-port" onclick="setConnPort(22)">SSH (22)</button>
+                            <button type="button" class="quick-port" onclick="setConnPort(80)">HTTP (80)</button>
+                            <button type="button" class="quick-port" onclick="setConnPort(443)">HTTPS (443)</button>
+                            <button type="button" class="quick-port" onclick="setConnPort(3306)">MySQL (3306)</button>
+                            <button type="button" class="quick-port" onclick="setConnPort(5432)">PostgreSQL (5432)</button>
+                            <button type="button" class="quick-port" onclick="setConnPort(6379)">Redis (6379)</button>
+                            <button type="button" class="quick-port" onclick="setConnPort(53)">DNS (53)</button>
+                        </div>
+                        <div class="form-row" style="margin-top: 10px;">
+                            <div class="form-group">
+                                <label for="conntest-protocol">Protocol:</label>
+                                <select id="conntest-protocol" name="protocol">
+                                    <option value="tcp">TCP</option>
+                                    <option value="udp">UDP</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="conntest-timeout">Timeout (seconds):</label>
+                                <input type="number" id="conntest-timeout" name="timeout" value="5" min="1" max="30">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="conntest-data">Data to send (optional):</label>
+                            <textarea id="conntest-data" name="data" rows="2" placeholder="Optional data to send after connecting"></textarea>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="performConnectionTest()">Test Connection</button>
+                    </form>
+                </div>
+                <div id="conntest-loading" class="loading" style="display: none;">Testing connection</div>
+                <div id="conntest-result"></div>
+            </div>
+
+            <!-- HTTP Tester Tab -->
+            <div id="http-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>HTTP/HTTPS Tester</h3>
+                    <div class="info-box">
+                        Test HTTP/HTTPS endpoints. Send requests with custom methods, headers, and body. View response details including headers and timing.
+                    </div>
+                    <form id="http-form">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label for="http-method">Method:</label>
+                                <select id="http-method" name="method">
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                    <option value="HEAD">HEAD</option>
+                                    <option value="PUT">PUT</option>
+                                    <option value="DELETE">DELETE</option>
+                                    <option value="PATCH">PATCH</option>
+                                    <option value="OPTIONS">OPTIONS</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 4;">
+                                <label for="http-url">URL:</label>
+                                <input type="text" id="http-url" name="url" placeholder="https://example.com/api/endpoint" required>
+                            </div>
+                        </div>
+                        <div class="quick-ports">
+                            <span style="margin-right: 10px; font-size: 13px;">Examples:</span>
+                            <button type="button" class="quick-port" onclick="setHTTPUrl('https://httpbin.org/get')">httpbin GET</button>
+                            <button type="button" class="quick-port" onclick="setHTTPUrl('https://httpbin.org/post'); setHTTPMethod('POST')">httpbin POST</button>
+                            <button type="button" class="quick-port" onclick="setHTTPUrl('https://jsonplaceholder.typicode.com/posts/1')">JSON API</button>
+                        </div>
+                        <div class="form-group">
+                            <label for="http-headers">Custom Headers (one per line, format: Header-Name: value):</label>
+                            <textarea id="http-headers" name="headers" rows="3" placeholder="Content-Type: application/json&#10;Authorization: Bearer token123"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="http-body">Request Body (for POST, PUT, PATCH):</label>
+                            <textarea id="http-body" name="body" rows="4" placeholder='{"key": "value"}'></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="http-timeout">Timeout (seconds):</label>
+                                <input type="number" id="http-timeout" name="timeout" value="10" min="1" max="60">
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-group" style="margin-top: 25px;">
+                                    <input type="checkbox" id="http-follow-redirects" name="follow_redirects" checked>
+                                    <label for="http-follow-redirects">Follow redirects</label>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="checkbox-group" style="margin-top: 25px;">
+                                    <input type="checkbox" id="http-verify-ssl" name="verify_ssl">
+                                    <label for="http-verify-ssl">Verify SSL</label>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="performHTTPTest()">Send Request</button>
+                    </form>
+                </div>
+                <div id="http-loading" class="loading" style="display: none;">Sending request</div>
+                <div id="http-result"></div>
+            </div>
+
+            <!-- SSL Checker Tab -->
+            <div id="ssl-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>SSL/TLS Certificate Checker</h3>
+                    <div class="info-box">
+                        Check SSL/TLS certificates for any HTTPS endpoint. View certificate details, expiration dates, certificate chain, and TLS version information.
+                    </div>
+                    <form id="ssl-form">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 3;">
+                                <label for="ssl-target">Target (hostname or IP):</label>
+                                <input type="text" id="ssl-target" name="target" placeholder="e.g., google.com or 142.250.80.46" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="ssl-port">Port:</label>
+                                <input type="number" id="ssl-port" name="port" value="443" min="1" max="65535">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="ssl-timeout">Timeout (s):</label>
+                                <input type="number" id="ssl-timeout" name="timeout" value="10" min="1" max="30">
+                            </div>
+                        </div>
+                        <div class="quick-ports" style="margin-bottom: 15px;">
+                            <span style="margin-right: 10px; font-size: 13px;">Examples:</span>
+                            <button type="button" class="quick-port" onclick="setSSLTarget('google.com')">Google</button>
+                            <button type="button" class="quick-port" onclick="setSSLTarget('github.com')">GitHub</button>
+                            <button type="button" class="quick-port" onclick="setSSLTarget('cloudflare.com')">Cloudflare</button>
+                            <button type="button" class="quick-port" onclick="setSSLTarget('expired.badssl.com')">Expired Cert</button>
+                            <button type="button" class="quick-port" onclick="setSSLTarget('self-signed.badssl.com')">Self-Signed</button>
+                        </div>
+                        <button type="button" class="btn btn-primary" style="margin-top: 10px;" onclick="performSSLCheck()">Check Certificate</button>
+                    </form>
+                </div>
+                <div id="ssl-loading" class="loading" style="display: none;">Checking certificate</div>
+                <div id="ssl-result"></div>
+            </div>
+
+            <!-- ARP Table Tab -->
+            <div id="arp-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>ARP Table Scanner</h3>
+                    <div class="info-box">
+                        View the local ARP (Address Resolution Protocol) table showing IP-to-MAC address mappings for devices on your network. Includes vendor lookup for each MAC address.
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="performARPScan()">Scan ARP Table</button>
+                </div>
+                <div id="arp-loading" class="loading" style="display: none;">Scanning ARP table</div>
+                <div id="arp-result"></div>
+            </div>
+
+            <!-- MTU Discovery Tab -->
+            <div id="mtu-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>Path MTU Discovery</h3>
+                    <div class="info-box">
+                        Discover the Maximum Transmission Unit (MTU) along the path to a destination. Uses ICMP with the Don't Fragment (DF) bit set to find the largest packet size that can traverse the network without fragmentation.
+                    </div>
+                    <form id="mtu-form">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 2;">
+                                <label for="mtu-target">Target (IP or Hostname):</label>
+                                <input type="text" id="mtu-target" name="target" placeholder="e.g., 8.8.8.8 or google.com" required>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="mtu-max">Max MTU:</label>
+                                <input type="number" id="mtu-max" name="max_mtu" value="1500" min="68" max="9000">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label for="mtu-min">Min MTU:</label>
+                                <input type="number" id="mtu-min" name="min_mtu" value="68" min="28" max="1500">
+                            </div>
+                        </div>
+                        <div class="quick-ports" style="margin-bottom: 15px;">
+                            <span style="margin-right: 10px; font-size: 13px;">Common targets:</span>
+                            <button type="button" class="quick-port" onclick="setMTUTarget('8.8.8.8')">Google DNS</button>
+                            <button type="button" class="quick-port" onclick="setMTUTarget('1.1.1.1')">Cloudflare</button>
+                            <button type="button" class="quick-port" onclick="setMTUTarget('208.67.222.222')">OpenDNS</button>
+                        </div>
+                        <div class="form-group" style="margin-top: 10px;">
+                            <label for="mtu-timeout">Timeout per test (seconds):</label>
+                            <input type="number" id="mtu-timeout" name="timeout" value="2" min="1" max="10" style="width: 100px;">
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="performMTUDiscovery()">Discover MTU</button>
+                    </form>
+                </div>
+                <div id="mtu-loading" class="loading" style="display: none;">Discovering path MTU (this may take a moment)</div>
+                <div id="mtu-result"></div>
+            </div>
         </main>
 
         <footer>
@@ -535,6 +977,120 @@
 
         function setPorts(ports) {
             document.getElementById('portscan-ports').value = ports;
+        }
+
+        function setOID(oid) {
+            document.getElementById('snmp-oid').value = oid;
+            // Auto-select walk operation for tree OIDs
+            if (!oid.endsWith('.0')) {
+                document.getElementById('snmp-operation').value = 'walk';
+            } else {
+                document.getElementById('snmp-operation').value = 'get';
+            }
+        }
+
+        function toggleSNMPv3Fields() {
+            const version = document.getElementById('snmp-version').value;
+            const v3Fields = document.getElementById('snmpv3-fields');
+            const communityGroup = document.getElementById('snmp-community-group');
+
+            if (version === 'v3') {
+                v3Fields.style.display = 'block';
+                communityGroup.style.display = 'none';
+            } else {
+                v3Fields.style.display = 'none';
+                communityGroup.style.display = 'block';
+            }
+        }
+
+        async function performSNMPQuery() {
+            const loadingEl = document.getElementById('snmp-loading');
+            const resultEl = document.getElementById('snmp-result');
+
+            // Build request body
+            const requestBody = {
+                target: document.getElementById('snmp-target').value,
+                oid: document.getElementById('snmp-oid').value,
+                port: parseInt(document.getElementById('snmp-port').value) || 161,
+                version: document.getElementById('snmp-version').value,
+                operation: document.getElementById('snmp-operation').value,
+                timeout: parseInt(document.getElementById('snmp-timeout').value) || 5
+            };
+
+            // Add version-specific fields
+            if (requestBody.version === 'v3') {
+                requestBody.username = document.getElementById('snmp-username').value;
+                requestBody.auth_protocol = document.getElementById('snmp-auth-protocol').value;
+                requestBody.auth_password = document.getElementById('snmp-auth-password').value;
+                requestBody.priv_protocol = document.getElementById('snmp-priv-protocol').value;
+                requestBody.priv_password = document.getElementById('snmp-priv-password').value;
+            } else {
+                requestBody.community = document.getElementById('snmp-community').value;
+            }
+
+            // Validate required fields
+            if (!requestBody.target || !requestBody.oid) {
+                resultEl.innerHTML = '<div class="result-container"><div class="error">Please enter both target and OID</div></div>';
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/snmp-query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+                loadingEl.style.display = 'none';
+                renderSNMPResult(data);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderSNMPResult(data) {
+            const container = document.getElementById('snmp-result');
+
+            if (data.error && data.results.length === 0) {
+                container.innerHTML = `<div class="result-container"><div class="error">Error: ${data.error}</div></div>`;
+                return;
+            }
+
+            let html = '<div class="result-container">';
+            html += `<h3>SNMP Query Results</h3>`;
+            html += `<p><strong>Target:</strong> ${escapeHtml(data.target)} | <strong>Operation:</strong> ${data.operation.toUpperCase()} | <strong>Duration:</strong> ${(data.duration / 1000000).toFixed(2)} ms</p>`;
+
+            if (data.error) {
+                html += `<div class="error" style="margin-bottom: 15px;">Warning: ${data.error}</div>`;
+            }
+
+            if (data.results.length === 0) {
+                html += '<p>No results returned.</p>';
+            } else {
+                html += '<table class="port-table" style="margin-top: 15px;">';
+                html += '<thead><tr><th>OID</th><th>Type</th><th>Value</th></tr></thead><tbody>';
+
+                data.results.forEach(result => {
+                    const value = result.value !== null ? escapeHtml(String(result.value)) : '<em>null</em>';
+                    const hexNote = result.hex_value ? ` <span style="color: var(--text-secondary); font-size: 12px;">(hex: ${result.hex_value})</span>` : '';
+                    html += `<tr>
+                        <td style="font-family: monospace; font-size: 13px;">${escapeHtml(result.oid)}</td>
+                        <td><span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(result.type)}</span></td>
+                        <td style="word-break: break-word; max-width: 400px;">${value}${hexNote}</td>
+                    </tr>`;
+                });
+
+                html += '</tbody></table>';
+                html += `<p style="margin-top: 15px; color: var(--text-secondary);">Total results: ${data.results.length}</p>`;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
         }
 
         // HTMX response handlers
@@ -740,6 +1296,738 @@
                 evt.detail.headers['Content-Type'] = 'application/json';
             }
         });
+
+        // MAC Lookup functions
+        function setMAC(mac) {
+            document.getElementById('mac-address').value = mac;
+        }
+
+        async function performMACLookup() {
+            const loadingEl = document.getElementById('mac-loading');
+            const resultEl = document.getElementById('mac-result');
+            const mac = document.getElementById('mac-address').value.trim();
+
+            if (!mac) {
+                resultEl.innerHTML = '<div class="result-container"><div class="error">Please enter a MAC address</div></div>';
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/mac-lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mac: mac })
+                });
+
+                const data = await response.json();
+                loadingEl.style.display = 'none';
+                renderMACResult(data);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderMACResult(data) {
+            const container = document.getElementById('mac-result');
+
+            if (data.error) {
+                container.innerHTML = `<div class="result-container"><div class="error">Error: ${data.error}</div></div>`;
+                return;
+            }
+
+            let html = '<div class="result-container">';
+            html += '<h3>MAC Address Lookup Result</h3>';
+
+            html += '<div class="result-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">';
+
+            // Original MAC
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Original MAC:</span>
+                <div style="font-family: monospace; font-size: 16px;">${escapeHtml(data.mac)}</div>
+            </div>`;
+
+            // Normalized MAC
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Normalized:</span>
+                <div style="font-family: monospace; font-size: 16px;">${escapeHtml(data.normalized)}</div>
+            </div>`;
+
+            // OUI
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">OUI (First 6 chars):</span>
+                <div style="font-family: monospace; font-size: 16px;">${escapeHtml(data.oui)}</div>
+            </div>`;
+
+            // Validity
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Valid MAC:</span>
+                <div style="font-size: 16px; color: ${data.is_valid ? 'var(--success)' : 'var(--danger)'};">${data.is_valid ? 'Yes' : 'No'}</div>
+            </div>`;
+
+            html += '</div>';
+
+            // Vendor (large display)
+            html += `<div style="margin-top: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 8px; text-align: center;">
+                <span style="color: var(--text-secondary); font-size: 12px; display: block; margin-bottom: 8px;">Vendor / Manufacturer:</span>
+                <div style="font-size: 24px; font-weight: bold; color: var(--accent);">${escapeHtml(data.vendor)}</div>
+            </div>`;
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Connection Test functions
+        function setConnPort(port) {
+            document.getElementById('conntest-port').value = port;
+        }
+
+        async function performConnectionTest() {
+            const loadingEl = document.getElementById('conntest-loading');
+            const resultEl = document.getElementById('conntest-result');
+
+            const target = document.getElementById('conntest-target').value.trim();
+            const port = parseInt(document.getElementById('conntest-port').value);
+            const protocol = document.getElementById('conntest-protocol').value;
+            const timeout = parseInt(document.getElementById('conntest-timeout').value) || 5;
+            const data = document.getElementById('conntest-data').value;
+
+            if (!target || !port) {
+                resultEl.innerHTML = '<div class="result-container"><div class="error">Please enter both target and port</div></div>';
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/connection-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target: target,
+                        port: port,
+                        protocol: protocol,
+                        timeout: timeout,
+                        data: data
+                    })
+                });
+
+                const result = await response.json();
+                loadingEl.style.display = 'none';
+                renderConnectionResult(result);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderConnectionResult(data) {
+            const container = document.getElementById('conntest-result');
+
+            let html = '<div class="result-container">';
+            html += '<h3>Connection Test Result</h3>';
+
+            // Connection status banner
+            const statusColor = data.connected ? 'var(--success)' : 'var(--danger)';
+            const statusText = data.connected ? 'Connected' : 'Connection Failed';
+            const statusIcon = data.connected ? '✓' : '✗';
+
+            html += `<div style="background: ${statusColor}; color: white; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                <span style="font-size: 24px; margin-right: 10px;">${statusIcon}</span>
+                <span style="font-size: 18px; font-weight: bold;">${statusText}</span>
+            </div>`;
+
+            html += '<div class="result-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">';
+
+            // Target
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Target:</span>
+                <div style="font-family: monospace; font-size: 16px;">${escapeHtml(data.target)}</div>
+            </div>`;
+
+            // Port
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Port:</span>
+                <div style="font-size: 16px;">${data.port}</div>
+            </div>`;
+
+            // Protocol
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Protocol:</span>
+                <div style="font-size: 16px; text-transform: uppercase;">${escapeHtml(data.protocol)}</div>
+            </div>`;
+
+            // Latency
+            const latencyMs = (data.latency / 1000000).toFixed(2);
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Latency:</span>
+                <div style="font-size: 16px;">${latencyMs} ms</div>
+            </div>`;
+
+            html += '</div>';
+
+            // Error message if any
+            if (data.error) {
+                html += `<div style="margin-top: 15px; padding: 15px; background: rgba(244, 67, 54, 0.1); border: 1px solid var(--danger); border-radius: 8px;">
+                    <strong style="color: var(--danger);">Error:</strong>
+                    <div style="margin-top: 5px; font-family: monospace; font-size: 13px; word-break: break-word;">${escapeHtml(data.error)}</div>
+                </div>`;
+            }
+
+            // Response if any
+            if (data.response) {
+                html += `<div style="margin-top: 15px;">
+                    <span style="color: var(--text-secondary); font-size: 12px;">Response:</span>
+                    <pre style="background: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-top: 5px; overflow-x: auto; font-size: 13px; white-space: pre-wrap; word-break: break-word;">${escapeHtml(data.response)}</pre>
+                </div>`;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // HTTP Tester functions
+        function setHTTPUrl(url) {
+            document.getElementById('http-url').value = url;
+        }
+
+        function setHTTPMethod(method) {
+            document.getElementById('http-method').value = method;
+        }
+
+        function parseHeaders(headerText) {
+            const headers = {};
+            if (!headerText) return headers;
+
+            const lines = headerText.split('\n');
+            lines.forEach(line => {
+                const colonIndex = line.indexOf(':');
+                if (colonIndex > 0) {
+                    const key = line.substring(0, colonIndex).trim();
+                    const value = line.substring(colonIndex + 1).trim();
+                    if (key && value) {
+                        headers[key] = value;
+                    }
+                }
+            });
+            return headers;
+        }
+
+        async function performHTTPTest() {
+            const loadingEl = document.getElementById('http-loading');
+            const resultEl = document.getElementById('http-result');
+
+            const url = document.getElementById('http-url').value.trim();
+            const method = document.getElementById('http-method').value;
+            const headersText = document.getElementById('http-headers').value;
+            const body = document.getElementById('http-body').value;
+            const timeout = parseInt(document.getElementById('http-timeout').value) || 10;
+            const followRedirects = document.getElementById('http-follow-redirects').checked;
+            const verifySSL = document.getElementById('http-verify-ssl').checked;
+
+            if (!url) {
+                resultEl.innerHTML = '<div class="result-container"><div class="error">Please enter a URL</div></div>';
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/http-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: url,
+                        method: method,
+                        headers: parseHeaders(headersText),
+                        body: body,
+                        timeout: timeout,
+                        follow_redirects: followRedirects,
+                        verify_ssl: verifySSL
+                    })
+                });
+
+                const result = await response.json();
+                loadingEl.style.display = 'none';
+                renderHTTPResult(result);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderHTTPResult(data) {
+            const container = document.getElementById('http-result');
+
+            let html = '<div class="result-container">';
+            html += '<h3>HTTP Response</h3>';
+
+            // Error banner if request failed completely
+            if (data.error && !data.status_code) {
+                html += `<div style="background: var(--danger); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <strong>Request Failed:</strong> ${escapeHtml(data.error)}
+                </div>`;
+                html += '</div>';
+                container.innerHTML = html;
+                return;
+            }
+
+            // Status code banner
+            const statusColor = data.status_code >= 200 && data.status_code < 300 ? 'var(--success)' :
+                               data.status_code >= 300 && data.status_code < 400 ? 'var(--warning)' : 'var(--danger)';
+
+            html += `<div style="background: ${statusColor}; color: white; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                <span style="font-size: 24px; font-weight: bold;">${data.status_code}</span>
+                <span style="font-size: 16px; margin-left: 10px;">${escapeHtml(data.status_text.replace(data.status_code + ' ', ''))}</span>
+            </div>`;
+
+            // Request info
+            html += '<div class="result-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">';
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Method:</span>
+                <div style="font-size: 16px; font-weight: bold;">${escapeHtml(data.method)}</div>
+            </div>`;
+
+            const latencyMs = (data.latency / 1000000).toFixed(2);
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Latency:</span>
+                <div style="font-size: 16px;">${latencyMs} ms</div>
+            </div>`;
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Content-Type:</span>
+                <div style="font-size: 14px; word-break: break-word;">${escapeHtml(data.content_type || 'N/A')}</div>
+            </div>`;
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Body Size:</span>
+                <div style="font-size: 16px;">${data.body_size} bytes</div>
+            </div>`;
+
+            html += '</div>';
+
+            // URL info
+            html += `<div style="margin-bottom: 15px;">
+                <span style="color: var(--text-secondary); font-size: 12px;">Request URL:</span>
+                <div style="font-family: monospace; font-size: 13px; word-break: break-all;">${escapeHtml(data.url)}</div>
+            </div>`;
+
+            if (data.final_url && data.final_url !== data.url) {
+                html += `<div style="margin-bottom: 15px;">
+                    <span style="color: var(--text-secondary); font-size: 12px;">Final URL (after redirects):</span>
+                    <div style="font-family: monospace; font-size: 13px; word-break: break-all;">${escapeHtml(data.final_url)}</div>
+                </div>`;
+            }
+
+            // Redirects
+            if (data.redirects && data.redirects.length > 0) {
+                html += `<div style="margin-bottom: 15px;">
+                    <span style="color: var(--text-secondary); font-size: 12px;">Redirects (${data.redirects.length}):</span>
+                    <div style="font-family: monospace; font-size: 12px; background: var(--bg-secondary); padding: 10px; border-radius: 4px; margin-top: 5px;">`;
+                data.redirects.forEach((url, i) => {
+                    html += `${i + 1}. ${escapeHtml(url)}<br>`;
+                });
+                html += '</div></div>';
+            }
+
+            // Response Headers (collapsible)
+            if (data.headers && Object.keys(data.headers).length > 0) {
+                html += `<details style="margin-bottom: 15px;">
+                    <summary style="cursor: pointer; color: var(--accent); font-weight: 500;">Response Headers (${Object.keys(data.headers).length})</summary>
+                    <table class="port-table" style="margin-top: 10px;">
+                        <thead><tr><th>Header</th><th>Value</th></tr></thead>
+                        <tbody>`;
+                for (const [key, value] of Object.entries(data.headers)) {
+                    html += `<tr><td style="font-weight: 500;">${escapeHtml(key)}</td><td style="word-break: break-word;">${escapeHtml(value)}</td></tr>`;
+                }
+                html += '</tbody></table></details>';
+            }
+
+            // Response Body
+            if (data.body) {
+                html += `<div>
+                    <span style="color: var(--text-secondary); font-size: 12px;">Response Body:</span>
+                    <pre style="background: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-top: 5px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto;">${escapeHtml(data.body)}</pre>
+                </div>`;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // SSL Checker functions
+        function setSSLTarget(target) {
+            document.getElementById('ssl-target').value = target;
+        }
+
+        async function performSSLCheck() {
+            const loadingEl = document.getElementById('ssl-loading');
+            const resultEl = document.getElementById('ssl-result');
+
+            let target = document.getElementById('ssl-target').value.trim();
+            const port = parseInt(document.getElementById('ssl-port').value) || 443;
+            const timeout = parseInt(document.getElementById('ssl-timeout').value) || 10;
+
+            if (!target) {
+                resultEl.innerHTML = '<div class="result-container"><div class="error">Please enter a target</div></div>';
+                return;
+            }
+
+            // Strip protocol prefix if user entered a URL
+            target = target.replace(/^https?:\/\//i, '');
+            // Remove trailing slashes and paths
+            target = target.split('/')[0];
+            // Remove port from hostname if present (we have a separate field for that)
+            if (target.includes(':')) {
+                const parts = target.split(':');
+                target = parts[0];
+                // If port wasn't explicitly set in the port field, use the one from the URL
+                if (document.getElementById('ssl-port').value === '443' && parts[1]) {
+                    document.getElementById('ssl-port').value = parts[1];
+                }
+            }
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/ssl-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target: target,
+                        port: port,
+                        timeout: timeout
+                    })
+                });
+
+                const result = await response.json();
+                loadingEl.style.display = 'none';
+                renderSSLResult(result);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderSSLResult(data) {
+            const container = document.getElementById('ssl-result');
+
+            let html = '<div class="result-container">';
+            html += '<h3>SSL/TLS Certificate Check</h3>';
+
+            // Error if connection failed
+            if (data.error && !data.certificate) {
+                html += `<div style="background: var(--danger); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <strong>Connection Failed:</strong> ${escapeHtml(data.error)}
+                </div>`;
+                html += '</div>';
+                container.innerHTML = html;
+                return;
+            }
+
+            // Validity banner
+            const isExpiringSoon = data.days_until_expiry > 0 && data.days_until_expiry <= 30;
+            const statusColor = data.is_valid ? (isExpiringSoon ? 'var(--warning)' : 'var(--success)') : 'var(--danger)';
+            const statusText = data.is_valid ? (isExpiringSoon ? 'Valid (Expiring Soon!)' : 'Valid') : 'Invalid';
+            const statusIcon = data.is_valid ? '✓' : '✗';
+
+            html += `<div style="background: ${statusColor}; color: white; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                <span style="font-size: 24px; margin-right: 10px;">${statusIcon}</span>
+                <span style="font-size: 18px; font-weight: bold;">Certificate ${statusText}</span>
+            </div>`;
+
+            // Warning/error message
+            if (data.error) {
+                html += `<div style="margin-bottom: 15px; padding: 10px; background: rgba(244, 67, 54, 0.1); border: 1px solid var(--danger); border-radius: 4px; font-size: 13px;">
+                    <strong style="color: var(--danger);">Warning:</strong> ${escapeHtml(data.error)}
+                </div>`;
+            }
+
+            // Connection info
+            html += '<div class="result-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px;">';
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Target:</span>
+                <div style="font-family: monospace;">${escapeHtml(data.target)}:${data.port}</div>
+            </div>`;
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">TLS Version:</span>
+                <div style="font-size: 16px; font-weight: bold; color: var(--accent);">${escapeHtml(data.tls_version)}</div>
+            </div>`;
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Cipher Suite:</span>
+                <div style="font-size: 12px; word-break: break-word;">${escapeHtml(data.cipher_suite)}</div>
+            </div>`;
+
+            const daysColor = data.days_until_expiry > 30 ? 'var(--success)' :
+                             data.days_until_expiry > 0 ? 'var(--warning)' : 'var(--danger)';
+            const daysText = data.days_until_expiry >= 0 ?
+                `${data.days_until_expiry} days` :
+                `Expired ${Math.abs(data.days_until_expiry)} days ago`;
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Expires In:</span>
+                <div style="font-size: 16px; font-weight: bold; color: ${daysColor};">${daysText}</div>
+            </div>`;
+
+            html += '</div>';
+
+            // Certificate details
+            if (data.certificate) {
+                html += `<div style="background: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4 style="color: var(--accent); margin: 0 0 15px 0;">Certificate Details</h4>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px 0; color: var(--text-secondary); width: 120px;">Subject:</td>
+                            <td style="padding: 8px 0; word-break: break-word;">${escapeHtml(data.certificate.subject)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px 0; color: var(--text-secondary);">Issuer:</td>
+                            <td style="padding: 8px 0; word-break: break-word;">${escapeHtml(data.certificate.issuer)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px 0; color: var(--text-secondary);">Valid From:</td>
+                            <td style="padding: 8px 0;">${escapeHtml(data.certificate.not_before)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px 0; color: var(--text-secondary);">Valid Until:</td>
+                            <td style="padding: 8px 0;">${escapeHtml(data.certificate.not_after)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px 0; color: var(--text-secondary);">Serial:</td>
+                            <td style="padding: 8px 0; font-family: monospace; font-size: 12px;">${escapeHtml(data.certificate.serial_number)}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 8px 0; color: var(--text-secondary);">Algorithm:</td>
+                            <td style="padding: 8px 0;">${escapeHtml(data.certificate.signature_algorithm)}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; color: var(--text-secondary); vertical-align: top;">SANs:</td>
+                            <td style="padding: 8px 0;">
+                                ${data.certificate.sans && data.certificate.sans.length > 0
+                                    ? data.certificate.sans.map(san => `<span style="display: inline-block; background: var(--bg-card); padding: 2px 8px; margin: 2px; border-radius: 4px; font-size: 12px;">${escapeHtml(san)}</span>`).join('')
+                                    : '<em style="color: var(--text-secondary);">None</em>'}
+                            </td>
+                        </tr>
+                    </table>
+                </div>`;
+            }
+
+            // Certificate chain
+            if (data.chain && data.chain.length > 0) {
+                html += `<details style="margin-bottom: 15px;">
+                    <summary style="cursor: pointer; color: var(--accent); font-weight: 500;">Certificate Chain (${data.chain.length} intermediate${data.chain.length > 1 ? 's' : ''})</summary>
+                    <div style="margin-top: 10px;">`;
+
+                data.chain.forEach((cert, i) => {
+                    html += `<div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; margin-bottom: 10px;">
+                        <div style="color: var(--accent); font-weight: 500; margin-bottom: 8px;">#${i + 1} ${escapeHtml(cert.subject.split(',')[0])}</div>
+                        <div style="font-size: 12px;">
+                            <div><strong>Issuer:</strong> ${escapeHtml(cert.issuer)}</div>
+                            <div><strong>Valid:</strong> ${escapeHtml(cert.not_before)} to ${escapeHtml(cert.not_after)}</div>
+                        </div>
+                    </div>`;
+                });
+
+                html += '</div></details>';
+            }
+
+            // Response time
+            const latencyMs = (data.duration / 1000000).toFixed(2);
+            html += `<div style="text-align: right; color: var(--text-secondary); font-size: 12px;">Check completed in ${latencyMs} ms</div>`;
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // ARP Scanner functions
+        async function performARPScan() {
+            const loadingEl = document.getElementById('arp-loading');
+            const resultEl = document.getElementById('arp-result');
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/arp-scan');
+                const result = await response.json();
+                loadingEl.style.display = 'none';
+                renderARPResult(result);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderARPResult(data) {
+            const container = document.getElementById('arp-result');
+
+            let html = '<div class="result-container">';
+            html += '<h3>ARP Table</h3>';
+
+            if (data.error) {
+                html += `<div class="error" style="margin-bottom: 15px;">${escapeHtml(data.error)}</div>`;
+            }
+
+            if (!data.entries || data.entries.length === 0) {
+                html += '<p style="color: var(--text-secondary);">No ARP entries found.</p>';
+                html += '</div>';
+                container.innerHTML = html;
+                return;
+            }
+
+            // Summary
+            html += `<div style="margin-bottom: 15px; padding: 10px; background: var(--bg-secondary); border-radius: 4px;">
+                <strong>${data.count}</strong> devices found on your network
+            </div>`;
+
+            // Table
+            html += `<table class="port-table">
+                <thead>
+                    <tr>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
+                        <th>Vendor</th>
+                        <th>Type</th>
+                        <th>Interface</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            data.entries.forEach(entry => {
+                const vendor = entry.vendor || '<span style="color: var(--text-secondary);">Unknown</span>';
+                const type = entry.type || '-';
+                const iface = entry.interface || '-';
+
+                html += `<tr>
+                    <td style="font-family: monospace;">${escapeHtml(entry.ip)}</td>
+                    <td style="font-family: monospace;">${escapeHtml(entry.mac)}</td>
+                    <td>${vendor}</td>
+                    <td><span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(type)}</span></td>
+                    <td style="font-family: monospace; font-size: 12px;">${escapeHtml(iface)}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            // Response time
+            const latencyMs = (data.duration / 1000000).toFixed(2);
+            html += `<div style="text-align: right; color: var(--text-secondary); font-size: 12px; margin-top: 15px;">Scan completed in ${latencyMs} ms</div>`;
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // MTU Discovery functions
+        function setMTUTarget(target) {
+            document.getElementById('mtu-target').value = target;
+        }
+
+        async function performMTUDiscovery() {
+            const loadingEl = document.getElementById('mtu-loading');
+            const resultEl = document.getElementById('mtu-result');
+
+            const target = document.getElementById('mtu-target').value.trim();
+            const maxMTU = parseInt(document.getElementById('mtu-max').value) || 1500;
+            const minMTU = parseInt(document.getElementById('mtu-min').value) || 68;
+            const timeout = parseInt(document.getElementById('mtu-timeout').value) || 2;
+
+            if (!target) {
+                resultEl.innerHTML = '<div class="result-container"><div class="error">Please enter a target</div></div>';
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/v1/tools/mtu-discovery', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target: target,
+                        max_mtu: maxMTU,
+                        min_mtu: minMTU,
+                        timeout: timeout
+                    })
+                });
+
+                const result = await response.json();
+                loadingEl.style.display = 'none';
+                renderMTUResult(result);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
+            }
+        }
+
+        function renderMTUResult(data) {
+            const container = document.getElementById('mtu-result');
+
+            let html = '<div class="result-container">';
+            html += '<h3>Path MTU Discovery Result</h3>';
+
+            if (data.error) {
+                html += `<div style="background: var(--danger); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <strong>Error:</strong> ${escapeHtml(data.error)}
+                </div>`;
+                html += '</div>';
+                container.innerHTML = html;
+                return;
+            }
+
+            // MTU result banner
+            html += `<div style="background: var(--success); color: white; padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 14px; margin-bottom: 5px;">Path MTU to ${escapeHtml(data.target)}</div>
+                <div style="font-size: 48px; font-weight: bold;">${data.path_mtu}</div>
+                <div style="font-size: 14px;">bytes</div>
+            </div>`;
+
+            // Details
+            html += '<div class="result-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">';
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Target:</span>
+                <div style="font-family: monospace;">${escapeHtml(data.target)}</div>
+            </div>`;
+
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Tested Range:</span>
+                <div>${escapeHtml(data.tested_range)}</div>
+            </div>`;
+
+            const latencyMs = (data.duration / 1000000).toFixed(2);
+            const latencySec = (data.duration / 1000000000).toFixed(1);
+            html += `<div class="result-item">
+                <span style="color: var(--text-secondary); font-size: 12px;">Discovery Time:</span>
+                <div>${latencySec} seconds</div>
+            </div>`;
+
+            html += '</div>';
+
+            // Info box
+            html += `<div style="margin-top: 20px; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
+                <h4 style="margin: 0 0 10px 0; color: var(--accent);">What does this mean?</h4>
+                <ul style="margin: 0; padding-left: 20px; color: var(--text-secondary); font-size: 13px;">
+                    <li>The Path MTU is the largest packet size that can travel from your device to the target without fragmentation.</li>
+                    <li><strong>1500 bytes</strong> is the standard Ethernet MTU.</li>
+                    <li>Lower values may indicate tunneling (VPN, PPPoE) or network restrictions.</li>
+                    <li>Values above 1500 indicate jumbo frames are supported.</li>
+                </ul>
+            </div>`;
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
     </script>
 </body>
 </html>
