@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"time"
 
@@ -54,10 +55,24 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Set default timeout
+		// Validate CIDR format to prevent injection attacks
+		_, _, err := net.ParseCIDR(req.CIDR)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ScanResponse{
+				Success: false,
+				Message: "Invalid CIDR format: " + err.Error(),
+			})
+			return
+		}
+
+		// Set default timeout with maximum limit
 		timeout := 300 // 5 minutes default
 		if req.Timeout > 0 {
 			timeout = req.Timeout
+		}
+		// Cap timeout to prevent DoS
+		if timeout > 600 {
+			timeout = 600 // Max 10 minutes
 		}
 
 		// Create context with timeout

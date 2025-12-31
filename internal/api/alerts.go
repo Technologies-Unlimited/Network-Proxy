@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
@@ -108,8 +109,11 @@ func acknowledgeAlert(srv *server.Server) gin.HandlerFunc {
 		alert.Status = "acknowledged"
 		alert.AckedAt = &now
 
-		// TODO: Get user ID from JWT token
-		// alert.AckedBy = &userID
+		// Get user ID from auth context
+		userID := middleware.GetUserID(c)
+		if userID != "" {
+			alert.AckedBy = &userID
+		}
 
 		if err := srv.DB.Save(&alert).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

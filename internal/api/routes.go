@@ -1,17 +1,30 @@
 package api
 
 import (
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
 )
 
 // RegisterRoutes registers all API routes
 func RegisterRoutes(router *gin.Engine, srv *server.Server) {
-	// Health check
+	// Health check (no auth required)
 	router.GET("/health", healthCheck)
+
+	// Register auth routes (no auth middleware required)
+	RegisterAuthRoutes(router, srv.DB)
 
 	// API v1 routes
 	v1 := router.Group("/api/v1")
+
+	// Register webhook routes BEFORE auth middleware (webhooks verify via signature)
+	RegisterWebhookRoutes(v1, srv)
+
+	// Register settings routes BEFORE auth middleware (needed for UI theming)
+	RegisterSettingsRoutes(v1, srv)
+
+	// Apply auth middleware to all other API routes
+	v1.Use(middleware.RequireAuth())
 	{
 		// Device routes
 		devices := v1.Group("/devices")
@@ -62,14 +75,54 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 			alertRules.DELETE("/:id", deleteAlertRule(srv))
 		}
 
-		// Agent routes
-		agents := v1.Group("/agents")
+		// Node routes (renamed from agents)
+		nodes := v1.Group("/nodes")
 		{
-			agents.GET("", listAgents(srv))
-			agents.POST("", registerAgent(srv))
-			agents.GET("/:id", getAgent(srv))
-			agents.POST("/:id/heartbeat", agentHeartbeat(srv))
-			agents.DELETE("/:id", deleteAgent(srv))
+			nodes.GET("", listNodes(srv))
+			nodes.GET("/json", listNodesJSON(srv))
+			nodes.POST("", registerNode(srv))
+			nodes.GET("/:id", getNode(srv))
+			nodes.PUT("/:id", updateNode(srv))
+			nodes.POST("/:id/heartbeat", nodeHeartbeat(srv))
+			nodes.DELETE("/:id", deleteNode(srv))
+			nodes.GET("/:id/peers", getNodePeers(srv))
+		}
+
+		// Node maintenance routes (separate to avoid route conflicts)
+		nodesMaint := v1.Group("/nodes-maintenance")
+		{
+			nodesMaint.POST("/cleanup-duplicates", cleanupDuplicateNodes(srv))
+		}
+
+		// Node Peer routes
+		nodePeers := v1.Group("/node-peers")
+		{
+			nodePeers.GET("", listNodePeers(srv))
+			nodePeers.GET("/html", listNodePeersHTML(srv))
+			nodePeers.POST("", createNodePeer(srv))
+			nodePeers.DELETE("/:id", deleteNodePeer(srv))
+			nodePeers.POST("/:id/refresh", refreshNodePeer(srv))
+		}
+
+		// Bandwidth Test routes
+		bandwidthTests := v1.Group("/bandwidth-tests")
+		{
+			bandwidthTests.GET("", listBandwidthTests(srv))
+			bandwidthTests.GET("/html", listBandwidthTestsHTML(srv))
+			bandwidthTests.POST("/start", startBandwidthTest(srv))
+			bandwidthTests.GET("/:id", getBandwidthTest(srv))
+			bandwidthTests.POST("/:id/cancel", cancelBandwidthTest(srv))
+		}
+
+		// Scheduled Test routes
+		scheduledTests := v1.Group("/scheduled-tests")
+		{
+			scheduledTests.GET("", listScheduledTests(srv))
+			scheduledTests.GET("/html", listScheduledTestsHTML(srv))
+			scheduledTests.POST("", createScheduledTest(srv))
+			scheduledTests.PUT("/:id", updateScheduledTest(srv))
+			scheduledTests.DELETE("/:id", deleteScheduledTest(srv))
+			scheduledTests.POST("/:id/run-now", runScheduledTestNow(srv))
 		}
 
 		// Metrics proxy to Prometheus
@@ -107,6 +160,13 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 			toolsAPI.POST("/bandwidth-test", bandwidthTest(srv))
 			toolsAPI.POST("/ping", ping(srv))
 			toolsAPI.GET("/common-ports", commonPorts(srv))
+			toolsAPI.POST("/snmp-query", snmpQuery(srv))
+			toolsAPI.POST("/mac-lookup", macLookup(srv))
+			toolsAPI.POST("/connection-test", connectionTest(srv))
+			toolsAPI.POST("/http-test", httpTest(srv))
+			toolsAPI.POST("/ssl-check", sslCheck(srv))
+			toolsAPI.GET("/arp-scan", arpScan(srv))
+			toolsAPI.POST("/mtu-discovery", mtuDiscovery(srv))
 		}
 
 		// Report routes
@@ -126,8 +186,9 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 		}
 	}
 
-	// Dashboard API endpoints
+	// Dashboard API endpoints (also require auth)
 	dashboard := v1.Group("/dashboard")
+	dashboard.Use(middleware.RequireAuth())
 	{
 		dashboard.GET("/device-count", getDashboardDeviceCount(srv))
 		dashboard.GET("/devices-up", getDashboardDevicesUp(srv))
@@ -140,16 +201,30 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	router.GET("/", dashboardPage)
 	router.GET("/devices", devicesPage)
 	router.GET("/alerts", alertsPage)
-	router.GET("/agents", agentsPage)
+	router.GET("/nodes", nodesPage)
 	router.GET("/visualize", visualizePage)
 	router.GET("/tools", toolsPage)
 	router.GET("/reports", reportsPage)
+	router.GET("/settings", settingsPage)
 }
 
 // healthCheck is a simple health check endpoint
 func healthCheck(c *gin.Context) {
+	authCtx := middleware.GetGlobalAuthContext()
+	thothosConnected := authCtx != nil
+
+	companyID := ""
+	proxyID := ""
+	if authCtx != nil {
+		companyID = authCtx.CompanyID
+		proxyID = authCtx.ProxyID
+	}
+
 	c.JSON(200, gin.H{
-		"status": "ok",
-		"service": "network-monitor-server",
+		"status":           "ok",
+		"service":          "network-monitor-server",
+		"thothosConnected": thothosConnected,
+		"companyId":        companyID,
+		"proxyId":          proxyID,
 	})
 }

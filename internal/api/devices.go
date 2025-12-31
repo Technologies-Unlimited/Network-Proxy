@@ -1,6 +1,7 @@
 package api
 
 import (
+	htmlpkg "html"
 	"net/http"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -61,20 +62,27 @@ func listDevices(srv *server.Server) gin.HandlerFunc {
 				lastSeen = device.LastSeen.Format("2006-01-02 15:04")
 			}
 
+			// Escape all user-provided data to prevent XSS
+			safeHostname := htmlpkg.EscapeString(device.Hostname)
+			safeIPAddress := htmlpkg.EscapeString(device.IPAddress)
+			safeDeviceType := htmlpkg.EscapeString(device.DeviceType)
+			safeLocation := htmlpkg.EscapeString(device.Location)
+			safeID := htmlpkg.EscapeString(device.ID)
+
 			html += `
 				<tr style="border-bottom: 1px solid var(--border);">
-					<td style="padding: 12px; color: var(--text-primary);">` + device.Hostname + `</td>
-					<td style="padding: 12px; color: var(--text-primary);">` + device.IPAddress + `</td>
-					<td style="padding: 12px; color: var(--text-primary);">` + device.DeviceType + `</td>
-					<td style="padding: 12px; color: var(--text-primary);">` + device.Location + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + safeHostname + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + safeIPAddress + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + safeDeviceType + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + safeLocation + `</td>
 					<td style="padding: 12px; text-align: center;">
 						<span style="padding: 4px 12px; background: ` + statusColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + statusText + `</span>
 					</td>
 					<td style="padding: 12px; color: var(--text-secondary);">` + lastSeen + `</td>
 					<td style="padding: 12px; text-align: center;">
-						<a href="/visualize?device=` + device.ID + `" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px; text-decoration: none;">View</a>
-						<button onclick="showEditDeviceForm('` + device.ID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
-						<button onclick="deleteDevice('` + device.ID + `', '` + device.Hostname + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
+						<a href="/visualize?device=` + safeID + `" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px; text-decoration: none;">View</a>
+						<button onclick="showEditDeviceForm('` + safeID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
+						<button onclick="deleteDevice('` + safeID + `', '` + safeHostname + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
 					</td>
 				</tr>`
 		}
