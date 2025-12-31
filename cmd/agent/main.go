@@ -12,6 +12,7 @@ import (
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/collector"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/icmp"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/snmp"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/database"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/metrics"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -28,11 +29,17 @@ func main() {
 		log.Warn().Msg("No .env file found, using environment variables")
 	}
 
+	// Initialize database
+	db, err := database.Initialize()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize database")
+	}
+
 	// Initialize metrics
 	metricsRegistry := metrics.NewRegistry()
 
 	// Initialize collectors
-	icmpCollector := icmp.NewCollector(metricsRegistry)
+	icmpCollector := icmp.NewCollector(metricsRegistry, db)
 	snmpCollector := snmp.NewCollector(metricsRegistry)
 
 	// Initialize main collector
