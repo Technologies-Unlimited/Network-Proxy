@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "github.com/networkmonitor/proto/node";
+
+import "google/protobuf/timestamp.proto";
+
+// NodeService handles basic node communication and discovery
+service NodeService {
+    // Heartbeat keeps the connection alive and reports node status
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetNodeInfo returns information about this node
+    rpc GetNodeInfo(GetNodeInfoRequest) returns (NodeInfo);
+
+    // Ping measures latency between nodes
+    rpc Ping(PingRequest) returns (PingResponse);
+
+    // DiscoverPeers returns list of known peers
+    rpc DiscoverPeers(DiscoverPeersRequest) returns (DiscoverPeersResponse);
+
+    // Connect establishes a peer connection
+    rpc Connect(ConnectRequest) returns (ConnectResponse);
+
+    // Disconnect terminates a peer connection
+    rpc Disconnect(DisconnectRequest) returns (DisconnectResponse);
+}
+
+// HeartbeatRequest sent periodically to maintain connection
+message HeartbeatRequest {
+    string node_id = 1;
+    string status = 2;
+    int64 uptime_seconds = 3;
+    NodeCapabilities capabilities = 4;
+}
+
+// HeartbeatResponse acknowledges heartbeat
+message HeartbeatResponse {
+    bool success = 1;
+    string message = 2;
+    google.protobuf.Timestamp server_time = 3;
+}
+
+// GetNodeInfoRequest requests node information
+message GetNodeInfoRequest {
+    string requester_id = 1;
+}
+
+// NodeInfo contains node details
+message NodeInfo {
+    string id = 1;
+    string name = 2;
+    string hostname = 3;
+    string ip_address = 4;
+    int32 grpc_port = 5;
+    string version = 6;
+    string status = 7;
+    NodeCapabilities capabilities = 8;
+    google.protobuf.Timestamp last_seen = 9;
+}
+
+// NodeCapabilities describes what a node can do
+message NodeCapabilities {
+    bool supports_icmp = 1;
+    bool supports_snmp = 2;
+    bool supports_discovery = 3;
+    bool supports_bandwidth = 4;
+}
+
+// PingRequest for latency measurement
+message PingRequest {
+    string requester_id = 1;
+    int64 sequence = 2;
+    google.protobuf.Timestamp sent_at = 3;
+}
+
+// PingResponse with timing information
+message PingResponse {
+    int64 sequence = 1;
+    google.protobuf.Timestamp sent_at = 2;
+    google.protobuf.Timestamp received_at = 3;
+    int64 latency_us = 4; // microseconds
+}
+
+// DiscoverPeersRequest asks for known peers
+message DiscoverPeersRequest {
+    string requester_id = 1;
+}
+
+// DiscoverPeersResponse lists known peers
+message DiscoverPeersResponse {
+    repeated PeerInfo peers = 1;
+}
+
+// PeerInfo contains peer connection details
+message PeerInfo {
+    string node_id = 1;
+    string name = 2;
+    string ip_address = 3;
+    int32 grpc_port = 4;
+    string status = 5;
+    int64 latency_us = 6;
+}
+
+// ConnectRequest initiates peer connection
+message ConnectRequest {
+    string requester_id = 1;
+    string requester_name = 2;
+    string requester_ip = 3;
+    int32 requester_port = 4;
+}
+
+// ConnectResponse confirms connection
+message ConnectResponse {
+    bool success = 1;
+    string message = 2;
+    string peer_id = 3;
+}
+
+// DisconnectRequest terminates peer connection
+message DisconnectRequest {
+    string requester_id = 1;
+    string reason = 2;
+}
+
+// DisconnectResponse confirms disconnection
+message DisconnectResponse {
+    bool success = 1;
+    string message = 2;
+}

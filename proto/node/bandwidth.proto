@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "github.com/networkmonitor/proto/node";
+
+import "google/protobuf/timestamp.proto";
+
+// BandwidthService handles bandwidth testing between nodes
+service BandwidthService {
+    // StartTest initiates a bandwidth test
+    rpc StartTest(StartTestRequest) returns (StartTestResponse);
+
+    // StreamUpload streams data from client to server (upload test)
+    rpc StreamUpload(stream DataChunk) returns (StreamResult);
+
+    // StreamDownload streams data from server to client (download test)
+    rpc StreamDownload(DownloadRequest) returns (stream DataChunk);
+
+    // BidirectionalStream for bidirectional bandwidth testing
+    rpc BidirectionalStream(stream DataChunk) returns (stream DataChunk);
+
+    // GetTestStatus returns current test status
+    rpc GetTestStatus(GetTestStatusRequest) returns (TestStatus);
+
+    // CancelTest cancels a running test
+    rpc CancelTest(CancelTestRequest) returns (CancelTestResponse);
+
+    // GetTestResults returns completed test results
+    rpc GetTestResults(GetTestResultsRequest) returns (TestResults);
+}
+
+// StartTestRequest initiates a bandwidth test
+message StartTestRequest {
+    string test_id = 1;
+    string source_node_id = 2;
+    string target_node_id = 3;
+    TestType test_type = 4;
+    int32 duration_seconds = 5;
+    int32 chunk_size = 6; // bytes per chunk, default 64KB
+    int32 parallel_streams = 7; // number of parallel streams, default 1
+    TestMode test_mode = 8; // Network path mode (direct, local, gateway)
+    string gateway_address = 9; // Gateway IP:port when test_mode is GATEWAY
+}
+
+// TestType enum for test types
+enum TestType {
+    TEST_TYPE_UNSPECIFIED = 0;
+    TEST_TYPE_UPLOAD = 1;
+    TEST_TYPE_DOWNLOAD = 2;
+    TEST_TYPE_BIDIRECTIONAL = 3;
+}
+
+// TestMode enum for network path selection
+// Controls how traffic is routed between nodes during bandwidth tests
+enum TestMode {
+    TEST_MODE_DIRECT = 0;      // Direct peer-to-peer connection (default)
+    TEST_MODE_LOCAL = 1;       // Force traffic through localhost/loopback (127.0.0.1)
+    TEST_MODE_GATEWAY = 2;     // Route traffic through a specific gateway address
+}
+
+// StartTestResponse confirms test start
+message StartTestResponse {
+    bool success = 1;
+    string test_id = 2;
+    string message = 3;
+    google.protobuf.Timestamp started_at = 4;
+}
+
+// DataChunk is a chunk of data for streaming
+message DataChunk {
+    string test_id = 1;
+    int64 sequence = 2;
+    bytes data = 3;
+    int64 timestamp_ns = 4; // nanosecond timestamp for accurate timing
+    bool is_final = 5;
+}
+
+// StreamResult summarizes a completed stream
+message StreamResult {
+    string test_id = 1;
+    int64 total_bytes = 2;
+    int64 total_chunks = 3;
+    int64 duration_ms = 4;
+    double throughput_mbps = 5;
+    int64 avg_latency_us = 6;
+    int64 min_latency_us = 7;
+    int64 max_latency_us = 8;
+}
+
+// DownloadRequest initiates a download stream
+message DownloadRequest {
+    string test_id = 1;
+    int32 chunk_size = 2;
+    int32 duration_seconds = 3;
+}
+
+// GetTestStatusRequest queries test status
+message GetTestStatusRequest {
+    string test_id = 1;
+}
+
+// TestStatus reports current test status
+message TestStatus {
+    string test_id = 1;
+    TestState state = 2;
+    double progress_percent = 3;
+    int64 bytes_sent = 4;
+    int64 bytes_received = 5;
+    double current_upload_mbps = 6;
+    double current_download_mbps = 7;
+    int64 elapsed_ms = 8;
+    int64 remaining_ms = 9;
+    string error_message = 10;
+}
+
+// TestState enum for test states
+enum TestState {
+    TEST_STATE_UNSPECIFIED = 0;
+    TEST_STATE_PENDING = 1;
+    TEST_STATE_RUNNING = 2;
+    TEST_STATE_COMPLETED = 3;
+    TEST_STATE_FAILED = 4;
+    TEST_STATE_CANCELLED = 5;
+}
+
+// CancelTestRequest cancels a running test
+message CancelTestRequest {
+    string test_id = 1;
+    string reason = 2;
+}
+
+// CancelTestResponse confirms cancellation
+message CancelTestResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// GetTestResultsRequest queries test results
+message GetTestResultsRequest {
+    string test_id = 1;
+}
+
+// TestResults contains complete test results
+message TestResults {
+    string test_id = 1;
+    string source_node_id = 2;
+    string target_node_id = 3;
+    TestType test_type = 4;
+    TestState state = 5;
+    google.protobuf.Timestamp started_at = 6;
+    google.protobuf.Timestamp ended_at = 7;
+    int64 duration_ms = 8;
+
+    // Upload metrics
+    int64 bytes_sent = 9;
+    double upload_speed_mbps = 10;
+
+    // Download metrics
+    int64 bytes_received = 11;
+    double download_speed_mbps = 12;
+
+    // Latency metrics
+    int64 avg_latency_us = 13;
+    int64 min_latency_us = 14;
+    int64 max_latency_us = 15;
+    double jitter_us = 16;
+
+    // Packet metrics
+    int64 packets_sent = 17;
+    int64 packets_received = 18;
+    double packet_loss_percent = 19;
+
+    string error_message = 20;
+
+    // Network path info
+    TestMode test_mode = 21;
+    string gateway_address = 22;
+    string actual_target_address = 23; // The actual IP:port used for the test
+}
