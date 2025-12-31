@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
+    <style>
+        .settings-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .settings-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        .settings-section h3 {
+            color: var(--accent);
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+        }
+
+        .theme-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .theme-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .theme-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .theme-card.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 20px rgba(74, 158, 255, 0.3);
+        }
+
+        .theme-card.active::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            background: var(--accent);
+            color: var(--accent-text);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .theme-preview {
+            height: 80px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .theme-preview-dark {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            border: 1px solid #3a3a3a;
+        }
+
+        .theme-preview-dark .preview-sidebar {
+            background: #2d2d2d;
+            border-right: 1px solid #3a3a3a;
+        }
+
+        .theme-preview-dark .preview-header {
+            background: #252525;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        .theme-preview-dark .preview-accent {
+            background: #4a9eff;
+        }
+
+        .theme-preview-light {
+            background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+            border: 1px solid #ddd;
+        }
+
+        .theme-preview-light .preview-sidebar {
+            background: #e0e0e0;
+            border-right: 1px solid #ccc;
+        }
+
+        .theme-preview-light .preview-header {
+            background: #ffffff;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .theme-preview-light .preview-accent {
+            background: #2196F3;
+        }
+
+        .theme-preview-sacred {
+            background: linear-gradient(135deg, #0a0a0a 0%, #14141c 100%);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+        }
+
+        .theme-preview-sacred .preview-sidebar {
+            background: rgba(255, 215, 0, 0.05);
+            border-right: 1px solid rgba(255, 215, 0, 0.15);
+        }
+
+        .theme-preview-sacred .preview-header {
+            background: rgba(255, 215, 0, 0.08);
+            border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+        }
+
+        .theme-preview-sacred .preview-accent {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+        }
+
+        .preview-sidebar {
+            width: 30%;
+            padding: 8px;
+        }
+
+        .preview-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .preview-header {
+            height: 20px;
+            padding: 4px 8px;
+        }
+
+        .preview-content {
+            flex: 1;
+            padding: 8px;
+            display: flex;
+            gap: 4px;
+        }
+
+        .preview-card {
+            flex: 1;
+            border-radius: 4px;
+            opacity: 0.6;
+        }
+
+        .preview-accent {
+            width: 40%;
+            height: 8px;
+            border-radius: 2px;
+        }
+
+        .theme-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+
+        .theme-description {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        /* Sacred theme specific styling */
+        .theme-card[data-theme="sacred"] .theme-name {
+            font-family: 'Cinzel', serif;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .success-message {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .success-message.show {
+            display: flex;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .settings-info {
+            background: rgba(74, 158, 255, 0.1);
+            border: 1px solid rgba(74, 158, 255, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .settings-info strong {
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/nodes">Nodes</a>
+                <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
+            </nav>
+        </header>
+
+        <main class="settings-container">
+            <h2>Settings</h2>
+
+            <div id="success-message" class="success-message">
+                <span>✓</span>
+                <span id="success-text">Settings saved successfully!</span>
+            </div>
+
+            <div class="settings-section">
+                <h3>Theme</h3>
+                <div class="settings-info">
+                    <strong>Choose your preferred theme.</strong> The theme will be applied immediately and saved for future sessions.
+                </div>
+
+                <div class="theme-selector" id="theme-selector">
+                    <!-- Dark Theme -->
+                    <div class="theme-card" data-theme="dark" onclick="selectTheme('dark')">
+                        <div class="theme-preview theme-preview-dark">
+                            <div class="preview-sidebar">
+                                <div class="preview-accent" style="height: 6px; margin-bottom: 4px;"></div>
+                                <div style="background: #3a3a3a; height: 4px; border-radius: 2px; margin-bottom: 3px;"></div>
+                                <div style="background: #3a3a3a; height: 4px; border-radius: 2px; width: 80%;"></div>
+                            </div>
+                            <div class="preview-main">
+                                <div class="preview-header">
+                                    <div class="preview-accent"></div>
+                                </div>
+                                <div class="preview-content">
+                                    <div class="preview-card" style="background: #252525;"></div>
+                                    <div class="preview-card" style="background: #252525;"></div>
+                                    <div class="preview-card" style="background: #252525;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="theme-name">Dark</div>
+                        <div class="theme-description">Modern dark theme with blue accents. Easy on the eyes for extended use.</div>
+                    </div>
+
+                    <!-- Light Theme -->
+                    <div class="theme-card" data-theme="light" onclick="selectTheme('light')">
+                        <div class="theme-preview theme-preview-light">
+                            <div class="preview-sidebar">
+                                <div class="preview-accent" style="height: 6px; margin-bottom: 4px;"></div>
+                                <div style="background: #ccc; height: 4px; border-radius: 2px; margin-bottom: 3px;"></div>
+                                <div style="background: #ccc; height: 4px; border-radius: 2px; width: 80%;"></div>
+                            </div>
+                            <div class="preview-main">
+                                <div class="preview-header">
+                                    <div class="preview-accent"></div>
+                                </div>
+                                <div class="preview-content">
+                                    <div class="preview-card" style="background: #f0f0f0;"></div>
+                                    <div class="preview-card" style="background: #f0f0f0;"></div>
+                                    <div class="preview-card" style="background: #f0f0f0;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="theme-name">Light</div>
+                        <div class="theme-description">Clean light theme with professional blue accents. Great for well-lit environments.</div>
+                    </div>
+
+                    <!-- Sacred Theme -->
+                    <div class="theme-card" data-theme="sacred" onclick="selectTheme('sacred')">
+                        <div class="theme-preview theme-preview-sacred">
+                            <div class="preview-sidebar">
+                                <div class="preview-accent" style="height: 6px; margin-bottom: 4px;"></div>
+                                <div style="background: rgba(255, 215, 0, 0.2); height: 4px; border-radius: 2px; margin-bottom: 3px;"></div>
+                                <div style="background: rgba(255, 215, 0, 0.2); height: 4px; border-radius: 2px; width: 80%;"></div>
+                            </div>
+                            <div class="preview-main">
+                                <div class="preview-header">
+                                    <div class="preview-accent"></div>
+                                </div>
+                                <div class="preview-content">
+                                    <div class="preview-card" style="background: rgba(255, 215, 0, 0.05);"></div>
+                                    <div class="preview-card" style="background: rgba(255, 215, 0, 0.05);"></div>
+                                    <div class="preview-card" style="background: rgba(255, 215, 0, 0.05);"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="theme-name">Sacred</div>
+                        <div class="theme-description">Elegant dark theme with gold accents inspired by ancient Egyptian aesthetics.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>About</h3>
+                <div class="settings-info">
+                    <strong>Network Monitor</strong> - A powerful network monitoring and management tool.
+                    <br><br>
+                    Built with Go and HTMX for a fast, reactive experience.
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go</p>
+        </footer>
+    </div>
+
+    <script>
+        let currentTheme = 'dark';
+
+        // Load current theme on page load
+        async function loadCurrentTheme() {
+            try {
+                const response = await fetch('/api/v1/settings/theme');
+                const data = await response.json();
+                currentTheme = data.theme || 'dark';
+                updateThemeSelection(currentTheme);
+                applyTheme(currentTheme);
+            } catch (error) {
+                console.error('Failed to load theme:', error);
+            }
+        }
+
+        // Update visual selection
+        function updateThemeSelection(theme) {
+            document.querySelectorAll('.theme-card').forEach(card => {
+                card.classList.remove('active');
+                if (card.dataset.theme === theme) {
+                    card.classList.add('active');
+                }
+            });
+        }
+
+        // Select and save theme
+        async function selectTheme(theme) {
+            if (theme === currentTheme) return;
+
+            try {
+                const response = await fetch('/api/v1/settings/theme', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme: theme })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentTheme = theme;
+                    updateThemeSelection(theme);
+                    applyTheme(theme);
+                    showSuccess('Theme updated to ' + theme.charAt(0).toUpperCase() + theme.slice(1));
+                } else {
+                    console.error('Failed to save theme:', data.error);
+                }
+            } catch (error) {
+                console.error('Failed to save theme:', error);
+            }
+        }
+
+        // Apply theme to document
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+
+            // Update CSS variables based on theme
+            const root = document.documentElement;
+
+            if (theme === 'dark') {
+                root.style.setProperty('--bg-primary', '#1a1a1a');
+                root.style.setProperty('--bg-secondary', '#2d2d2d');
+                root.style.setProperty('--bg-card', '#252525');
+                root.style.setProperty('--text-primary', '#ffffff');
+                root.style.setProperty('--text-secondary', '#b0b0b0');
+                root.style.setProperty('--accent', '#4a9eff');
+                root.style.setProperty('--accent-text', '#ffffff');
+                root.style.setProperty('--border', '#3a3a3a');
+            } else if (theme === 'light') {
+                root.style.setProperty('--bg-primary', '#f5f5f5');
+                root.style.setProperty('--bg-secondary', '#e8e8e8');
+                root.style.setProperty('--bg-card', '#ffffff');
+                root.style.setProperty('--text-primary', '#1a1a1a');
+                root.style.setProperty('--text-secondary', '#666666');
+                root.style.setProperty('--accent', '#2196F3');
+                root.style.setProperty('--accent-text', '#ffffff');
+                root.style.setProperty('--border', '#dddddd');
+            } else if (theme === 'sacred') {
+                root.style.setProperty('--bg-primary', '#0a0a0a');
+                root.style.setProperty('--bg-secondary', '#14141c');
+                root.style.setProperty('--bg-card', '#0f0f14');
+                root.style.setProperty('--text-primary', '#ffffff');
+                root.style.setProperty('--text-secondary', 'rgba(255, 255, 255, 0.7)');
+                root.style.setProperty('--accent', '#FFD700');
+                root.style.setProperty('--accent-text', '#000000');
+                root.style.setProperty('--border', 'rgba(255, 215, 0, 0.2)');
+            }
+        }
+
+        // Show success message
+        function showSuccess(message) {
+            const successEl = document.getElementById('success-message');
+            const textEl = document.getElementById('success-text');
+            textEl.textContent = message;
+            successEl.classList.add('show');
+
+            setTimeout(() => {
+                successEl.classList.remove('show');
+            }, 3000);
+        }
+
+        // Initialize
+        loadCurrentTheme();
+    </script>
+</body>
+</html>

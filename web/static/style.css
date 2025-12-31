@@ -7,6 +7,7 @@
     --text-primary: #ffffff;
     --text-secondary: #b0b0b0;
     --accent: #4a9eff;
+    --accent-text: #ffffff;
     --success: #4caf50;
     --warning: #ff9800;
     --danger: #f44336;
@@ -60,6 +61,11 @@ nav a {
 nav a:hover {
     background: var(--bg-card);
     color: var(--text-primary);
+}
+
+nav a.active {
+    background: var(--accent);
+    color: var(--accent-text);
 }
 
 main h2 {
@@ -137,7 +143,7 @@ main h2 {
 
 .btn-primary {
     background: var(--accent);
-    color: white;
+    color: var(--accent-text);
 }
 
 .btn-primary:hover {
