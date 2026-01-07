@@ -253,20 +253,22 @@ func (c *Client) SendHeartbeat(status HeartbeatStatus) (*ProxyConfig, error) {
 	return proxy, nil
 }
 
-// GetICMPMonitoringTemplates fetches ICMP monitoring templates
+// GetICMPMonitoringTemplates fetches ICMP monitoring templates (threshold configs)
 func (c *Client) GetICMPMonitoringTemplates() ([]ICMPMonitoringTemplate, error) {
 	query := `query getICMPMonitoringTemplatesForCompany($companyId: String!) {
 		getICMPMonitoringTemplatesForCompany(companyId: $companyId) {
 			_id
 			companyId
-			name
-			description
-			interval
-			timeout
-			packetSize
-			packetCount
-			createdAt
-			updatedAt
+			templateName
+			templateDescription
+			icmpLossThreshold
+			icmpLatencyThreshold
+			manufacturerId
+			modelNameId
+			productId
+			stockIds
+			networkInventoryIds
+			linkedPollingTemplateId
 		}
 	}`
 
@@ -289,7 +291,7 @@ func (c *Client) GetICMPMonitoringTemplates() ([]ICMPMonitoringTemplate, error) 
 		jsonData, _ := json.Marshal(item)
 		var template ICMPMonitoringTemplate
 		if err := json.Unmarshal(jsonData, &template); err != nil {
-			log.Warn().Err(err).Msg("Failed to parse ICMP template")
+			log.Warn().Err(err).Msg("Failed to parse ICMP monitoring template")
 			continue
 		}
 		templates = append(templates, template)
@@ -299,19 +301,30 @@ func (c *Client) GetICMPMonitoringTemplates() ([]ICMPMonitoringTemplate, error) 
 	return templates, nil
 }
 
-// GetICMPPollingTemplates fetches ICMP polling templates
+// GetICMPPollingTemplates fetches ICMP polling templates (frequency configs)
 func (c *Client) GetICMPPollingTemplates() ([]ICMPPollingTemplate, error) {
 	query := `query getICMPPollingTemplatesForCompany($companyId: String!) {
 		getICMPPollingTemplatesForCompany(companyId: $companyId) {
 			_id
 			companyId
+			icmpTemplateId
 			name
 			description
-			monitoringTemplateId
-			enabled
-			schedule
-			createdAt
-			updatedAt
+			frequency
+			timeout
+			retries
+			pollingFrequency {
+				days
+				hours
+				minutes
+				seconds
+			}
+			downtimeTrigger {
+				days
+				hours
+				minutes
+				seconds
+			}
 		}
 	}`
 
@@ -344,21 +357,63 @@ func (c *Client) GetICMPPollingTemplates() ([]ICMPPollingTemplate, error) {
 	return templates, nil
 }
 
-// GetSNMPv2Templates fetches SNMPv2 templates
-func (c *Client) GetSNMPv2Templates() ([]SNMPv2Template, error) {
+// GetOIDs fetches OID definitions
+func (c *Client) GetOIDs() ([]OID, error) {
+	query := `query getOIDsForCompany($companyId: String!) {
+		getOIDsForCompany(companyId: $companyId) {
+			_id
+			companyId
+			oidName
+			oid
+			description
+			manufacturerId
+			modelId
+			productId
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["getOIDsForCompany"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	oids := make([]OID, 0, len(data))
+	for _, item := range data {
+		jsonData, _ := json.Marshal(item)
+		var oid OID
+		if err := json.Unmarshal(jsonData, &oid); err != nil {
+			log.Warn().Err(err).Msg("Failed to parse OID")
+			continue
+		}
+		oids = append(oids, oid)
+	}
+
+	log.Info().Int("count", len(oids)).Msg("Fetched OIDs")
+	return oids, nil
+}
+
+// GetSNMPv2Communities fetches SNMPv2 community settings
+func (c *Client) GetSNMPv2Communities() ([]SNMPv2Community, error) {
 	query := `query getSNMPv2sForCompany($companyId: String!) {
 		getSNMPv2sForCompany(companyId: $companyId) {
 			_id
 			companyId
-			name
+			communityName
+			readCommunity
+			writeCommunity
 			description
-			community
-			port
-			timeout
-			retries
-			oidList
-			createdAt
-			updatedAt
+			manufacturerId
+			modelId
+			productId
 		}
 	}`
 
@@ -372,6 +427,102 @@ func (c *Client) GetSNMPv2Templates() ([]SNMPv2Template, error) {
 	}
 
 	data, ok := resp.Data["getSNMPv2sForCompany"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	communities := make([]SNMPv2Community, 0, len(data))
+	for _, item := range data {
+		jsonData, _ := json.Marshal(item)
+		var community SNMPv2Community
+		if err := json.Unmarshal(jsonData, &community); err != nil {
+			log.Warn().Err(err).Msg("Failed to parse SNMPv2 community")
+			continue
+		}
+		communities = append(communities, community)
+	}
+
+	log.Info().Int("count", len(communities)).Msg("Fetched SNMPv2 communities")
+	return communities, nil
+}
+
+// GetSNMPv3Communities fetches SNMPv3 community/security settings
+func (c *Client) GetSNMPv3Communities() ([]SNMPv3Community, error) {
+	query := `query getSNMPv3sForCompany($companyId: String!) {
+		getSNMPv3sForCompany(companyId: $companyId) {
+			_id
+			companyId
+			communityName
+			userName
+			authMethod
+			authPassword
+			encryptionMethod
+			encryptionPassword
+			description
+			manufacturerId
+			modelId
+			productId
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["getSNMPv3sForCompany"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	communities := make([]SNMPv3Community, 0, len(data))
+	for _, item := range data {
+		jsonData, _ := json.Marshal(item)
+		var community SNMPv3Community
+		if err := json.Unmarshal(jsonData, &community); err != nil {
+			log.Warn().Err(err).Msg("Failed to parse SNMPv3 community")
+			continue
+		}
+		communities = append(communities, community)
+	}
+
+	log.Info().Int("count", len(communities)).Msg("Fetched SNMPv3 communities")
+	return communities, nil
+}
+
+// GetSNMPv2Templates fetches SNMPv2 monitoring templates
+func (c *Client) GetSNMPv2Templates() ([]SNMPv2Template, error) {
+	query := `query getSNMPv2TemplatesForCompany($companyId: String!) {
+		getSNMPv2TemplatesForCompany(companyId: $companyId) {
+			_id
+			companyId
+			templateName
+			description
+			snmpv2SettingId
+			oidIds
+			manufacturerId
+			modelNameId
+			productId
+			stockIds
+			networkInventoryIds
+			linkedPollingTemplateId
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["getSNMPv2TemplatesForCompany"].([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("unexpected response format")
 	}
@@ -391,27 +542,22 @@ func (c *Client) GetSNMPv2Templates() ([]SNMPv2Template, error) {
 	return templates, nil
 }
 
-// GetSNMPv3Templates fetches SNMPv3 templates
+// GetSNMPv3Templates fetches SNMPv3 monitoring templates
 func (c *Client) GetSNMPv3Templates() ([]SNMPv3Template, error) {
-	query := `query getSNMPv3sForCompany($companyId: String!) {
-		getSNMPv3sForCompany(companyId: $companyId) {
+	query := `query getSNMPv3TemplatesForCompany($companyId: String!) {
+		getSNMPv3TemplatesForCompany(companyId: $companyId) {
 			_id
 			companyId
-			name
+			templateName
 			description
-			securityLevel
-			authProtocol
-			authPassword
-			privProtocol
-			privPassword
-			contextName
-			securityName
-			port
-			timeout
-			retries
-			oidList
-			createdAt
-			updatedAt
+			snmpv3SettingId
+			oidIds
+			manufacturerId
+			modelNameId
+			productId
+			stockIds
+			networkInventoryIds
+			linkedPollingTemplateId
 		}
 	}`
 
@@ -424,7 +570,7 @@ func (c *Client) GetSNMPv3Templates() ([]SNMPv3Template, error) {
 		return nil, err
 	}
 
-	data, ok := resp.Data["getSNMPv3sForCompany"].([]interface{})
+	data, ok := resp.Data["getSNMPv3TemplatesForCompany"].([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("unexpected response format")
 	}
@@ -441,6 +587,118 @@ func (c *Client) GetSNMPv3Templates() ([]SNMPv3Template, error) {
 	}
 
 	log.Info().Int("count", len(templates)).Msg("Fetched SNMPv3 templates")
+	return templates, nil
+}
+
+// GetSNMPv2PollingTemplates fetches SNMPv2 polling templates
+func (c *Client) GetSNMPv2PollingTemplates() ([]SNMPv2PollingTemplate, error) {
+	query := `query getSNMPv2PollingTemplatesForCompany($companyId: String!) {
+		getSNMPv2PollingTemplatesForCompany(companyId: $companyId) {
+			_id
+			companyId
+			snmpv2TemplateId
+			name
+			description
+			frequency
+			timeout
+			retries
+			pollingFrequency {
+				days
+				hours
+				minutes
+				seconds
+			}
+			downtimeTrigger {
+				days
+				hours
+				minutes
+				seconds
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["getSNMPv2PollingTemplatesForCompany"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	templates := make([]SNMPv2PollingTemplate, 0, len(data))
+	for _, item := range data {
+		jsonData, _ := json.Marshal(item)
+		var template SNMPv2PollingTemplate
+		if err := json.Unmarshal(jsonData, &template); err != nil {
+			log.Warn().Err(err).Msg("Failed to parse SNMPv2 polling template")
+			continue
+		}
+		templates = append(templates, template)
+	}
+
+	log.Info().Int("count", len(templates)).Msg("Fetched SNMPv2 polling templates")
+	return templates, nil
+}
+
+// GetSNMPv3PollingTemplates fetches SNMPv3 polling templates
+func (c *Client) GetSNMPv3PollingTemplates() ([]SNMPv3PollingTemplate, error) {
+	query := `query getSNMPv3PollingTemplatesForCompany($companyId: String!) {
+		getSNMPv3PollingTemplatesForCompany(companyId: $companyId) {
+			_id
+			companyId
+			snmpv3TemplateId
+			name
+			description
+			frequency
+			timeout
+			retries
+			pollingFrequency {
+				days
+				hours
+				minutes
+				seconds
+			}
+			downtimeTrigger {
+				days
+				hours
+				minutes
+				seconds
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["getSNMPv3PollingTemplatesForCompany"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	templates := make([]SNMPv3PollingTemplate, 0, len(data))
+	for _, item := range data {
+		jsonData, _ := json.Marshal(item)
+		var template SNMPv3PollingTemplate
+		if err := json.Unmarshal(jsonData, &template); err != nil {
+			log.Warn().Err(err).Msg("Failed to parse SNMPv3 polling template")
+			continue
+		}
+		templates = append(templates, template)
+	}
+
+	log.Info().Int("count", len(templates)).Msg("Fetched SNMPv3 polling templates")
 	return templates, nil
 }
 
