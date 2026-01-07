@@ -470,15 +470,11 @@
 
                 <div class="settings-info">
                     <strong>Connect to ThothOS</strong> to enable centralized management, IPAM synchronization, and monitoring configuration.
-                    Get your API key from the ThothOS dashboard under Network Administration > Proxy.
+                    Get your API key from the <a href="https://technologiesunlimited.net" target="_blank" style="color: var(--accent);">ThothOS dashboard</a> under Network Administration &gt; Proxy.
                 </div>
 
                 <div class="config-form">
-                    <div class="form-group">
-                        <label for="thothos-url">ThothOS URL</label>
-                        <input type="url" id="thothos-url" placeholder="https://your-thothos-instance.com" />
-                        <span class="hint">The base URL of your ThothOS instance</span>
-                    </div>
+                    <input type="hidden" id="thothos-url" value="https://technologiesunlimited.net" />
 
                     <div class="form-group">
                         <label for="thothos-api-key">API Key</label>
@@ -619,9 +615,7 @@
 
                 // Load ThothOS config
                 if (data.thothos) {
-                    document.getElementById('thothos-url').value = data.thothos.url || '';
                     document.getElementById('proxy-name').value = data.thothos.proxyName || '';
-
                     updateConnectionStatus(data.thothos);
                 }
             } catch (error) {
@@ -636,8 +630,8 @@
             const detail = document.getElementById('status-detail');
             const btnConnect = document.getElementById('btn-connect');
             const btnDisconnect = document.getElementById('btn-disconnect');
-            const urlInput = document.getElementById('thothos-url');
             const apiKeyInput = document.getElementById('thothos-api-key');
+            const proxyNameInput = document.getElementById('proxy-name');
 
             if (thothos.isConnected) {
                 isConnected = true;
@@ -646,9 +640,9 @@
                 detail.textContent = `Company ID: ${thothos.companyId || 'N/A'} | Proxy ID: ${thothos.proxyId || 'Registering...'}`;
                 btnConnect.style.display = 'none';
                 btnDisconnect.style.display = 'block';
-                urlInput.disabled = true;
                 apiKeyInput.disabled = true;
                 apiKeyInput.value = '••••••••••••••••••••';
+                proxyNameInput.disabled = true;
             } else if (thothos.isStandalone) {
                 isConnected = false;
                 indicator.className = 'status-indicator standalone';
@@ -656,17 +650,17 @@
                 detail.textContent = 'Running without ThothOS integration.';
                 btnConnect.style.display = 'block';
                 btnDisconnect.style.display = 'none';
-                urlInput.disabled = false;
                 apiKeyInput.disabled = false;
+                proxyNameInput.disabled = false;
             } else {
                 isConnected = false;
                 indicator.className = 'status-indicator disconnected';
                 title.textContent = 'Not Connected';
-                detail.textContent = 'Configure your ThothOS connection below.';
+                detail.textContent = 'Enter your API key below to connect.';
                 btnConnect.style.display = 'block';
                 btnDisconnect.style.display = 'none';
-                urlInput.disabled = false;
                 apiKeyInput.disabled = false;
+                proxyNameInput.disabled = false;
             }
         }
 
