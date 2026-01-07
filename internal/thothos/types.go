@@ -33,67 +33,155 @@ type ProxyConfig struct {
 	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
-// ICMPMonitoringTemplate from ThothOS
+// ================================
+// Time Interval for polling configurations
+// ================================
+
+// TimeInterval represents a time duration broken into components
+type TimeInterval struct {
+	Days    int `json:"days"`
+	Hours   int `json:"hours"`
+	Minutes int `json:"minutes"`
+	Seconds int `json:"seconds"`
+}
+
+// ================================
+// ICMP Types from ThothOS
+// ================================
+
+// ICMPMonitoringTemplate from ThothOS (threshold configuration)
 type ICMPMonitoringTemplate struct {
-	ID          string `json:"_id"`
-	CompanyID   string `json:"companyId"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Interval    int    `json:"interval"`    // seconds between pings
-	Timeout     int    `json:"timeout"`     // milliseconds
-	PacketSize  int    `json:"packetSize"`  // bytes
-	PacketCount int    `json:"packetCount"` // number of packets per poll
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	ID                      string   `json:"_id"`
+	CompanyID               string   `json:"companyId"`
+	TemplateName            string   `json:"templateName"`
+	TemplateDescription     string   `json:"templateDescription"`
+	ICMPLossThreshold       float64  `json:"icmpLossThreshold"`
+	ICMPLatencyThreshold    float64  `json:"icmpLatencyThreshold"`
+	ManufacturerID          string   `json:"manufacturerId,omitempty"`
+	ModelNameID             string   `json:"modelNameId,omitempty"`
+	ProductID               string   `json:"productId,omitempty"`
+	StockIDs                []string `json:"stockIds,omitempty"`
+	NetworkInventoryIDs     []string `json:"networkInventoryIds,omitempty"`
+	LinkedPollingTemplateID string   `json:"linkedPollingTemplateId,omitempty"`
 }
 
-// ICMPPollingTemplate from ThothOS
+// ICMPPollingTemplate from ThothOS (polling frequency configuration)
 type ICMPPollingTemplate struct {
-	ID                   string `json:"_id"`
-	CompanyID            string `json:"companyId"`
-	Name                 string `json:"name"`
-	Description          string `json:"description"`
-	MonitoringTemplateID string `json:"monitoringTemplateId"`
-	Enabled              bool   `json:"enabled"`
-	Schedule             string `json:"schedule"` // cron expression or interval
-	CreatedAt            string `json:"createdAt"`
-	UpdatedAt            string `json:"updatedAt"`
+	ID               string       `json:"_id"`
+	CompanyID        string       `json:"companyId"`
+	ICMPTemplateID   string       `json:"icmpTemplateId"`
+	Name             string       `json:"name"`
+	Description      string       `json:"description"`
+	Frequency        int          `json:"frequency"`
+	Timeout          int          `json:"timeout"`
+	Retries          int          `json:"retries"`
+	PollingFrequency TimeInterval `json:"pollingFrequency"`
+	DowntimeTrigger  TimeInterval `json:"downtimeTrigger"`
 }
 
-// SNMPv2Template from ThothOS
+// ================================
+// SNMP Types from ThothOS
+// ================================
+
+// OID from ThothOS
+type OID struct {
+	ID             string `json:"_id"`
+	CompanyID      string `json:"companyId"`
+	OIDName        string `json:"oidName"`
+	OID            string `json:"oid"`
+	Description    string `json:"description"`
+	ManufacturerID string `json:"manufacturerId,omitempty"`
+	ModelID        string `json:"modelId,omitempty"`
+	ProductID      string `json:"productId,omitempty"`
+}
+
+// SNMPv2Community from ThothOS (community settings)
+type SNMPv2Community struct {
+	ID             string `json:"_id"`
+	CompanyID      string `json:"companyId"`
+	CommunityName  string `json:"communityName"`
+	ReadCommunity  string `json:"readCommunity"`
+	WriteCommunity string `json:"writeCommunity"`
+	Description    string `json:"description"`
+	ManufacturerID string `json:"manufacturerId,omitempty"`
+	ModelID        string `json:"modelId,omitempty"`
+	ProductID      string `json:"productId,omitempty"`
+}
+
+// SNMPv3Community from ThothOS (v3 security settings)
+type SNMPv3Community struct {
+	ID                 string `json:"_id"`
+	CompanyID          string `json:"companyId"`
+	CommunityName      string `json:"communityName"`
+	UserName           string `json:"userName"`
+	AuthMethod         string `json:"authMethod"`
+	AuthPassword       string `json:"authPassword"`
+	EncryptionMethod   string `json:"encryptionMethod"`
+	EncryptionPassword string `json:"encryptionPassword"`
+	Description        string `json:"description"`
+	ManufacturerID     string `json:"manufacturerId,omitempty"`
+	ModelID            string `json:"modelId,omitempty"`
+	ProductID          string `json:"productId,omitempty"`
+}
+
+// SNMPv2Template from ThothOS (monitoring template)
 type SNMPv2Template struct {
-	ID          string   `json:"_id"`
-	CompanyID   string   `json:"companyId"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Community   string   `json:"community"`
-	Port        int      `json:"port"`
-	Timeout     int      `json:"timeout"` // milliseconds
-	Retries     int      `json:"retries"`
-	OIDList     []string `json:"oidList"`
-	CreatedAt   string   `json:"createdAt"`
-	UpdatedAt   string   `json:"updatedAt"`
+	ID                      string   `json:"_id"`
+	CompanyID               string   `json:"companyId"`
+	TemplateName            string   `json:"templateName"`
+	Description             string   `json:"description"`
+	SNMPv2SettingID         string   `json:"snmpv2SettingId"`
+	OIDIDs                  []string `json:"oidIds,omitempty"`
+	ManufacturerID          string   `json:"manufacturerId,omitempty"`
+	ModelNameID             string   `json:"modelNameId,omitempty"`
+	ProductID               string   `json:"productId,omitempty"`
+	StockIDs                []string `json:"stockIds,omitempty"`
+	NetworkInventoryIDs     []string `json:"networkInventoryIds,omitempty"`
+	LinkedPollingTemplateID string   `json:"linkedPollingTemplateId,omitempty"`
 }
 
-// SNMPv3Template from ThothOS
+// SNMPv3Template from ThothOS (monitoring template)
 type SNMPv3Template struct {
-	ID                 string   `json:"_id"`
-	CompanyID          string   `json:"companyId"`
-	Name               string   `json:"name"`
-	Description        string   `json:"description"`
-	SecurityLevel      string   `json:"securityLevel"` // noAuthNoPriv, authNoPriv, authPriv
-	AuthProtocol       string   `json:"authProtocol"`  // MD5, SHA
-	AuthPassword       string   `json:"authPassword"`
-	PrivProtocol       string   `json:"privProtocol"` // DES, AES
-	PrivPassword       string   `json:"privPassword"`
-	ContextName        string   `json:"contextName"`
-	SecurityName       string   `json:"securityName"`
-	Port               int      `json:"port"`
-	Timeout            int      `json:"timeout"` // milliseconds
-	Retries            int      `json:"retries"`
-	OIDList            []string `json:"oidList"`
-	CreatedAt          string   `json:"createdAt"`
-	UpdatedAt          string   `json:"updatedAt"`
+	ID                      string   `json:"_id"`
+	CompanyID               string   `json:"companyId"`
+	TemplateName            string   `json:"templateName"`
+	Description             string   `json:"description"`
+	SNMPv3SettingID         string   `json:"snmpv3SettingId"`
+	OIDIDs                  []string `json:"oidIds,omitempty"`
+	ManufacturerID          string   `json:"manufacturerId,omitempty"`
+	ModelNameID             string   `json:"modelNameId,omitempty"`
+	ProductID               string   `json:"productId,omitempty"`
+	StockIDs                []string `json:"stockIds,omitempty"`
+	NetworkInventoryIDs     []string `json:"networkInventoryIds,omitempty"`
+	LinkedPollingTemplateID string   `json:"linkedPollingTemplateId,omitempty"`
+}
+
+// SNMPv2PollingTemplate from ThothOS
+type SNMPv2PollingTemplate struct {
+	ID               string       `json:"_id"`
+	CompanyID        string       `json:"companyId"`
+	SNMPv2TemplateID string       `json:"snmpv2TemplateId"`
+	Name             string       `json:"name"`
+	Description      string       `json:"description"`
+	Frequency        int          `json:"frequency"`
+	Timeout          int          `json:"timeout"`
+	Retries          int          `json:"retries"`
+	PollingFrequency TimeInterval `json:"pollingFrequency"`
+	DowntimeTrigger  TimeInterval `json:"downtimeTrigger"`
+}
+
+// SNMPv3PollingTemplate from ThothOS
+type SNMPv3PollingTemplate struct {
+	ID               string       `json:"_id"`
+	CompanyID        string       `json:"companyId"`
+	SNMPv3TemplateID string       `json:"snmpv3TemplateId"`
+	Name             string       `json:"name"`
+	Description      string       `json:"description"`
+	Frequency        int          `json:"frequency"`
+	Timeout          int          `json:"timeout"`
+	Retries          int          `json:"retries"`
+	PollingFrequency TimeInterval `json:"pollingFrequency"`
+	DowntimeTrigger  TimeInterval `json:"downtimeTrigger"`
 }
 
 // WebhookPayload is the payload received from ThothOS webhooks
