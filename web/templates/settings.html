@@ -436,6 +436,8 @@
                 <a href="/devices">Devices</a>
                 <a href="/alerts">Alerts</a>
                 <a href="/nodes">Nodes</a>
+                <a href="/ipam">IPAM</a>
+                <a href="/monitor">Monitor</a>
                 <a href="/visualize">Visualize</a>
                 <a href="/tools">Tools</a>
                 <a href="/reports">Reports</a>
@@ -628,16 +630,22 @@
             const indicator = document.getElementById('status-indicator');
             const title = document.getElementById('status-title');
             const detail = document.getElementById('status-detail');
+            const btnTest = document.getElementById('btn-test');
             const btnConnect = document.getElementById('btn-connect');
             const btnDisconnect = document.getElementById('btn-disconnect');
             const apiKeyInput = document.getElementById('thothos-api-key');
             const proxyNameInput = document.getElementById('proxy-name');
+            const testResult = document.getElementById('test-result');
+
+            // Hide test result when status changes
+            testResult.style.display = 'none';
 
             if (thothos.isConnected) {
                 isConnected = true;
                 indicator.className = 'status-indicator connected';
                 title.textContent = 'Connected to ThothOS';
                 detail.textContent = `Company ID: ${thothos.companyId || 'N/A'} | Proxy ID: ${thothos.proxyId || 'Registering...'}`;
+                btnTest.style.display = 'none';
                 btnConnect.style.display = 'none';
                 btnDisconnect.style.display = 'block';
                 apiKeyInput.disabled = true;
@@ -648,6 +656,7 @@
                 indicator.className = 'status-indicator standalone';
                 title.textContent = 'Standalone Mode';
                 detail.textContent = 'Running without ThothOS integration.';
+                btnTest.style.display = 'block';
                 btnConnect.style.display = 'block';
                 btnDisconnect.style.display = 'none';
                 apiKeyInput.disabled = false;
@@ -657,6 +666,7 @@
                 indicator.className = 'status-indicator disconnected';
                 title.textContent = 'Not Connected';
                 detail.textContent = 'Enter your API key below to connect.';
+                btnTest.style.display = 'block';
                 btnConnect.style.display = 'block';
                 btnDisconnect.style.display = 'none';
                 apiKeyInput.disabled = false;
@@ -701,9 +711,11 @@
                     testResult.className = 'test-result error';
                     testResult.textContent = `✗ Connection failed: ${data.error}`;
                 }
+                testResult.style.display = 'block';
             } catch (error) {
                 testResult.className = 'test-result error';
                 testResult.textContent = `✗ Connection failed: ${error.message}`;
+                testResult.style.display = 'block';
             } finally {
                 btnTest.disabled = false;
                 btnTest.textContent = 'Test Connection';

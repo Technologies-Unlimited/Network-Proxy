@@ -23,6 +23,12 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	// Register settings routes BEFORE auth middleware (needed for UI theming)
 	RegisterSettingsRoutes(v1, srv)
 
+	// Register IPAM routes BEFORE auth middleware (fetches from ThothOS using saved config)
+	RegisterIPAMRoutes(v1, srv)
+
+	// Register Monitor routes BEFORE auth middleware (fetches from ThothOS using saved config)
+	RegisterMonitorRoutes(v1, srv)
+
 	// Apply auth middleware to all other API routes
 	v1.Use(middleware.RequireAuth())
 	{
@@ -206,6 +212,8 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	router.GET("/tools", toolsPage)
 	router.GET("/reports", reportsPage)
 	router.GET("/settings", settingsPage)
+	router.GET("/ipam", ipamPage)
+	router.GET("/monitor", monitorPage)
 }
 
 // healthCheck is a simple health check endpoint
