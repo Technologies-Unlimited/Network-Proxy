@@ -9,7 +9,7 @@
     <script src="/static/theme.js"></script>
     <style>
         .settings-container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
         }
 
@@ -192,10 +192,7 @@
             background-clip: text;
         }
 
-        .success-message {
-            background: rgba(76, 175, 80, 0.1);
-            border: 1px solid var(--success);
-            color: var(--success);
+        .success-message, .error-message {
             padding: 12px 20px;
             border-radius: 6px;
             margin-bottom: 20px;
@@ -204,7 +201,19 @@
             gap: 10px;
         }
 
-        .success-message.show {
+        .success-message {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+        }
+
+        .error-message {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid #f44336;
+            color: #f44336;
+        }
+
+        .success-message.show, .error-message.show {
             display: flex;
             animation: slideIn 0.3s ease;
         }
@@ -233,6 +242,189 @@
         .settings-info strong {
             color: var(--accent);
         }
+
+        /* ThothOS Configuration Styles */
+        .config-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-weight: 500;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .form-group input {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.15);
+        }
+
+        .form-group input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+
+        .form-group .hint {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            opacity: 0.8;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--accent-text);
+        }
+
+        .btn-primary:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-danger {
+            background: rgba(244, 67, 54, 0.1);
+            color: #f44336;
+            border: 1px solid rgba(244, 67, 54, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: rgba(244, 67, 54, 0.2);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Connection Status */
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .status-indicator.connected {
+            background: #4caf50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .status-indicator.disconnected {
+            background: #f44336;
+            box-shadow: 0 0 10px rgba(244, 67, 54, 0.5);
+        }
+
+        .status-indicator.standalone {
+            background: #ff9800;
+            box-shadow: 0 0 10px rgba(255, 152, 0, 0.5);
+        }
+
+        .status-text {
+            flex: 1;
+        }
+
+        .status-text .status-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .status-text .status-detail {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Test Result */
+        .test-result {
+            margin-top: 15px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .test-result.success {
+            display: block;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            color: #4caf50;
+        }
+
+        .test-result.error {
+            display: block;
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            color: #f44336;
+        }
+
+        .test-result .permissions {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .test-result .permissions span {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin: 2px;
+            font-size: 0.8rem;
+        }
     </style>
 </head>
 <body>
@@ -259,6 +451,64 @@
                 <span id="success-text">Settings saved successfully!</span>
             </div>
 
+            <div id="error-message" class="error-message">
+                <span>✗</span>
+                <span id="error-text">An error occurred.</span>
+            </div>
+
+            <!-- ThothOS Configuration Section -->
+            <div class="settings-section">
+                <h3>ThothOS Integration</h3>
+
+                <div id="connection-status" class="connection-status">
+                    <div id="status-indicator" class="status-indicator disconnected"></div>
+                    <div class="status-text">
+                        <div id="status-title" class="status-title">Not Connected</div>
+                        <div id="status-detail" class="status-detail">Configure your ThothOS connection below.</div>
+                    </div>
+                </div>
+
+                <div class="settings-info">
+                    <strong>Connect to ThothOS</strong> to enable centralized management, IPAM synchronization, and monitoring configuration.
+                    Get your API key from the ThothOS dashboard under Network Administration > Proxy.
+                </div>
+
+                <div class="config-form">
+                    <div class="form-group">
+                        <label for="thothos-url">ThothOS URL</label>
+                        <input type="url" id="thothos-url" placeholder="https://your-thothos-instance.com" />
+                        <span class="hint">The base URL of your ThothOS instance</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="thothos-api-key">API Key</label>
+                        <input type="password" id="thothos-api-key" placeholder="tk_xxxxxxxxxxxxxxxxxxxxxxxx" />
+                        <span class="hint">Your API key from ThothOS (starts with tk_)</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="proxy-name">Proxy Name (Optional)</label>
+                        <input type="text" id="proxy-name" placeholder="Network-Monitor-Server" />
+                        <span class="hint">A friendly name for this proxy instance. Leave blank to use hostname.</span>
+                    </div>
+
+                    <div id="test-result" class="test-result"></div>
+
+                    <div class="button-group">
+                        <button id="btn-test" class="btn btn-secondary" onclick="testConnection()">
+                            Test Connection
+                        </button>
+                        <button id="btn-connect" class="btn btn-primary" onclick="connectToThothOS()">
+                            Connect
+                        </button>
+                        <button id="btn-disconnect" class="btn btn-danger" onclick="disconnectFromThothOS()" style="display: none;">
+                            Disconnect
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Section -->
             <div class="settings-section">
                 <h3>Theme</h3>
                 <div class="settings-info">
@@ -354,17 +604,188 @@
 
     <script>
         let currentTheme = 'dark';
+        let isConnected = false;
 
-        // Load current theme on page load
-        async function loadCurrentTheme() {
+        // Load settings on page load
+        async function loadSettings() {
             try {
-                const response = await fetch('/api/v1/settings/theme');
+                const response = await fetch('/api/v1/settings');
                 const data = await response.json();
+
+                // Load theme
                 currentTheme = data.theme || 'dark';
                 updateThemeSelection(currentTheme);
                 applyTheme(currentTheme);
+
+                // Load ThothOS config
+                if (data.thothos) {
+                    document.getElementById('thothos-url').value = data.thothos.url || '';
+                    document.getElementById('proxy-name').value = data.thothos.proxyName || '';
+
+                    updateConnectionStatus(data.thothos);
+                }
             } catch (error) {
-                console.error('Failed to load theme:', error);
+                console.error('Failed to load settings:', error);
+            }
+        }
+
+        // Update connection status display
+        function updateConnectionStatus(thothos) {
+            const indicator = document.getElementById('status-indicator');
+            const title = document.getElementById('status-title');
+            const detail = document.getElementById('status-detail');
+            const btnConnect = document.getElementById('btn-connect');
+            const btnDisconnect = document.getElementById('btn-disconnect');
+            const urlInput = document.getElementById('thothos-url');
+            const apiKeyInput = document.getElementById('thothos-api-key');
+
+            if (thothos.isConnected) {
+                isConnected = true;
+                indicator.className = 'status-indicator connected';
+                title.textContent = 'Connected to ThothOS';
+                detail.textContent = `Company ID: ${thothos.companyId || 'N/A'} | Proxy ID: ${thothos.proxyId || 'Registering...'}`;
+                btnConnect.style.display = 'none';
+                btnDisconnect.style.display = 'block';
+                urlInput.disabled = true;
+                apiKeyInput.disabled = true;
+                apiKeyInput.value = '••••••••••••••••••••';
+            } else if (thothos.isStandalone) {
+                isConnected = false;
+                indicator.className = 'status-indicator standalone';
+                title.textContent = 'Standalone Mode';
+                detail.textContent = 'Running without ThothOS integration.';
+                btnConnect.style.display = 'block';
+                btnDisconnect.style.display = 'none';
+                urlInput.disabled = false;
+                apiKeyInput.disabled = false;
+            } else {
+                isConnected = false;
+                indicator.className = 'status-indicator disconnected';
+                title.textContent = 'Not Connected';
+                detail.textContent = 'Configure your ThothOS connection below.';
+                btnConnect.style.display = 'block';
+                btnDisconnect.style.display = 'none';
+                urlInput.disabled = false;
+                apiKeyInput.disabled = false;
+            }
+        }
+
+        // Test ThothOS connection
+        async function testConnection() {
+            const url = document.getElementById('thothos-url').value.trim();
+            const apiKey = document.getElementById('thothos-api-key').value.trim();
+            const testResult = document.getElementById('test-result');
+            const btnTest = document.getElementById('btn-test');
+
+            if (!url || !apiKey) {
+                showError('Please enter both URL and API Key');
+                return;
+            }
+
+            btnTest.disabled = true;
+            btnTest.textContent = 'Testing...';
+            testResult.className = 'test-result';
+            testResult.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/v1/settings/thothos/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, apiKey })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    testResult.className = 'test-result success';
+                    let html = `✓ Connection successful! Company ID: ${data.companyId}`;
+                    if (data.permissions && data.permissions.length > 0) {
+                        html += `<div class="permissions">Permissions: ${data.permissions.map(p => `<span>${p}</span>`).join('')}</div>`;
+                    }
+                    testResult.innerHTML = html;
+                } else {
+                    testResult.className = 'test-result error';
+                    testResult.textContent = `✗ Connection failed: ${data.error}`;
+                }
+            } catch (error) {
+                testResult.className = 'test-result error';
+                testResult.textContent = `✗ Connection failed: ${error.message}`;
+            } finally {
+                btnTest.disabled = false;
+                btnTest.textContent = 'Test Connection';
+            }
+        }
+
+        // Connect to ThothOS
+        async function connectToThothOS() {
+            const url = document.getElementById('thothos-url').value.trim();
+            const apiKey = document.getElementById('thothos-api-key').value.trim();
+            const proxyName = document.getElementById('proxy-name').value.trim();
+            const btnConnect = document.getElementById('btn-connect');
+
+            if (!url || !apiKey) {
+                showError('Please enter both URL and API Key');
+                return;
+            }
+
+            btnConnect.disabled = true;
+            btnConnect.textContent = 'Connecting...';
+
+            try {
+                const response = await fetch('/api/v1/settings/thothos/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, apiKey, proxyName })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess('Connected to ThothOS successfully!');
+                    // Reload settings to update status
+                    setTimeout(loadSettings, 500);
+                } else {
+                    showError(data.error || 'Failed to connect');
+                }
+            } catch (error) {
+                showError('Failed to connect: ' + error.message);
+            } finally {
+                btnConnect.disabled = false;
+                btnConnect.textContent = 'Connect';
+            }
+        }
+
+        // Disconnect from ThothOS
+        async function disconnectFromThothOS() {
+            if (!confirm('Are you sure you want to disconnect from ThothOS? The proxy will run in standalone mode.')) {
+                return;
+            }
+
+            const btnDisconnect = document.getElementById('btn-disconnect');
+            btnDisconnect.disabled = true;
+            btnDisconnect.textContent = 'Disconnecting...';
+
+            try {
+                const response = await fetch('/api/v1/settings/thothos/disconnect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess('Disconnected from ThothOS. Running in standalone mode.');
+                    document.getElementById('thothos-api-key').value = '';
+                    // Reload settings to update status
+                    setTimeout(loadSettings, 500);
+                } else {
+                    showError(data.error || 'Failed to disconnect');
+                }
+            } catch (error) {
+                showError('Failed to disconnect: ' + error.message);
+            } finally {
+                btnDisconnect.disabled = false;
+                btnDisconnect.textContent = 'Disconnect';
             }
         }
 
@@ -445,16 +866,34 @@
         function showSuccess(message) {
             const successEl = document.getElementById('success-message');
             const textEl = document.getElementById('success-text');
+            const errorEl = document.getElementById('error-message');
+
+            errorEl.classList.remove('show');
             textEl.textContent = message;
             successEl.classList.add('show');
 
             setTimeout(() => {
                 successEl.classList.remove('show');
-            }, 3000);
+            }, 4000);
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorEl = document.getElementById('error-message');
+            const textEl = document.getElementById('error-text');
+            const successEl = document.getElementById('success-message');
+
+            successEl.classList.remove('show');
+            textEl.textContent = message;
+            errorEl.classList.add('show');
+
+            setTimeout(() => {
+                errorEl.classList.remove('show');
+            }, 5000);
         }
 
         // Initialize
-        loadCurrentTheme();
+        loadSettings();
     </script>
 </body>
 </html>

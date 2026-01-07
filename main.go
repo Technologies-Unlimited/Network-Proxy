@@ -23,7 +23,6 @@ import (
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -140,11 +139,6 @@ func main() {
 func runServer(cmd *cobra.Command, args []string) {
 	printBanner()
 
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Warn().Msg("No .env file found, using environment variables")
-	}
-
 	// Initialize database
 	db, err := database.Initialize()
 	if err != nil {
@@ -154,41 +148,42 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize server
 	srv := server.New(db)
 
-	// Get configuration from environment
+	// Get port from environment (only env var we still use)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = defaultPort
 	}
 
-	// First, try to load config from database (set via login UI)
-	savedConfig, configErr := api.LoadConfigOnStartup(db)
-	if configErr != nil {
-		log.Debug().Err(configErr).Msg("No saved ThothOS config found, using environment variables")
-	}
+	// Load ThothOS configuration from database settings
+	thothosConfig, _ := models.GetThothOSConfig(db)
+	thothosURL := thothosConfig.URL
+	thothosAPIKey := thothosConfig.APIKey
+	proxyName := thothosConfig.ProxyName
 
-	// Fall back to environment variables if no saved config
-	thothosURL := os.Getenv("THOTHOS_URL")
-	thothosAPIKey := os.Getenv("THOTHOS_API_KEY")
-	callbackURL := os.Getenv("PROXY_CALLBACK_URL")
-	proxyName := os.Getenv("PROXY_NAME")
-
-	// Use saved config if available
-	if savedConfig != nil {
-		log.Info().
-			Str("companyId", savedConfig.CompanyID).
-			Str("userName", savedConfig.UserName).
-			Msg("Loaded saved ThothOS configuration from database")
-		thothosURL = savedConfig.ThothOSURL
-		thothosAPIKey = savedConfig.APIKey
-		if savedConfig.ProxyName != "" {
-			proxyName = savedConfig.ProxyName
+	// Also check legacy ProxyConfig table (from login flow)
+	if thothosURL == "" || thothosAPIKey == "" {
+		savedConfig, configErr := api.LoadConfigOnStartup(db)
+		if configErr == nil && savedConfig != nil {
+			log.Info().
+				Str("companyId", savedConfig.CompanyID).
+				Str("userName", savedConfig.UserName).
+				Msg("Loaded ThothOS configuration from login session")
+			thothosURL = savedConfig.ThothOSURL
+			thothosAPIKey = savedConfig.APIKey
+			if savedConfig.ProxyName != "" {
+				proxyName = savedConfig.ProxyName
+			}
 		}
 	}
 
+	// Default proxy name to hostname if not set
 	if proxyName == "" {
 		hostname, _ := os.Hostname()
 		proxyName = fmt.Sprintf("Network-Monitor-%s", hostname)
 	}
+
+	// Get callback URL from environment or auto-detect
+	callbackURL := os.Getenv("PROXY_CALLBACK_URL")
 
 	// Initialize ThothOS connection if configured
 	var thothosClient *thothos.Client
@@ -271,7 +266,7 @@ func runServer(cmd *cobra.Command, args []string) {
 		}
 	} else {
 		log.Warn().Msg("ThothOS not configured - running in standalone mode")
-		log.Warn().Msg("Set THOTHOS_URL and THOTHOS_API_KEY to enable ThothOS integration")
+		log.Warn().Msg("Configure ThothOS at http://localhost:" + port + "/settings to enable integration")
 		middleware.SetStandaloneMode(true)
 	}
 

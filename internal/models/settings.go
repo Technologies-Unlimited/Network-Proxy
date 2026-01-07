@@ -74,3 +74,120 @@ func GetTheme(db *gorm.DB) ThemeType {
 func SetTheme(db *gorm.DB, theme ThemeType) error {
 	return SetSetting(db, "theme", string(theme))
 }
+
+// ThothOS Configuration Settings Keys
+const (
+	SettingThothOSURL    = "thothos_url"
+	SettingThothOSAPIKey = "thothos_api_key"
+	SettingProxyName     = "proxy_name"
+)
+
+// ThothOSConfig represents the ThothOS connection settings
+type ThothOSConfig struct {
+	URL       string `json:"url"`
+	APIKey    string `json:"apiKey"`
+	ProxyName string `json:"proxyName"`
+}
+
+// GetThothOSConfig retrieves all ThothOS configuration from settings
+func GetThothOSConfig(db *gorm.DB) (*ThothOSConfig, error) {
+	config := &ThothOSConfig{}
+
+	url, err := GetSetting(db, SettingThothOSURL)
+	if err == nil {
+		config.URL = url
+	}
+
+	apiKey, err := GetSetting(db, SettingThothOSAPIKey)
+	if err == nil {
+		config.APIKey = apiKey
+	}
+
+	proxyName, err := GetSetting(db, SettingProxyName)
+	if err == nil {
+		config.ProxyName = proxyName
+	}
+
+	return config, nil
+}
+
+// SetThothOSConfig saves all ThothOS configuration to settings
+func SetThothOSConfig(db *gorm.DB, config *ThothOSConfig) error {
+	if config.URL != "" {
+		if err := SetSetting(db, SettingThothOSURL, config.URL); err != nil {
+			return err
+		}
+	}
+
+	if config.APIKey != "" {
+		if err := SetSetting(db, SettingThothOSAPIKey, config.APIKey); err != nil {
+			return err
+		}
+	}
+
+	if config.ProxyName != "" {
+		if err := SetSetting(db, SettingProxyName, config.ProxyName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetThothOSURL retrieves the ThothOS URL setting
+func GetThothOSURL(db *gorm.DB) string {
+	url, err := GetSetting(db, SettingThothOSURL)
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
+// SetThothOSURL sets the ThothOS URL setting
+func SetThothOSURL(db *gorm.DB, url string) error {
+	return SetSetting(db, SettingThothOSURL, url)
+}
+
+// GetThothOSAPIKey retrieves the ThothOS API key setting
+func GetThothOSAPIKey(db *gorm.DB) string {
+	apiKey, err := GetSetting(db, SettingThothOSAPIKey)
+	if err != nil {
+		return ""
+	}
+	return apiKey
+}
+
+// SetThothOSAPIKey sets the ThothOS API key setting
+func SetThothOSAPIKey(db *gorm.DB, apiKey string) error {
+	return SetSetting(db, SettingThothOSAPIKey, apiKey)
+}
+
+// GetProxyName retrieves the proxy name setting
+func GetProxyName(db *gorm.DB) string {
+	name, err := GetSetting(db, SettingProxyName)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+// SetProxyName sets the proxy name setting
+func SetProxyName(db *gorm.DB, name string) error {
+	return SetSetting(db, SettingProxyName, name)
+}
+
+// ClearThothOSConfig removes all ThothOS configuration from settings
+func ClearThothOSConfig(db *gorm.DB) error {
+	keys := []string{SettingThothOSURL, SettingThothOSAPIKey, SettingProxyName}
+	for _, key := range keys {
+		db.Where("key = ?", key).Delete(&Settings{})
+	}
+	return nil
+}
+
+// HasThothOSConfig checks if ThothOS is configured in settings
+func HasThothOSConfig(db *gorm.DB) bool {
+	url := GetThothOSURL(db)
+	apiKey := GetThothOSAPIKey(db)
+	return url != "" && apiKey != ""
+}
