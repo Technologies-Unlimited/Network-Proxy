@@ -389,7 +389,7 @@ func updateSNMPv2Template(template thothos.SNMPv2Template) {
 
 	log.Info().
 		Str("templateId", template.ID).
-		Str("name", template.Name).
+		Str("name", template.TemplateName).
 		Bool("isNew", !found).
 		Msg("Updated SNMPv2 template in cache")
 }
@@ -413,7 +413,7 @@ func updateSNMPv3Template(template thothos.SNMPv3Template) {
 
 	log.Info().
 		Str("templateId", template.ID).
-		Str("name", template.Name).
+		Str("name", template.TemplateName).
 		Bool("isNew", !found).
 		Msg("Updated SNMPv3 template in cache")
 }
@@ -515,7 +515,7 @@ func updateICMPMonitoringTemplate(template thothos.ICMPMonitoringTemplate) {
 
 	log.Info().
 		Str("templateId", template.ID).
-		Str("name", template.Name).
+		Str("name", template.TemplateName).
 		Bool("isNew", !found).
 		Msg("Updated ICMP monitoring template in cache")
 }
