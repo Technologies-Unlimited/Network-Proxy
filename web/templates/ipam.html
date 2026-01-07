@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPAM - Network Monitor</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
+    <style>
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border);
+        }
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .metrics-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .metric-card {
+            flex: 1 1 120px;
+            min-width: 120px;
+            text-align: center;
+            padding: 16px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .metric-card .value {
+            font-size: 1.75rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .metric-card .label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .metric-card.supernets .value { color: #D4AF37; }
+        .metric-card.subnets .value { color: #4ECDC4; }
+        .metric-card.pools .value { color: #64B5F6; }
+        .metric-card.vlans .value { color: #AB47BC; }
+        .metric-card.used .value { color: #EF4444; }
+        .metric-card.available .value { color: #10B981; }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .ipam-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        .ipam-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 4px 20px rgba(74, 158, 255, 0.15);
+        }
+        .ipam-card.supernet { border-left: 3px solid #D4AF37; }
+        .ipam-card.subnet { border-left: 3px solid #4ECDC4; }
+        .ipam-card.pool { border-left: 3px solid #64B5F6; }
+        .ipam-card.vlan { border-left: 3px solid #AB47BC; }
+        .ipam-card.ip-used { border-left: 3px solid #EF4444; }
+        .ipam-card.ip-available { border-left: 3px solid #10B981; }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        .card-title.supernet { color: #D4AF37; }
+        .card-title.subnet { color: #4ECDC4; }
+        .card-title.pool { color: #64B5F6; }
+        .card-title.vlan { color: #AB47BC; }
+
+        .card-description {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+        .card-info {
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .info-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 1rem;
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        .info-value.supernet { color: #D4AF37; }
+        .info-value.subnet { color: #4ECDC4; }
+        .info-value.pool { color: #64B5F6; }
+
+        .ip-range {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .ip-range .start { color: #10B981; }
+        .ip-range .end { color: #EF4444; }
+
+        .hierarchy-badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .hierarchy-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+        .hierarchy-badge.supernet {
+            background: rgba(212, 175, 55, 0.15);
+            border: 1px solid rgba(212, 175, 55, 0.4);
+            color: #D4AF37;
+        }
+        .hierarchy-badge.subnet {
+            background: rgba(78, 205, 196, 0.15);
+            border: 1px solid rgba(78, 205, 196, 0.4);
+            color: #4ECDC4;
+        }
+        .hierarchy-badge.pool {
+            background: rgba(100, 181, 246, 0.15);
+            border: 1px solid rgba(100, 181, 246, 0.4);
+            color: #64B5F6;
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .status-badge.used {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #EF4444;
+        }
+        .status-badge.available {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #10B981;
+        }
+
+        .vlan-number {
+            padding: 4px 10px;
+            background: rgba(171, 71, 188, 0.2);
+            border: 1px solid rgba(171, 71, 188, 0.4);
+            border-radius: 4px;
+            color: #AB47BC;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        .section-title.supernet { color: #D4AF37; }
+        .section-title.subnet { color: #4ECDC4; }
+        .section-title.pool { color: #64B5F6; }
+        .section-title.vlan { color: #AB47BC; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 40px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px dashed var(--border);
+        }
+        .empty-state h3 {
+            color: var(--text-secondary);
+            font-size: 1.25rem;
+            margin-bottom: 12px;
+        }
+        .empty-state p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .connection-status.connected {
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .connection-status.disconnected {
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .status-dot.connected {
+            background: #10B981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+        }
+        .status-dot.disconnected {
+            background: #EF4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 60px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .sync-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sync-btn svg {
+            transition: transform 0.3s ease;
+        }
+        .sync-btn.syncing svg {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/nodes">Nodes</a>
+                <a href="/ipam" class="active">IPAM</a>
+                <a href="/monitor">Monitor</a>
+                <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>IP Address Management</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">
+                View network topology from ThothOS. Supernets, subnets, pools, VLANs, and IP address assignments.
+            </p>
+
+            <!-- Connection Status -->
+            <div id="connection-status" class="connection-status disconnected">
+                <div class="status-dot disconnected"></div>
+                <span id="connection-text">Checking ThothOS connection...</span>
+                <button id="sync-btn" class="btn btn-primary sync-btn" onclick="syncIPAMData()" style="margin-left: auto;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m0 0a9 9 0 0 1 9-9m-9 9a9 9 0 0 0 9 9"/>
+                    </svg>
+                    Sync from ThothOS
+                </button>
+            </div>
+
+            <!-- Metrics Summary -->
+            <div id="metrics-summary" class="metrics-summary" style="display: none;">
+                <div class="metric-card supernets">
+                    <div class="value" id="supernets-count">0</div>
+                    <div class="label">Supernets</div>
+                </div>
+                <div class="metric-card subnets">
+                    <div class="value" id="subnets-count">0</div>
+                    <div class="label">Subnets</div>
+                </div>
+                <div class="metric-card pools">
+                    <div class="value" id="pools-count">0</div>
+                    <div class="label">Pools</div>
+                </div>
+                <div class="metric-card vlans">
+                    <div class="value" id="vlans-count">0</div>
+                    <div class="label">VLANs</div>
+                </div>
+                <div class="metric-card">
+                    <div class="value" id="ips-count">0</div>
+                    <div class="label">Total IPs</div>
+                </div>
+                <div class="metric-card used">
+                    <div class="value" id="used-count">0</div>
+                    <div class="label">Used</div>
+                </div>
+                <div class="metric-card available">
+                    <div class="value" id="available-count">0</div>
+                    <div class="label">Available</div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('supernets')">Supernets</button>
+                <button class="tab" onclick="showTab('subnets')">Subnets</button>
+                <button class="tab" onclick="showTab('pools')">Pools</button>
+                <button class="tab" onclick="showTab('vlans')">VLANs</button>
+                <button class="tab" onclick="showTab('addresses')">IP Addresses</button>
+            </div>
+
+            <!-- Supernets Tab -->
+            <div id="supernets-tab" class="tab-content active">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title supernet">Supernets</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Top-level network address blocks</span>
+                    </div>
+                    <div id="supernets-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subnets Tab -->
+            <div id="subnets-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title subnet">Subnets</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Network segments within supernets</span>
+                    </div>
+                    <div id="subnets-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pools Tab -->
+            <div id="pools-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title pool">IP Address Pools</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Ranges of IP addresses for allocation</span>
+                    </div>
+                    <div id="pools-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VLANs Tab -->
+            <div id="vlans-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title vlan">VLANs</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Virtual LAN configurations</span>
+                    </div>
+                    <div id="vlans-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- IP Addresses Tab -->
+            <div id="addresses-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title">IP Addresses</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Individual IP address assignments</span>
+                    </div>
+                    <div id="addresses-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go</p>
+        </footer>
+    </div>
+
+    <script>
+        let ipamData = null;
+
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Update connection status UI
+        function updateConnectionStatus(connected, companyId) {
+            const statusEl = document.getElementById('connection-status');
+            const dotEl = statusEl.querySelector('.status-dot');
+            const textEl = document.getElementById('connection-text');
+
+            if (connected) {
+                statusEl.classList.remove('disconnected');
+                statusEl.classList.add('connected');
+                dotEl.classList.remove('disconnected');
+                dotEl.classList.add('connected');
+                textEl.textContent = 'Connected to ThothOS' + (companyId ? ` (Company: ...${companyId.slice(-4)})` : '');
+            } else {
+                statusEl.classList.remove('connected');
+                statusEl.classList.add('disconnected');
+                dotEl.classList.remove('connected');
+                dotEl.classList.add('disconnected');
+                textEl.textContent = 'Not connected to ThothOS. Configure in Settings.';
+            }
+        }
+
+        // Render supernets
+        function renderSupernets(supernets) {
+            const container = document.getElementById('supernets-content');
+            if (!supernets || supernets.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No supernets found</h3>
+                        <p>Create supernets in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = supernets.map(s => `
+                <div class="ipam-card supernet">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title supernet">${escapeHtml(s.name)}</div>
+                            ${s.description ? `<div class="card-description">${escapeHtml(s.description)}</div>` : ''}
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-label">Network Address</div>
+                        <div class="info-value supernet">${s.supernet?.address || ''}/${s.supernet?.mask || ''}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render subnets
+        function renderSubnets(subnets, supernets) {
+            const container = document.getElementById('subnets-content');
+            if (!subnets || subnets.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No subnets found</h3>
+                        <p>Create subnets in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create supernet lookup
+            const supernetMap = {};
+            if (supernets) {
+                supernets.forEach(s => {
+                    supernetMap[s._id] = s;
+                });
+            }
+
+            const html = subnets.map(s => {
+                const parentSupernet = supernetMap[s.supernetId];
+                return `
+                    <div class="ipam-card subnet">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title subnet">${escapeHtml(s.name)}</div>
+                                ${s.description ? `<div class="card-description">${escapeHtml(s.description)}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="card-info">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <div>
+                                    <div class="info-label">Subnet Address</div>
+                                    <div class="info-value subnet">${s.subnet?.address || ''}/${s.subnet?.mask || ''}</div>
+                                </div>
+                                <div>
+                                    <div class="info-label">Gateway</div>
+                                    <div class="info-value">${escapeHtml(s.gateway || '-')}</div>
+                                </div>
+                            </div>
+                            ${parentSupernet ? `
+                                <div style="padding-top: 8px; border-top: 1px solid var(--border);">
+                                    <div class="info-label">Parent Supernet</div>
+                                    <div style="color: #D4AF37; font-size: 0.9rem;">${parentSupernet.supernet?.address}/${parentSupernet.supernet?.mask} - ${escapeHtml(parentSupernet.name)}</div>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render pools
+        function renderPools(pools, supernets, subnets) {
+            const container = document.getElementById('pools-content');
+            if (!pools || pools.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No pools found</h3>
+                        <p>Create IP address pools in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create lookups
+            const supernetMap = {};
+            const subnetMap = {};
+            if (supernets) supernets.forEach(s => supernetMap[s._id] = s);
+            if (subnets) subnets.forEach(s => subnetMap[s._id] = s);
+
+            const html = pools.map(p => {
+                const supernet = supernetMap[p.supernetId];
+                const subnet = subnetMap[p.subnetId];
+                return `
+                    <div class="ipam-card pool">
+                        <div class="card-header">
+                            <div>
+                                <div class="card-title pool">${escapeHtml(p.name)}</div>
+                                ${p.description ? `<div class="card-description">${escapeHtml(p.description)}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="card-info">
+                            <div class="info-label">IP Address Range</div>
+                            <div class="ip-range">
+                                <span><span class="start">Start:</span> <strong>${escapeHtml(p.startIp)}</strong></span>
+                                <span style="color: var(--text-secondary);">-</span>
+                                <span><span class="end">End:</span> <strong>${escapeHtml(p.endIp)}</strong></span>
+                            </div>
+                        </div>
+                        <div class="hierarchy-badges">
+                            ${supernet ? `<span class="hierarchy-badge supernet">${supernet.supernet?.address}/${supernet.supernet?.mask}</span>` : ''}
+                            ${subnet ? `<span class="hierarchy-badge subnet">${subnet.subnet?.address}/${subnet.subnet?.mask}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render VLANs
+        function renderVLANs(vlans, supernets, subnets) {
+            const container = document.getElementById('vlans-content');
+            if (!vlans || vlans.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No VLANs found</h3>
+                        <p>Create VLANs in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create lookups
+            const supernetMap = {};
+            const subnetMap = {};
+            if (supernets) supernets.forEach(s => supernetMap[s._id] = s);
+            if (subnets) subnets.forEach(s => subnetMap[s._id] = s);
+
+            const html = vlans.map(v => {
+                const supernet = supernetMap[v.supernetId];
+                const subnet = subnetMap[v.subnetId];
+                return `
+                    <div class="ipam-card vlan">
+                        <div class="card-header">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span class="vlan-number">VLAN ${v.vlanNumber}</span>
+                                <span class="card-title vlan">${escapeHtml(v.name)}</span>
+                            </div>
+                            ${v.description ? `<div class="card-description" style="margin-top: 8px;">${escapeHtml(v.description)}</div>` : ''}
+                        </div>
+                        <div class="card-info">
+                            <div class="info-label">Network Hierarchy</div>
+                            <div class="hierarchy-badges" style="margin-top: 8px;">
+                                ${supernet ? `
+                                    <div style="flex: 1; min-width: 120px;">
+                                        <div class="info-label">Supernet</div>
+                                        <div style="color: #D4AF37; font-weight: bold;">${supernet.supernet?.address}/${supernet.supernet?.mask}</div>
+                                        <div style="color: var(--text-secondary); font-size: 0.8rem;">${escapeHtml(supernet.name)}</div>
+                                    </div>
+                                ` : ''}
+                                ${subnet ? `
+                                    <div style="flex: 1; min-width: 120px;">
+                                        <div class="info-label">Subnet</div>
+                                        <div style="color: #4ECDC4; font-weight: bold;">${subnet.subnet?.address}/${subnet.subnet?.mask}</div>
+                                        <div style="color: var(--text-secondary); font-size: 0.8rem;">${escapeHtml(subnet.name)}</div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render IP Addresses
+        function renderIPAddresses(addresses, supernets, subnets, pools) {
+            const container = document.getElementById('addresses-content');
+            if (!addresses || addresses.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No IP addresses found</h3>
+                        <p>Create IP addresses in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Create lookups
+            const supernetMap = {};
+            const subnetMap = {};
+            const poolMap = {};
+            if (supernets) supernets.forEach(s => supernetMap[s._id] = s);
+            if (subnets) subnets.forEach(s => subnetMap[s._id] = s);
+            if (pools) pools.forEach(p => poolMap[p._id] = p);
+
+            const html = addresses.map(ip => {
+                const isUsed = ip.isUsed;
+                const supernet = supernetMap[ip.supernetId];
+                const subnet = subnetMap[ip.subnetId];
+                const pool = poolMap[ip.poolId];
+                return `
+                    <div class="ipam-card ${isUsed ? 'ip-used' : 'ip-available'}">
+                        <div class="card-header">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span class="card-title">${escapeHtml(ip.address)}</span>
+                                <span class="status-badge ${isUsed ? 'used' : 'available'}">${isUsed ? 'Used' : 'Available'}</span>
+                            </div>
+                            ${ip.description ? `<div class="card-description" style="margin-top: 8px;">${escapeHtml(ip.description)}</div>` : ''}
+                        </div>
+                        <div class="card-info">
+                            <div class="info-label">IPAM Hierarchy</div>
+                            <div class="hierarchy-badges" style="margin-top: 8px;">
+                                ${supernet ? `<span class="hierarchy-badge supernet">${supernet.supernet?.address}/${supernet.supernet?.mask}</span>` : ''}
+                                ${subnet ? `<span class="hierarchy-badge subnet">${subnet.subnet?.address}/${subnet.subnet?.mask}</span>` : ''}
+                                ${pool ? `<span class="hierarchy-badge pool">${escapeHtml(pool.startIp)} - ${escapeHtml(pool.endIp)}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Update metrics
+        function updateMetrics(data) {
+            if (!data) return;
+
+            const supernets = data.supernets || [];
+            const subnets = data.subnets || [];
+            const pools = data.pools || [];
+            const vlans = data.vlans || [];
+            const addresses = data.ipAddresses || [];
+
+            const usedIPs = addresses.filter(ip => ip.isUsed).length;
+            const availableIPs = addresses.length - usedIPs;
+
+            document.getElementById('supernets-count').textContent = supernets.length;
+            document.getElementById('subnets-count').textContent = subnets.length;
+            document.getElementById('pools-count').textContent = pools.length;
+            document.getElementById('vlans-count').textContent = vlans.length;
+            document.getElementById('ips-count').textContent = addresses.length;
+            document.getElementById('used-count').textContent = usedIPs;
+            document.getElementById('available-count').textContent = availableIPs;
+
+            document.getElementById('metrics-summary').style.display = 'flex';
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load IPAM data
+        async function loadIPAMData() {
+            try {
+                const response = await fetch('/api/v1/ipam');
+                const data = await response.json();
+
+                if (data.error) {
+                    updateConnectionStatus(false);
+                    showDisconnectedState();
+                    return;
+                }
+
+                ipamData = data.data;
+                updateConnectionStatus(data.isConnected, data.companyId);
+                updateMetrics(ipamData);
+
+                renderSupernets(ipamData?.supernets);
+                renderSubnets(ipamData?.subnets, ipamData?.supernets);
+                renderPools(ipamData?.pools, ipamData?.supernets, ipamData?.subnets);
+                renderVLANs(ipamData?.vlans, ipamData?.supernets, ipamData?.subnets);
+                renderIPAddresses(ipamData?.ipAddresses, ipamData?.supernets, ipamData?.subnets, ipamData?.pools);
+
+            } catch (error) {
+                console.error('Error loading IPAM data:', error);
+                updateConnectionStatus(false);
+                showDisconnectedState();
+            }
+        }
+
+        // Show disconnected state in all tabs
+        function showDisconnectedState() {
+            const disconnectedHtml = `
+                <div class="empty-state">
+                    <h3>Not connected to ThothOS</h3>
+                    <p>Configure your ThothOS connection in <a href="/settings" style="color: var(--accent);">Settings</a> to view IPAM data.</p>
+                </div>
+            `;
+            document.getElementById('supernets-content').innerHTML = disconnectedHtml;
+            document.getElementById('subnets-content').innerHTML = disconnectedHtml;
+            document.getElementById('pools-content').innerHTML = disconnectedHtml;
+            document.getElementById('vlans-content').innerHTML = disconnectedHtml;
+            document.getElementById('addresses-content').innerHTML = disconnectedHtml;
+        }
+
+        // Sync IPAM data from ThothOS
+        async function syncIPAMData() {
+            const btn = document.getElementById('sync-btn');
+            btn.classList.add('syncing');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/v1/ipam/sync', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload the IPAM data
+                    await loadIPAMData();
+                } else {
+                    alert('Sync failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error syncing IPAM data:', error);
+                alert('Sync failed: ' + error.message);
+            } finally {
+                btn.classList.remove('syncing');
+                btn.disabled = false;
+            }
+        }
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', loadIPAMData);
+    </script>
+</body>
+</html>
