@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor - Network Monitor</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/theme.js"></script>
+    <style>
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--border);
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+        .tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .metrics-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .metric-card {
+            flex: 1 1 100px;
+            min-width: 100px;
+            text-align: center;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .metric-card .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .metric-card .label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .metric-card.icmp-monitoring .value { color: #10B981; }
+        .metric-card.icmp-polling .value { color: #4ECDC4; }
+        .metric-card.oids .value { color: #F59E0B; }
+        .metric-card.snmpv2-communities .value { color: #3B82F6; }
+        .metric-card.snmpv3-communities .value { color: #8B5CF6; }
+        .metric-card.snmpv2 .value { color: #64B5F6; }
+        .metric-card.snmpv3 .value { color: #AB47BC; }
+        .metric-card.snmpv2-polling .value { color: #06B6D4; }
+        .metric-card.snmpv3-polling .value { color: #EC4899; }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 20px;
+        }
+        .monitor-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        .monitor-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 4px 20px rgba(74, 158, 255, 0.15);
+        }
+        .monitor-card.icmp-monitoring { border-left: 3px solid #10B981; }
+        .monitor-card.icmp-polling { border-left: 3px solid #4ECDC4; }
+        .monitor-card.oids { border-left: 3px solid #F59E0B; }
+        .monitor-card.snmpv2-communities { border-left: 3px solid #3B82F6; }
+        .monitor-card.snmpv3-communities { border-left: 3px solid #8B5CF6; }
+        .monitor-card.snmpv2 { border-left: 3px solid #64B5F6; }
+        .monitor-card.snmpv3 { border-left: 3px solid #AB47BC; }
+        .monitor-card.snmpv2-polling { border-left: 3px solid #06B6D4; }
+        .monitor-card.snmpv3-polling { border-left: 3px solid #EC4899; }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        .card-title.icmp-monitoring { color: #10B981; }
+        .card-title.icmp-polling { color: #4ECDC4; }
+        .card-title.oids { color: #F59E0B; }
+        .card-title.snmpv2-communities { color: #3B82F6; }
+        .card-title.snmpv3-communities { color: #8B5CF6; }
+        .card-title.snmpv2 { color: #64B5F6; }
+        .card-title.snmpv3 { color: #AB47BC; }
+        .card-title.snmpv2-polling { color: #06B6D4; }
+        .card-title.snmpv3-polling { color: #EC4899; }
+
+        .card-description {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+        .card-info {
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .info-value {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .info-value.highlight {
+            color: var(--accent);
+        }
+        .info-value.mono {
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .status-badge.enabled {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #10B981;
+        }
+        .status-badge.disabled {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #EF4444;
+        }
+
+        .security-badge {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .security-badge.noAuthNoPriv {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #EF4444;
+        }
+        .security-badge.authNoPriv {
+            background: rgba(251, 191, 36, 0.2);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            color: #FBBF24;
+        }
+        .security-badge.authPriv {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #10B981;
+        }
+
+        .oid-list {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .oid-list-title {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .oid-item {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+            padding: 4px 8px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            margin-bottom: 4px;
+            word-break: break-all;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+        .section-title.icmp-monitoring { color: #10B981; }
+        .section-title.icmp-polling { color: #4ECDC4; }
+        .section-title.oids { color: #F59E0B; }
+        .section-title.snmpv2-communities { color: #3B82F6; }
+        .section-title.snmpv3-communities { color: #8B5CF6; }
+        .section-title.snmpv2 { color: #64B5F6; }
+        .section-title.snmpv3 { color: #AB47BC; }
+        .section-title.snmpv2-polling { color: #06B6D4; }
+        .section-title.snmpv3-polling { color: #EC4899; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 40px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px dashed var(--border);
+        }
+        .empty-state h3 {
+            color: var(--text-secondary);
+            font-size: 1.25rem;
+            margin-bottom: 12px;
+        }
+        .empty-state p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .connection-status.connected {
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .connection-status.disconnected {
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .status-dot.connected {
+            background: #10B981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+        }
+        .status-dot.disconnected {
+            background: #EF4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+
+        .loading-spinner {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 60px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .sync-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sync-btn svg {
+            transition: transform 0.3s ease;
+        }
+        .sync-btn.syncing svg {
+            animation: spin 1s linear infinite;
+        }
+
+        .protocol-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.7rem;
+        }
+        .protocol-icon.icmp {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #10B981;
+        }
+        .protocol-icon.snmp {
+            background: rgba(100, 181, 246, 0.2);
+            border: 1px solid rgba(100, 181, 246, 0.4);
+            color: #64B5F6;
+        }
+        .protocol-icon.oid {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #F59E0B;
+        }
+
+        .time-interval {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .time-part {
+            background: var(--bg-card);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            border: 1px solid var(--border);
+        }
+        .time-part .num {
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .time-part .unit {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Network Monitor</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/devices">Devices</a>
+                <a href="/alerts">Alerts</a>
+                <a href="/nodes">Nodes</a>
+                <a href="/ipam">IPAM</a>
+                <a href="/monitor" class="active">Monitor</a>
+                <a href="/visualize">Visualize</a>
+                <a href="/tools">Tools</a>
+                <a href="/reports">Reports</a>
+                <a href="/settings">Settings</a>
+            </nav>
+        </header>
+
+        <main>
+            <h2>Monitoring Configuration</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">
+                View SNMP and ICMP monitoring templates from ThothOS. These templates define how network devices are monitored.
+            </p>
+
+            <!-- Connection Status -->
+            <div id="connection-status" class="connection-status disconnected">
+                <div class="status-dot disconnected"></div>
+                <span id="connection-text">Checking ThothOS connection...</span>
+                <button id="sync-btn" class="btn btn-primary sync-btn" onclick="syncMonitoringData()" style="margin-left: auto;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m0 0a9 9 0 0 1 9-9m-9 9a9 9 0 0 0 9 9"/>
+                    </svg>
+                    Sync from ThothOS
+                </button>
+            </div>
+
+            <!-- Metrics Summary -->
+            <div id="metrics-summary" class="metrics-summary" style="display: none;">
+                <div class="metric-card icmp-monitoring">
+                    <div class="value" id="icmp-monitoring-count">0</div>
+                    <div class="label">ICMP Monitoring</div>
+                </div>
+                <div class="metric-card icmp-polling">
+                    <div class="value" id="icmp-polling-count">0</div>
+                    <div class="label">ICMP Polling</div>
+                </div>
+                <div class="metric-card oids">
+                    <div class="value" id="oids-count">0</div>
+                    <div class="label">OIDs</div>
+                </div>
+                <div class="metric-card snmpv2-communities">
+                    <div class="value" id="snmpv2-communities-count">0</div>
+                    <div class="label">SNMPv2 Communities</div>
+                </div>
+                <div class="metric-card snmpv3-communities">
+                    <div class="value" id="snmpv3-communities-count">0</div>
+                    <div class="label">SNMPv3 Communities</div>
+                </div>
+                <div class="metric-card snmpv2">
+                    <div class="value" id="snmpv2-count">0</div>
+                    <div class="label">SNMPv2 Templates</div>
+                </div>
+                <div class="metric-card snmpv3">
+                    <div class="value" id="snmpv3-count">0</div>
+                    <div class="label">SNMPv3 Templates</div>
+                </div>
+                <div class="metric-card snmpv2-polling">
+                    <div class="value" id="snmpv2-polling-count">0</div>
+                    <div class="label">SNMPv2 Polling</div>
+                </div>
+                <div class="metric-card snmpv3-polling">
+                    <div class="value" id="snmpv3-polling-count">0</div>
+                    <div class="label">SNMPv3 Polling</div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('icmp-monitoring')">ICMP Monitoring</button>
+                <button class="tab" onclick="showTab('icmp-polling')">ICMP Polling</button>
+                <button class="tab" onclick="showTab('oids')">OIDs</button>
+                <button class="tab" onclick="showTab('snmpv2-communities')">SNMPv2 Communities</button>
+                <button class="tab" onclick="showTab('snmpv3-communities')">SNMPv3 Communities</button>
+                <button class="tab" onclick="showTab('snmpv2')">SNMPv2 Templates</button>
+                <button class="tab" onclick="showTab('snmpv3')">SNMPv3 Templates</button>
+                <button class="tab" onclick="showTab('snmpv2-polling')">SNMPv2 Polling</button>
+                <button class="tab" onclick="showTab('snmpv3-polling')">SNMPv3 Polling</button>
+            </div>
+
+            <!-- ICMP Monitoring Tab -->
+            <div id="icmp-monitoring-tab" class="tab-content active">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title icmp-monitoring">ICMP Monitoring Templates</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Threshold configurations for ICMP monitoring</span>
+                    </div>
+                    <div id="icmp-monitoring-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ICMP Polling Tab -->
+            <div id="icmp-polling-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title icmp-polling">ICMP Polling Templates</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Polling frequency configurations for ICMP</span>
+                    </div>
+                    <div id="icmp-polling-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OIDs Tab -->
+            <div id="oids-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title oids">SNMP OIDs</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Object Identifiers for SNMP queries</span>
+                    </div>
+                    <div id="oids-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SNMPv2 Communities Tab -->
+            <div id="snmpv2-communities-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title snmpv2-communities">SNMPv2 Communities</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Community string configurations for SNMPv2</span>
+                    </div>
+                    <div id="snmpv2-communities-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SNMPv3 Communities Tab -->
+            <div id="snmpv3-communities-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title snmpv3-communities">SNMPv3 Communities</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Security configurations for SNMPv3</span>
+                    </div>
+                    <div id="snmpv3-communities-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SNMPv2 Templates Tab -->
+            <div id="snmpv2-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title snmpv2">SNMPv2 Templates</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Monitoring templates for SNMPv2</span>
+                    </div>
+                    <div id="snmpv2-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SNMPv3 Templates Tab -->
+            <div id="snmpv3-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title snmpv3">SNMPv3 Templates</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Monitoring templates for SNMPv3</span>
+                    </div>
+                    <div id="snmpv3-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SNMPv2 Polling Tab -->
+            <div id="snmpv2-polling-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title snmpv2-polling">SNMPv2 Polling Templates</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Polling configurations for SNMPv2</span>
+                    </div>
+                    <div id="snmpv2-polling-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SNMPv3 Polling Tab -->
+            <div id="snmpv3-polling-tab" class="tab-content">
+                <div class="section">
+                    <div class="section-header">
+                        <h3 class="section-title snmpv3-polling">SNMPv3 Polling Templates</h3>
+                        <span style="color: var(--text-secondary); font-size: 0.9rem;">Polling configurations for SNMPv3</span>
+                    </div>
+                    <div id="snmpv3-polling-content">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Network Monitor - Built with Go</p>
+        </footer>
+    </div>
+
+    <script>
+        let monitorData = null;
+
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Update connection status UI
+        function updateConnectionStatus(connected, companyId) {
+            const statusEl = document.getElementById('connection-status');
+            const dotEl = statusEl.querySelector('.status-dot');
+            const textEl = document.getElementById('connection-text');
+
+            if (connected) {
+                statusEl.classList.remove('disconnected');
+                statusEl.classList.add('connected');
+                dotEl.classList.remove('disconnected');
+                dotEl.classList.add('connected');
+                textEl.textContent = 'Connected to ThothOS' + (companyId ? ` (Company: ...${companyId.slice(-4)})` : '');
+            } else {
+                statusEl.classList.remove('connected');
+                statusEl.classList.add('disconnected');
+                dotEl.classList.remove('connected');
+                dotEl.classList.add('disconnected');
+                textEl.textContent = 'Not connected to ThothOS. Configure in Settings.';
+            }
+        }
+
+        // Format time interval
+        function formatTimeInterval(interval) {
+            if (!interval) return 'Not set';
+            const parts = [];
+            if (interval.days > 0) parts.push(`<span class="time-part"><span class="num">${interval.days}</span><span class="unit">d</span></span>`);
+            if (interval.hours > 0) parts.push(`<span class="time-part"><span class="num">${interval.hours}</span><span class="unit">h</span></span>`);
+            if (interval.minutes > 0) parts.push(`<span class="time-part"><span class="num">${interval.minutes}</span><span class="unit">m</span></span>`);
+            if (interval.seconds > 0) parts.push(`<span class="time-part"><span class="num">${interval.seconds}</span><span class="unit">s</span></span>`);
+            return parts.length > 0 ? `<div class="time-interval">${parts.join('')}</div>` : 'Not set';
+        }
+
+        // Render ICMP Monitoring Templates
+        function renderICMPMonitoring(templates) {
+            const container = document.getElementById('icmp-monitoring-content');
+            if (!templates || templates.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No ICMP monitoring templates found</h3>
+                        <p>Create ICMP monitoring templates in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = templates.map(t => `
+                <div class="monitor-card icmp-monitoring">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon icmp">ICMP</div>
+                            <div>
+                                <div class="card-title icmp-monitoring">${escapeHtml(t.templateName)}</div>
+                                ${t.templateDescription ? `<div class="card-description">${escapeHtml(t.templateDescription)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">Loss Threshold</span>
+                            <span class="info-value highlight">${t.icmpLossThreshold}%</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Latency Threshold</span>
+                            <span class="info-value highlight">${t.icmpLatencyThreshold} ms</span>
+                        </div>
+                        ${t.linkedPollingTemplateId ? `
+                            <div class="info-row">
+                                <span class="info-label">Linked Polling Template</span>
+                                <span class="info-value mono">...${t.linkedPollingTemplateId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render ICMP Polling Templates
+        function renderICMPPolling(templates) {
+            const container = document.getElementById('icmp-polling-content');
+            if (!templates || templates.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No ICMP polling templates found</h3>
+                        <p>Create ICMP polling templates in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = templates.map(t => `
+                <div class="monitor-card icmp-polling">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon icmp">ICMP</div>
+                            <div>
+                                <div class="card-title icmp-polling">${escapeHtml(t.name)}</div>
+                                ${t.description ? `<div class="card-description">${escapeHtml(t.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">Frequency</span>
+                            <span class="info-value highlight">${t.frequency} seconds</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Timeout</span>
+                            <span class="info-value">${t.timeout} ms</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Retries</span>
+                            <span class="info-value">${t.retries}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Polling Frequency</span>
+                            <span class="info-value">${formatTimeInterval(t.pollingFrequency)}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Downtime Trigger</span>
+                            <span class="info-value">${formatTimeInterval(t.downtimeTrigger)}</span>
+                        </div>
+                        ${t.icmpTemplateId ? `
+                            <div class="info-row">
+                                <span class="info-label">Linked ICMP Template</span>
+                                <span class="info-value mono">...${t.icmpTemplateId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render OIDs
+        function renderOIDs(oids) {
+            const container = document.getElementById('oids-content');
+            if (!oids || oids.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No OIDs found</h3>
+                        <p>Create OIDs in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = oids.map(o => `
+                <div class="monitor-card oids">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon oid">OID</div>
+                            <div>
+                                <div class="card-title oids">${escapeHtml(o.oidName)}</div>
+                                ${o.description ? `<div class="card-description">${escapeHtml(o.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">OID</span>
+                            <span class="info-value mono">${escapeHtml(o.oid)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render SNMPv2 Communities
+        function renderSNMPv2Communities(communities) {
+            const container = document.getElementById('snmpv2-communities-content');
+            if (!communities || communities.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No SNMPv2 communities found</h3>
+                        <p>Create SNMPv2 communities in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = communities.map(c => `
+                <div class="monitor-card snmpv2-communities">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon snmp">v2c</div>
+                            <div>
+                                <div class="card-title snmpv2-communities">${escapeHtml(c.communityName)}</div>
+                                ${c.description ? `<div class="card-description">${escapeHtml(c.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">Read Community</span>
+                            <span class="info-value mono">${maskString(c.readCommunity)}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Write Community</span>
+                            <span class="info-value mono">${maskString(c.writeCommunity)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render SNMPv3 Communities
+        function renderSNMPv3Communities(communities) {
+            const container = document.getElementById('snmpv3-communities-content');
+            if (!communities || communities.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No SNMPv3 communities found</h3>
+                        <p>Create SNMPv3 communities in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = communities.map(c => `
+                <div class="monitor-card snmpv3-communities">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon snmp">v3</div>
+                            <div>
+                                <div class="card-title snmpv3-communities">${escapeHtml(c.communityName)}</div>
+                                ${c.description ? `<div class="card-description">${escapeHtml(c.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">User Name</span>
+                            <span class="info-value">${escapeHtml(c.userName)}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Auth Method</span>
+                            <span class="info-value highlight">${escapeHtml(c.authMethod || 'None')}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Auth Password</span>
+                            <span class="info-value mono">${maskString(c.authPassword)}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Encryption Method</span>
+                            <span class="info-value highlight">${escapeHtml(c.encryptionMethod || 'None')}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Encryption Password</span>
+                            <span class="info-value mono">${maskString(c.encryptionPassword)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render SNMPv2 Templates
+        function renderSNMPv2(templates) {
+            const container = document.getElementById('snmpv2-content');
+            if (!templates || templates.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No SNMPv2 templates found</h3>
+                        <p>Create SNMPv2 templates in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = templates.map(t => `
+                <div class="monitor-card snmpv2">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon snmp">v2c</div>
+                            <div>
+                                <div class="card-title snmpv2">${escapeHtml(t.templateName)}</div>
+                                ${t.description ? `<div class="card-description">${escapeHtml(t.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        ${t.snmpv2SettingId ? `
+                            <div class="info-row">
+                                <span class="info-label">SNMPv2 Setting</span>
+                                <span class="info-value mono">...${t.snmpv2SettingId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                        ${t.linkedPollingTemplateId ? `
+                            <div class="info-row">
+                                <span class="info-label">Linked Polling Template</span>
+                                <span class="info-value mono">...${t.linkedPollingTemplateId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${t.oidIds && t.oidIds.length > 0 ? `
+                        <div class="oid-list">
+                            <div class="oid-list-title">OIDs (${t.oidIds.length})</div>
+                            ${t.oidIds.slice(0, 5).map(oid => `<div class="oid-item">...${oid.slice(-12)}</div>`).join('')}
+                            ${t.oidIds.length > 5 ? `<div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 8px;">+ ${t.oidIds.length - 5} more OIDs</div>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render SNMPv3 Templates
+        function renderSNMPv3(templates) {
+            const container = document.getElementById('snmpv3-content');
+            if (!templates || templates.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No SNMPv3 templates found</h3>
+                        <p>Create SNMPv3 templates in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = templates.map(t => `
+                <div class="monitor-card snmpv3">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon snmp">v3</div>
+                            <div>
+                                <div class="card-title snmpv3">${escapeHtml(t.templateName)}</div>
+                                ${t.description ? `<div class="card-description">${escapeHtml(t.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        ${t.snmpv3SettingId ? `
+                            <div class="info-row">
+                                <span class="info-label">SNMPv3 Setting</span>
+                                <span class="info-value mono">...${t.snmpv3SettingId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                        ${t.linkedPollingTemplateId ? `
+                            <div class="info-row">
+                                <span class="info-label">Linked Polling Template</span>
+                                <span class="info-value mono">...${t.linkedPollingTemplateId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${t.oidIds && t.oidIds.length > 0 ? `
+                        <div class="oid-list">
+                            <div class="oid-list-title">OIDs (${t.oidIds.length})</div>
+                            ${t.oidIds.slice(0, 5).map(oid => `<div class="oid-item">...${oid.slice(-12)}</div>`).join('')}
+                            ${t.oidIds.length > 5 ? `<div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 8px;">+ ${t.oidIds.length - 5} more OIDs</div>` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render SNMPv2 Polling Templates
+        function renderSNMPv2Polling(templates) {
+            const container = document.getElementById('snmpv2-polling-content');
+            if (!templates || templates.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No SNMPv2 polling templates found</h3>
+                        <p>Create SNMPv2 polling templates in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = templates.map(t => `
+                <div class="monitor-card snmpv2-polling">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon snmp">v2c</div>
+                            <div>
+                                <div class="card-title snmpv2-polling">${escapeHtml(t.name)}</div>
+                                ${t.description ? `<div class="card-description">${escapeHtml(t.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">Frequency</span>
+                            <span class="info-value highlight">${t.frequency} seconds</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Timeout</span>
+                            <span class="info-value">${t.timeout} ms</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Retries</span>
+                            <span class="info-value">${t.retries}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Polling Frequency</span>
+                            <span class="info-value">${formatTimeInterval(t.pollingFrequency)}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Downtime Trigger</span>
+                            <span class="info-value">${formatTimeInterval(t.downtimeTrigger)}</span>
+                        </div>
+                        ${t.snmpv2TemplateId ? `
+                            <div class="info-row">
+                                <span class="info-label">Linked Template</span>
+                                <span class="info-value mono">...${t.snmpv2TemplateId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Render SNMPv3 Polling Templates
+        function renderSNMPv3Polling(templates) {
+            const container = document.getElementById('snmpv3-polling-content');
+            if (!templates || templates.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No SNMPv3 polling templates found</h3>
+                        <p>Create SNMPv3 polling templates in ThothOS to see them here.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = templates.map(t => `
+                <div class="monitor-card snmpv3-polling">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div class="protocol-icon snmp">v3</div>
+                            <div>
+                                <div class="card-title snmpv3-polling">${escapeHtml(t.name)}</div>
+                                ${t.description ? `<div class="card-description">${escapeHtml(t.description)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <div class="info-row">
+                            <span class="info-label">Frequency</span>
+                            <span class="info-value highlight">${t.frequency} seconds</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Timeout</span>
+                            <span class="info-value">${t.timeout} ms</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Retries</span>
+                            <span class="info-value">${t.retries}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Polling Frequency</span>
+                            <span class="info-value">${formatTimeInterval(t.pollingFrequency)}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Downtime Trigger</span>
+                            <span class="info-value">${formatTimeInterval(t.downtimeTrigger)}</span>
+                        </div>
+                        ${t.snmpv3TemplateId ? `
+                            <div class="info-row">
+                                <span class="info-label">Linked Template</span>
+                                <span class="info-value mono">...${t.snmpv3TemplateId.slice(-8)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = `<div class="cards-grid">${html}</div>`;
+        }
+
+        // Update metrics
+        function updateMetrics(data) {
+            if (!data) return;
+
+            const icmpMonitoring = data.icmpMonitoringTemplates || [];
+            const icmpPolling = data.icmpPollingTemplates || [];
+            const oids = data.oids || [];
+            const snmpv2Communities = data.snmpv2Communities || [];
+            const snmpv3Communities = data.snmpv3Communities || [];
+            const snmpv2 = data.snmpv2Templates || [];
+            const snmpv3 = data.snmpv3Templates || [];
+            const snmpv2Polling = data.snmpv2PollingTemplates || [];
+            const snmpv3Polling = data.snmpv3PollingTemplates || [];
+
+            document.getElementById('icmp-monitoring-count').textContent = icmpMonitoring.length;
+            document.getElementById('icmp-polling-count').textContent = icmpPolling.length;
+            document.getElementById('oids-count').textContent = oids.length;
+            document.getElementById('snmpv2-communities-count').textContent = snmpv2Communities.length;
+            document.getElementById('snmpv3-communities-count').textContent = snmpv3Communities.length;
+            document.getElementById('snmpv2-count').textContent = snmpv2.length;
+            document.getElementById('snmpv3-count').textContent = snmpv3.length;
+            document.getElementById('snmpv2-polling-count').textContent = snmpv2Polling.length;
+            document.getElementById('snmpv3-polling-count').textContent = snmpv3Polling.length;
+
+            document.getElementById('metrics-summary').style.display = 'flex';
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Mask sensitive strings
+        function maskString(str) {
+            if (!str) return '***';
+            if (str.length <= 4) return '****';
+            return str.substring(0, 2) + '****' + str.substring(str.length - 2);
+        }
+
+        // Load monitoring data
+        async function loadMonitoringData() {
+            try {
+                const response = await fetch('/api/v1/monitor');
+                const data = await response.json();
+
+                if (data.error) {
+                    updateConnectionStatus(false);
+                    showDisconnectedState();
+                    return;
+                }
+
+                monitorData = data.data;
+                updateConnectionStatus(data.isConnected, data.companyId);
+                updateMetrics(monitorData);
+
+                renderICMPMonitoring(monitorData?.icmpMonitoringTemplates);
+                renderICMPPolling(monitorData?.icmpPollingTemplates);
+                renderOIDs(monitorData?.oids);
+                renderSNMPv2Communities(monitorData?.snmpv2Communities);
+                renderSNMPv3Communities(monitorData?.snmpv3Communities);
+                renderSNMPv2(monitorData?.snmpv2Templates);
+                renderSNMPv3(monitorData?.snmpv3Templates);
+                renderSNMPv2Polling(monitorData?.snmpv2PollingTemplates);
+                renderSNMPv3Polling(monitorData?.snmpv3PollingTemplates);
+
+            } catch (error) {
+                console.error('Error loading monitoring data:', error);
+                updateConnectionStatus(false);
+                showDisconnectedState();
+            }
+        }
+
+        // Show disconnected state in all tabs
+        function showDisconnectedState() {
+            const disconnectedHtml = `
+                <div class="empty-state">
+                    <h3>Not connected to ThothOS</h3>
+                    <p>Configure your ThothOS connection in <a href="/settings" style="color: var(--accent);">Settings</a> to view monitoring templates.</p>
+                </div>
+            `;
+            document.getElementById('icmp-monitoring-content').innerHTML = disconnectedHtml;
+            document.getElementById('icmp-polling-content').innerHTML = disconnectedHtml;
+            document.getElementById('oids-content').innerHTML = disconnectedHtml;
+            document.getElementById('snmpv2-communities-content').innerHTML = disconnectedHtml;
+            document.getElementById('snmpv3-communities-content').innerHTML = disconnectedHtml;
+            document.getElementById('snmpv2-content').innerHTML = disconnectedHtml;
+            document.getElementById('snmpv3-content').innerHTML = disconnectedHtml;
+            document.getElementById('snmpv2-polling-content').innerHTML = disconnectedHtml;
+            document.getElementById('snmpv3-polling-content').innerHTML = disconnectedHtml;
+        }
+
+        // Sync monitoring data from ThothOS
+        async function syncMonitoringData() {
+            const btn = document.getElementById('sync-btn');
+            btn.classList.add('syncing');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/v1/monitor/sync', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload the monitoring data
+                    await loadMonitoringData();
+                } else {
+                    alert('Sync failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error syncing monitoring data:', error);
+                alert('Sync failed: ' + error.message);
+            } finally {
+                btn.classList.remove('syncing');
+                btn.disabled = false;
+            }
+        }
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', loadMonitoringData);
+    </script>
+</body>
+</html>
