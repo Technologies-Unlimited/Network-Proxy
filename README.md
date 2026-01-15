@@ -130,40 +130,56 @@ Network Monitor includes a comprehensive OID template library based on Zabbix's 
 
 ## Quick Start
 
-### 1. Build
+### Step I: Install Go Runtime
 
-```bash
-# Clone the repository
-git clone https://github.com/Technologies-Unlimited/Network-Monitor.git
-cd Network-Monitor
+Download and install Go 1.21+ from [https://go.dev/dl/](https://go.dev/dl/)
 
-# Download dependencies
-go mod download
+### Step II: Download Network Monitor
 
-# Build the unified binary
+Open PowerShell and run:
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/Technologies-Unlimited/Network-Monitor/archive/refs/heads/production.zip" -OutFile "Network-Monitor.zip"
+```
+
+### Step III: Extract the Archive
+
+```powershell
+Expand-Archive -Path Network-Monitor.zip -DestinationPath .
+```
+
+### Step IV: Build the Application
+
+```powershell
+cd Network-Monitor-production
 go build -o network-monitor.exe .
 ```
 
-### 2. Start the Server
+### Step V: Start the Server
 
-```bash
-./network-monitor.exe server
-# Server running on http://localhost:8080
+```powershell
+.\network-monitor.exe server
 ```
 
-### 3. Start Monitoring Nodes
+The server will start on http://localhost:8080
 
-```bash
+### Step VI: Configure Settings
+
+Open http://localhost:8080/settings in your browser to:
+- Connect to ThothOS (optional) - Enter your API key and proxy name
+- Select your preferred theme (Dark, Light, or Sacred)
+
+### Starting Monitoring Nodes (Optional)
+
+To enable distributed monitoring, start additional nodes:
+
+```powershell
 # Start first node
-./network-monitor.exe node --name Node-Alpha --grpc-port 50051
+.\network-monitor.exe node --name Node-Alpha --grpc-port 50051
 
 # Start second node (in another terminal)
-./network-monitor.exe node --name Node-Beta --grpc-port 50052
+.\network-monitor.exe node --name Node-Beta --grpc-port 50052
 ```
-
-### 4. Access Web UI
-
-Open http://localhost:8080 in your browser.
 
 ## CLI Usage
 
