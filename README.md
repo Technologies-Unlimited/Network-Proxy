@@ -1,6 +1,63 @@
 # Network Monitor
 
-A high-performance network monitoring solution built in Go. Designed to be faster and more scalable than Zabbix.
+A high-performance network monitoring solution built in Go. Inspired by the excellent work of the Zabbix team, Network Monitor aims to provide similar functionality while leveraging Go's advantages in concurrency, deployment simplicity, and modern tooling.
+
+## Why Go?
+
+While Zabbix (written in C) is an industry-proven monitoring solution, Network Monitor explores an alternative approach using Go:
+
+- **Simpler deployment** - Single static binary, no dependencies
+- **Native concurrency** - Goroutines and channels for efficient parallel operations
+- **Memory safety** - Garbage collection eliminates entire classes of bugs
+- **Cross-platform** - Compile for any OS/architecture from a single codebase
+- **Modern tooling** - Built-in testing, profiling, and package management
+
+## Operating Modes
+
+Network Monitor supports two operating modes:
+
+### ThothOS Integrated Mode
+
+When connected to ThothOS (technologiesunlimited.net), Network Monitor operates as a distributed proxy:
+
+- **Multi-tenant support** - Each company has isolated data and configuration
+- **Centralized management** - SNMP templates, ICMP templates, and IPAM data synced from ThothOS
+- **Bidirectional OID sync** - OIDs created locally sync to ThothOS and vice versa
+- **Webhook notifications** - Real-time configuration updates pushed from ThothOS
+- **User authentication** - Login through ThothOS with MFA support
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ThothOS Cloud                            │
+│  (technologiesunlimited.net)                                │
+│  ├── Multi-tenant database (MongoDB)                        │
+│  ├── SNMP/ICMP template management                          │
+│  ├── IPAM (Supernets, Subnets, Pools, VLANs)               │
+│  └── User & API key management                              │
+└────────────────────────┬────────────────────────────────────┘
+                         │ GraphQL API + Webhooks
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│           Network Monitor Proxy                             │
+│  ├── Local SQLite cache                                     │
+│  ├── Real-time polling (SNMP/ICMP)                         │
+│  ├── Distributed nodes via gRPC                            │
+│  └── Results reported back to ThothOS                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Standalone Mode
+
+When ThothOS is not configured, Network Monitor runs independently:
+
+- **No external dependencies** - Fully self-contained
+- **Local authentication bypass** - No login required
+- **Local database** - All data stored in SQLite
+- **Full functionality** - All features available locally
+
+To enable standalone mode, either:
+1. Don't configure ThothOS credentials, or
+2. Click "Enable Standalone Mode" on the login page
 
 ## Features
 
@@ -8,23 +65,54 @@ A high-performance network monitoring solution built in Go. Designed to be faste
 - **High-Speed Bandwidth Testing** - 10+ Gbps throughput with 6 parallel gRPC streams
 - **Real-time ICMP Monitoring** - Raw socket ping monitoring for 100,000+ devices
 - **SNMP Polling** - SNMPv2c and SNMPv3 support with template-based polling
+- **MIB Browser** - Interactive SNMP browser with GET, GETNEXT, and WALK operations
+- **OID Template Library** - Import 4,400+ pre-defined OIDs from Zabbix templates
 - **Network Discovery** - Automatic device discovery on network ranges
 - **Network Tools** - Traceroute, DNS lookup, port scanning, WHOIS, and more
 - **Alert Engine** - Rule-based alerting with multiple notification channels
+- **IPAM Integration** - View and manage IP address space (via ThothOS)
 - **Modern Web UI** - htmx-based dashboard with dark/light theme support
 - **REST API** - Full-featured API for automation and integration
 - **SQLite Database** - Zero-configuration embedded database
 
+## OID Template Library
+
+Network Monitor includes a comprehensive OID template library based on Zabbix's open-source SNMP templates. Credit to the Zabbix team for maintaining these excellent vendor templates.
+
+### Included Vendors (122 templates, 4,400+ OIDs)
+
+- **Cisco** - IOS, ASA, Catalyst 3750, Nexus 9000
+- **MikroTik** - RouterOS, CRS, CCR, hEX series (45+ models)
+- **Juniper** - JunOS, MX series
+- **Fortinet** - FortiGate firewalls
+- **F5** - BIG-IP load balancers
+- **HP/Aruba** - ProCurve, HPN, H3C
+- **Huawei** - Enterprise switches
+- **Ubiquiti** - AirOS devices
+- **Dell** - Force S-Series
+- **Arista** - EOS switches
+- **Zyxel** - Managed switches (20+ models)
+- **And many more...**
+
+### Using the Template Library
+
+1. Navigate to **Tools > OID Templates**
+2. Click **Load Template Library** to browse vendors
+3. Select a vendor to see available templates
+4. Import individual OIDs or bulk import by vendor
+5. Imported OIDs sync to ThothOS (in integrated mode)
+
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│           Central Server (network-monitor server)         │
-│  ├── HTTP API & Web UI (port 8080)                       │
-│  ├── SQLite Database (network-monitor.db)                │
-│  ├── Node Registration & Heartbeat Management            │
-│  └── Bandwidth Test Coordination                         │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│           Central Server (network-monitor server)            │
+│  ├── HTTP API & Web UI (port 8080)                          │
+│  ├── SQLite Database (network-monitor.db)                   │
+│  ├── ThothOS GraphQL Client (optional)                      │
+│  ├── Node Registration & Heartbeat Management               │
+│  └── Bandwidth Test Coordination                            │
+└──────────────────────────────────────────────────────────────┘
                          ▲
                          │ HTTP/gRPC
          ┌───────────────┼───────────────┐
@@ -83,7 +171,10 @@ Network Monitor uses a unified binary with subcommands:
 
 ```bash
 # Start the central server
-./network-monitor.exe server
+./network-monitor.exe server [options]
+
+# Server options:
+#   -p, --port        HTTP port to listen on (default: 8080)
 
 # Start a monitoring node
 ./network-monitor.exe node --name <name> [options]
@@ -106,13 +197,15 @@ The web interface includes the following sections:
 | **Alerts** | View and manage active and historical alerts |
 | **Nodes** | Distributed monitoring nodes, peer connections, and bandwidth tests |
 | **Visualize** | Network topology and metrics visualization |
-| **Tools** | Network diagnostic tools (see below) |
+| **Tools** | Network diagnostic tools and OID template library |
+| **IPAM** | IP address management (requires ThothOS) |
+| **Monitor** | SNMP/ICMP template configuration (requires ThothOS) |
 | **Reports** | Generate device, uptime, alert, and performance reports |
-| **Settings** | Theme settings and configuration |
+| **Settings** | Theme settings and ThothOS connection configuration |
 
 ## Network Tools
 
-The Tools page provides 13 network diagnostic utilities:
+The Tools page provides 14 network diagnostic utilities:
 
 | Tool | Description |
 |------|-------------|
@@ -122,13 +215,46 @@ The Tools page provides 13 network diagnostic utilities:
 | **WHOIS** | Look up domain registration information |
 | **Bandwidth Test** | Test network throughput to external servers |
 | **Ping** | ICMP ping with statistics |
-| **SNMP Query** | Query SNMP OIDs from devices |
+| **MIB Browser** | Query SNMP OIDs with GET/GETNEXT/WALK (SNMPv1/v2c/v3) |
 | **MAC Lookup** | Look up vendor information from MAC addresses |
 | **Connection Test** | Test TCP/UDP connectivity to a host:port |
 | **HTTP Test** | Test HTTP/HTTPS endpoints with response details |
 | **SSL Check** | Validate SSL certificates and expiration |
 | **ARP Scan** | Discover devices on the local network |
 | **MTU Discovery** | Find the maximum transmission unit for a path |
+| **OID Templates** | Browse and import Zabbix SNMP templates |
+
+## ThothOS Integration
+
+### Connecting to ThothOS
+
+1. Navigate to **Settings**
+2. Enter your ThothOS URL and API key
+3. Click **Test Connection** to verify
+4. Click **Connect** to establish the link
+
+### Synced Data
+
+When connected to ThothOS, the following data is synchronized:
+
+| Data Type | Direction | Description |
+|-----------|-----------|-------------|
+| **SNMP Templates** | ThothOS → Local | SNMPv2/v3 polling templates |
+| **ICMP Templates** | ThothOS → Local | Ping monitoring templates |
+| **OIDs** | Bidirectional | SNMP object identifiers |
+| **IPAM Data** | ThothOS → Local | Supernets, subnets, pools, VLANs, IPs |
+| **Device Status** | Local → ThothOS | Heartbeat with device/node counts |
+
+### API Key Permissions
+
+ThothOS API keys support fine-grained permissions:
+
+- `proxy:read/write` - Proxy registration and management
+- `snmp:read/write` - SNMP template and OID management
+- `icmp:read/write` - ICMP template management
+- `ipam:read/write` - IP address management
+- `config:read/write` - Configuration synchronization
+- `webhook:register` - Webhook registration for real-time updates
 
 ## Distributed Bandwidth Testing
 
@@ -178,19 +304,59 @@ Tests support three network path modes:
 
 ## Configuration
 
-### Environment Variables
+### Zero-Configuration Setup
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server HTTP port | `8080` |
-| `THOTHOS_URL` | ThothOS integration URL | Optional |
-| `THOTHOS_API_KEY` | ThothOS API key | Optional |
+Network Monitor requires **no configuration files** and **no environment variables**. All settings are managed through the Settings UI and stored in the SQLite database.
 
-### Standalone Mode
+Simply start the server and configure everything through the web interface:
+```bash
+# Start on default port 8080
+./network-monitor.exe server
 
-When ThothOS is not configured, the server runs in standalone mode with authentication bypassed.
+# Start on custom port
+./network-monitor.exe server --port 9000
+
+# Open http://localhost:8080/settings to configure ThothOS connection
+```
+
+### Settings Page
+
+All configuration is managed through the **Settings** page at `http://localhost:8080/settings`:
+
+#### ThothOS Integration
+- **API Key** - Your ThothOS API key (starts with `tk_`)
+- **Proxy Name** - A friendly name for this proxy instance (optional, defaults to hostname)
+- **Test Connection** - Validate your API key before connecting
+- **Connect/Disconnect** - Enable or disable ThothOS integration
+
+#### Theme Selection
+Choose from three visual themes:
+- **Dark** - Modern dark theme with blue accents (default)
+- **Light** - Clean light theme for well-lit environments
+- **Sacred** - Elegant dark theme with gold accents
+
+All settings are automatically persisted to the SQLite database.
 
 ## API Examples
+
+### List Zabbix Templates
+
+```bash
+curl http://localhost:8080/api/v1/zabbix-templates
+# Returns: {"totalOids":4424,"totalTemplates":122,"vendors":[...]}
+```
+
+### Import OIDs from Templates
+
+```bash
+# Import specific OIDs
+curl -X POST http://localhost:8080/api/v1/zabbix-templates/import \
+  -H "Content-Type: application/json" \
+  -d '{"oids": [{"oid": "1.3.6.1.2.1.1.1.0", "name": "sysDescr", ...}]}'
+
+# Import all OIDs from all templates
+curl -X POST http://localhost:8080/api/v1/zabbix-templates/import-all
+```
 
 ### List Nodes
 
@@ -201,7 +367,6 @@ curl http://localhost:8080/api/v1/nodes
 ### Start Bandwidth Test
 
 ```bash
-# Direct mode
 curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
   -H "Content-Type: application/json" \
   -d '{
@@ -210,25 +375,6 @@ curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
     "test_type": "bidirectional",
     "duration": 10,
     "test_mode": "direct"
-  }'
-
-# Local mode (loopback)
-curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_node_id": "uuid-1",
-    "target_node_id": "uuid-2",
-    "test_mode": "local"
-  }'
-
-# Gateway mode
-curl -X POST http://localhost:8080/api/v1/bandwidth-tests/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_node_id": "uuid-1",
-    "target_node_id": "uuid-2",
-    "test_mode": "gateway",
-    "gateway_address": "192.168.1.1:50051"
   }'
 ```
 
@@ -257,9 +403,13 @@ Network-Monitor/
 │   │   └── pb/              # Generated protobuf files
 │   ├── models/              # GORM data models
 │   ├── middleware/          # Authentication middleware
+│   ├── templates/           # Zabbix template parser
+│   ├── thothos/             # ThothOS GraphQL client
 │   └── server/              # Server state management
 ├── proto/
 │   └── node/                # Protobuf definitions
+├── templates/
+│   └── snmp/                # Zabbix SNMP templates (122 vendors)
 ├── web/
 │   ├── templates/           # HTML templates (htmx)
 │   └── static/              # CSS, JS, images
@@ -280,7 +430,9 @@ Uses SQLite with GORM ORM. Key tables:
 | `alerts` | Active and historical alerts |
 | `alert_rules` | Alert rule definitions |
 | `snmp_templates` | SNMP polling templates |
-| `oids` | SNMP OID definitions |
+| `oids` | SNMP OID definitions (syncs with ThothOS) |
+| `settings` | Application settings (theme, ThothOS config) |
+| `proxy_configs` | ThothOS proxy registration data |
 
 ## Cross-Platform Builds
 
@@ -305,6 +457,11 @@ GOOS=darwin GOARCH=amd64 go build -o network-monitor-macos-intel .
 - **Sub-second polling** with raw ICMP sockets
 - **~100MB RAM** base usage
 
+## Acknowledgments
+
+- **Zabbix** - For their excellent open-source SNMP templates which power our OID template library
+- **Go Team** - For creating a language that makes high-performance network tools accessible
+
 ## License
 
 MIT License - see LICENSE file
@@ -315,4 +472,4 @@ Contributions welcome! Please open an issue or PR.
 
 ---
 
-**Built with Go | Faster than Zabbix**
+**Built with Go | High-Performance Network Monitoring**
