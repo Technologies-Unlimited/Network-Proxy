@@ -3,9 +3,12 @@ package api
 import (
 	"net/http"
 
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // listSNMPTemplates returns all SNMP templates
@@ -125,7 +128,7 @@ func listOIDs(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// createOID creates a new OID
+// createOID creates a new OID and syncs to ThothOS
 func createOID(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var oid models.OID
@@ -135,6 +138,37 @@ func createOID(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
+		// Set CompanyID from auth context for multi-tenancy
+		companyID := middleware.GetCompanyID(c)
+		if companyID == "" {
+			companyID = "default" // Fallback for standalone mode
+		}
+		oid.CompanyID = companyID
+
+		// Try to sync to ThothOS first if connected
+		thothosClient, err := getThothOSClient(srv)
+		if err == nil && thothosClient != nil && companyID != "default" {
+			// Create in ThothOS
+			input := thothos.OIDInput{
+				OIDName:     oid.Name,
+				OID:         oid.OID,
+				Description: oid.Description,
+			}
+
+			thothosOID, err := thothosClient.CreateOID(input)
+			if err != nil {
+				log.Warn().Err(err).Msg("Failed to sync OID to ThothOS, saving locally only")
+			} else {
+				// Store the ThothOS ID for future syncing
+				oid.ThothOSID = thothosOID.ID
+				log.Info().
+					Str("thothosId", thothosOID.ID).
+					Str("oid", oid.OID).
+					Msg("OID synced to ThothOS")
+			}
+		}
+
+		// Save to local database
 		if err := srv.DB.Create(&oid).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -159,7 +193,7 @@ func getOID(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// updateOID updates an existing OID
+// updateOID updates an existing OID and syncs to ThothOS
 func updateOID(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
@@ -170,9 +204,36 @@ func updateOID(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
+		// Store ThothOS ID before binding
+		thothosID := oid.ThothOSID
+		companyID := oid.CompanyID
+
 		if err := c.ShouldBindJSON(&oid); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Preserve IDs
+		oid.ThothOSID = thothosID
+		oid.CompanyID = companyID
+
+		// Sync to ThothOS if we have a ThothOS ID
+		if thothosID != "" && companyID != "default" {
+			thothosClient, err := getThothOSClient(srv)
+			if err == nil && thothosClient != nil {
+				input := thothos.OIDInput{
+					OIDName:     oid.Name,
+					OID:         oid.OID,
+					Description: oid.Description,
+				}
+
+				_, err := thothosClient.UpdateOID(thothosID, input)
+				if err != nil {
+					log.Warn().Err(err).Str("thothosId", thothosID).Msg("Failed to sync OID update to ThothOS")
+				} else {
+					log.Info().Str("thothosId", thothosID).Msg("OID update synced to ThothOS")
+				}
+			}
 		}
 
 		if err := srv.DB.Save(&oid).Error; err != nil {
@@ -184,7 +245,7 @@ func updateOID(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// deleteOID deletes an OID
+// deleteOID deletes an OID and syncs to ThothOS
 func deleteOID(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
@@ -193,6 +254,19 @@ func deleteOID(srv *server.Server) gin.HandlerFunc {
 		if err := srv.DB.First(&oid, "id = ?", id).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "OID not found"})
 			return
+		}
+
+		// Sync deletion to ThothOS if we have a ThothOS ID
+		if oid.ThothOSID != "" && oid.CompanyID != "default" {
+			thothosClient, err := getThothOSClient(srv)
+			if err == nil && thothosClient != nil {
+				deleted, err := thothosClient.DeleteOID(oid.ThothOSID)
+				if err != nil {
+					log.Warn().Err(err).Str("thothosId", oid.ThothOSID).Msg("Failed to sync OID deletion to ThothOS")
+				} else if deleted {
+					log.Info().Str("thothosId", oid.ThothOSID).Msg("OID deletion synced to ThothOS")
+				}
+			}
 		}
 
 		if err := srv.DB.Delete(&oid).Error; err != nil {

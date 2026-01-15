@@ -401,6 +401,122 @@ func (c *Client) GetOIDs() ([]OID, error) {
 	return oids, nil
 }
 
+// OIDInput represents the input for creating/updating an OID in ThothOS
+type OIDInput struct {
+	OIDName        string `json:"oidName"`
+	OID            string `json:"oid"`
+	Description    string `json:"description"`
+	ManufacturerID string `json:"manufacturerId,omitempty"`
+	ModelID        string `json:"modelId,omitempty"`
+	ProductID      string `json:"productId,omitempty"`
+}
+
+// CreateOID creates a new OID in ThothOS
+func (c *Client) CreateOID(input OIDInput) (*OID, error) {
+	query := `mutation createOID($companyId: String!, $input: OIDInput!) {
+		createOID(companyId: $companyId, input: $input) {
+			_id
+			companyId
+			oidName
+			oid
+			description
+			manufacturerId
+			modelId
+			productId
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+		"input":     input,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["createOID"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	jsonData, _ := json.Marshal(data)
+	var oid OID
+	if err := json.Unmarshal(jsonData, &oid); err != nil {
+		return nil, fmt.Errorf("failed to parse OID response: %w", err)
+	}
+
+	log.Info().Str("oid", oid.OID).Str("name", oid.OIDName).Msg("Created OID in ThothOS")
+	return &oid, nil
+}
+
+// UpdateOID updates an existing OID in ThothOS
+func (c *Client) UpdateOID(id string, input OIDInput) (*OID, error) {
+	query := `mutation updateOID($companyId: String!, $_id: String!, $input: OIDInput!) {
+		updateOID(companyId: $companyId, _id: $_id, input: $input) {
+			_id
+			companyId
+			oidName
+			oid
+			description
+			manufacturerId
+			modelId
+			productId
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+		"_id":       id,
+		"input":     input,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["updateOID"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	jsonData, _ := json.Marshal(data)
+	var oid OID
+	if err := json.Unmarshal(jsonData, &oid); err != nil {
+		return nil, fmt.Errorf("failed to parse OID response: %w", err)
+	}
+
+	log.Info().Str("id", id).Str("name", oid.OIDName).Msg("Updated OID in ThothOS")
+	return &oid, nil
+}
+
+// DeleteOID deletes an OID from ThothOS
+func (c *Client) DeleteOID(id string) (bool, error) {
+	query := `mutation deleteOID($companyId: String!, $_id: String!) {
+		deleteOID(companyId: $companyId, _id: $_id)
+	}`
+
+	variables := map[string]interface{}{
+		"companyId": c.companyID,
+		"_id":       id,
+	}
+
+	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	if err != nil {
+		return false, err
+	}
+
+	deleted, ok := resp.Data["deleteOID"].(bool)
+	if !ok {
+		return false, fmt.Errorf("unexpected response format")
+	}
+
+	log.Info().Str("id", id).Bool("deleted", deleted).Msg("Deleted OID from ThothOS")
+	return deleted, nil
+}
+
 // GetSNMPv2Communities fetches SNMPv2 community settings
 func (c *Client) GetSNMPv2Communities() ([]SNMPv2Community, error) {
 	query := `query getSNMPv2sForCompany($companyId: String!) {
