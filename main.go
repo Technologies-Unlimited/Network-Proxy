@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -33,9 +32,7 @@ const version = "1.0.0"
 
 // Server constants
 const (
-	defaultPort             = "8080"
 	heartbeatInterval       = 60 * time.Second
-	configSyncInterval      = 5 * time.Minute
 	nodeStatusCheckInterval = 30 * time.Second
 	nodeOfflineTimeout      = 5 * time.Minute
 	nodeStaleTimeout        = 15 * time.Minute
@@ -101,6 +98,11 @@ var nodeCmd = &cobra.Command{
 	Run:   runNode,
 }
 
+// Server flags
+var (
+	serverPort int
+)
+
 // Node flags
 var (
 	nodeName   string
@@ -113,6 +115,9 @@ func init() {
 	// Add subcommands
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(nodeCmd)
+
+	// Server command flags
+	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 8080, "HTTP port to listen on")
 
 	// Node command flags
 	nodeCmd.Flags().StringVarP(&nodeName, "name", "n", "", "Node name (required)")
@@ -148,11 +153,6 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize server
 	srv := server.New(db)
 
-	// Get port from environment (only env var we still use)
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = defaultPort
-	}
 
 	// Load ThothOS configuration from database settings
 	thothosConfig, _ := models.GetThothOSConfig(db)
@@ -182,8 +182,8 @@ func runServer(cmd *cobra.Command, args []string) {
 		proxyName = fmt.Sprintf("Network-Monitor-%s", hostname)
 	}
 
-	// Get callback URL from environment or auto-detect
-	callbackURL := os.Getenv("PROXY_CALLBACK_URL")
+	// Auto-detect callback URL
+	callbackURL := ""
 
 	// Initialize ThothOS connection if configured
 	var thothosClient *thothos.Client
@@ -212,21 +212,16 @@ func runServer(cmd *cobra.Command, args []string) {
 			// Register this proxy with ThothOS
 			if callbackURL == "" {
 				localIP := getOutboundIP()
-				callbackURL = fmt.Sprintf("http://%s:%s", localIP, port)
+				callbackURL = fmt.Sprintf("http://%s:%d", localIP, serverPort)
 			}
 
-			portNum, err := strconv.Atoi(port)
-			if err != nil {
-				log.Error().Err(err).Str("port", port).Msg("Invalid port number")
-				portNum = 8080
-			}
 			proxyConfig, err := thothosClient.RegisterProxy(thothos.ProxyRegistrationInput{
 				ProxyName:   proxyName,
 				Description: fmt.Sprintf("Network Monitor Proxy v%s", version),
 				SupernetID:  "default",
 				SubnetID:    "default",
 				IPAddress:   getOutboundIP(),
-				Port:        portNum,
+				Port:        serverPort,
 				CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
 				Version:     version,
 			})
@@ -261,12 +256,12 @@ func runServer(cmd *cobra.Command, args []string) {
 					}
 				}()
 
-				go startHeartbeat(thothosClient, port, db)
+				go startHeartbeat(thothosClient, serverPort, db)
 			}
 		}
 	} else {
 		log.Warn().Msg("ThothOS not configured - running in standalone mode")
-		log.Warn().Msg("Configure ThothOS at http://localhost:" + port + "/settings to enable integration")
+		log.Warn().Msgf("Configure ThothOS at http://localhost:%d/settings to enable integration", serverPort)
 		middleware.SetStandaloneMode(true)
 	}
 
@@ -284,7 +279,7 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Create HTTP server
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%s", port),
+		Addr:    fmt.Sprintf(":%d", serverPort),
 		Handler: router,
 	}
 
@@ -293,8 +288,8 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Start server in goroutine
 	go func() {
-		log.Info().Msgf("Server starting on port %s", port)
-		log.Info().Msgf("Web UI available at http://localhost:%s", port)
+		log.Info().Msgf("Server starting on port %d", serverPort)
+		log.Info().Msgf("Web UI available at http://localhost:%d", serverPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("Failed to start server")
 		}
@@ -383,15 +378,9 @@ func pullInitialConfig(client *thothos.Client) error {
 	return nil
 }
 
-func startHeartbeat(client *thothos.Client, port string, db *gorm.DB) {
+func startHeartbeat(client *thothos.Client, port int, db *gorm.DB) {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
-
-	portNum, err := strconv.Atoi(port)
-	if err != nil {
-		log.Error().Err(err).Str("port", port).Msg("Invalid port number for heartbeat, using default")
-		portNum = 8080
-	}
 
 	for range ticker.C {
 		var nodeCount int64
@@ -407,7 +396,7 @@ func startHeartbeat(client *thothos.Client, port string, db *gorm.DB) {
 
 		_, err := client.SendHeartbeat(thothos.HeartbeatStatus{
 			IPAddress:   getOutboundIP(),
-			Port:        portNum,
+			Port:        port,
 			Version:     version,
 			AgentCount:  int(nodeCount),
 			DeviceCount: int(deviceCount),
