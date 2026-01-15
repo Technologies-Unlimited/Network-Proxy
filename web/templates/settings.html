@@ -425,6 +425,159 @@
             margin: 2px;
             font-size: 0.8rem;
         }
+
+        /* Update Section Styles */
+        .version-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .version-badge {
+            background: var(--accent);
+            color: var(--accent-text);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .version-details {
+            flex: 1;
+        }
+
+        .version-details .version-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .version-details .version-commit {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+
+        .update-available {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .update-available .update-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .update-available .update-icon {
+            width: 24px;
+            height: 24px;
+            background: #4caf50;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+        }
+
+        .update-available .update-title {
+            font-weight: 600;
+            color: #4caf50;
+        }
+
+        .update-available .update-details {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+
+        .update-available .commit-msg {
+            font-style: italic;
+            color: var(--text-primary);
+        }
+
+        .update-progress {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .update-progress .progress-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .update-progress .progress-title {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .update-progress .progress-percent {
+            font-size: 0.9rem;
+            color: var(--accent);
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .update-progress .progress-message {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .no-updates {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            padding: 10px 0;
+        }
+
+        .update-error {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            color: #f44336;
+        }
+
+        .update-complete {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            color: #4caf50;
+        }
+
+        .last-checked {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -583,6 +736,37 @@
                         <div class="theme-description">Elegant dark theme with gold accents inspired by ancient Egyptian aesthetics.</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Updates Section -->
+            <div class="settings-section">
+                <h3>Updates</h3>
+
+                <div class="version-info">
+                    <div class="version-badge" id="version-badge">v1.0.0</div>
+                    <div class="version-details">
+                        <div class="version-title">Network Monitor</div>
+                        <div class="version-commit" id="version-commit">Build: dev</div>
+                    </div>
+                </div>
+
+                <div id="update-status-container">
+                    <!-- Dynamic update status will be inserted here -->
+                </div>
+
+                <div class="button-group">
+                    <button id="btn-check-updates" class="btn btn-secondary" onclick="checkForUpdates()">
+                        Check for Updates
+                    </button>
+                    <button id="btn-download-update" class="btn btn-primary" onclick="downloadUpdate()" style="display: none;">
+                        Download Update
+                    </button>
+                    <button id="btn-apply-update" class="btn btn-primary" onclick="applyUpdate()" style="display: none;">
+                        Apply Update & Restart
+                    </button>
+                </div>
+
+                <div id="last-checked" class="last-checked" style="display: none;"></div>
             </div>
 
             <div class="settings-section">
@@ -898,8 +1082,288 @@
             }, 5000);
         }
 
+        // ============================================
+        // Update Functions
+        // ============================================
+
+        let updateCheckInfo = null;
+        let updatePollingInterval = null;
+
+        // Load version info on page load
+        async function loadVersionInfo() {
+            try {
+                const response = await fetch('/api/v1/updates/version');
+                const data = await response.json();
+
+                // Update version display
+                document.getElementById('version-badge').textContent = 'v' + data.currentVersion;
+                if (data.commitSHA && data.commitSHA !== 'dev') {
+                    document.getElementById('version-commit').textContent = 'Build: ' + data.commitSHA.substring(0, 8);
+                }
+
+                if (data.lastCheck) {
+                    updateCheckInfo = data.lastCheck;
+                    updateUpdateDisplay();
+                }
+
+                // Check current update status
+                if (data.updateStatus && data.updateStatus.status !== 'idle') {
+                    handleUpdateStatus(data.updateStatus);
+                }
+            } catch (error) {
+                console.error('Failed to load version info:', error);
+            }
+        }
+
+        // Check for updates
+        async function checkForUpdates() {
+            const btn = document.getElementById('btn-check-updates');
+            btn.disabled = true;
+            btn.textContent = 'Checking...';
+
+            try {
+                const response = await fetch('/api/v1/updates/check');
+                const data = await response.json();
+
+                if (data.success) {
+                    updateCheckInfo = data;
+                    updateUpdateDisplay();
+
+                    // Update last checked display
+                    const lastChecked = document.getElementById('last-checked');
+                    lastChecked.textContent = 'Last checked: ' + new Date(data.lastChecked).toLocaleString();
+                    lastChecked.style.display = 'block';
+
+                    if (data.updateAvailable) {
+                        showSuccess('Update available! Latest commit: ' + data.latestCommitSHA.substring(0, 8));
+                    } else {
+                        showSuccess('You are running the latest version.');
+                    }
+                } else {
+                    showError('Failed to check for updates: ' + data.error);
+                }
+            } catch (error) {
+                showError('Failed to check for updates: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Check for Updates';
+            }
+        }
+
+        // Update the display based on update check info
+        function updateUpdateDisplay() {
+            const container = document.getElementById('update-status-container');
+            const btnDownload = document.getElementById('btn-download-update');
+            const btnApply = document.getElementById('btn-apply-update');
+
+            if (!updateCheckInfo) {
+                container.innerHTML = '';
+                btnDownload.style.display = 'none';
+                btnApply.style.display = 'none';
+                return;
+            }
+
+            if (updateCheckInfo.updateAvailable) {
+                const commitDate = new Date(updateCheckInfo.latestCommitDate).toLocaleDateString();
+                container.innerHTML = `
+                    <div class="update-available">
+                        <div class="update-header">
+                            <div class="update-icon">!</div>
+                            <div class="update-title">Update Available</div>
+                        </div>
+                        <div class="update-details">
+                            <div>Latest commit: <code>${updateCheckInfo.latestCommitSHA.substring(0, 8)}</code> (${commitDate})</div>
+                            <div class="commit-msg">"${updateCheckInfo.latestCommitMsg}"</div>
+                        </div>
+                    </div>
+                `;
+                btnDownload.style.display = 'block';
+                btnApply.style.display = 'none';
+            } else {
+                container.innerHTML = `
+                    <div class="no-updates">
+                        You are running the latest version. Commit: <code>${updateCheckInfo.latestCommitSHA.substring(0, 8)}</code>
+                    </div>
+                `;
+                btnDownload.style.display = 'none';
+                btnApply.style.display = 'none';
+            }
+        }
+
+        // Download update
+        async function downloadUpdate() {
+            const btnDownload = document.getElementById('btn-download-update');
+            btnDownload.disabled = true;
+            btnDownload.textContent = 'Starting...';
+
+            try {
+                const response = await fetch('/api/v1/updates/download', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess('Update download started...');
+                    // Start polling for status
+                    startUpdatePolling();
+                } else {
+                    showError('Failed to start update: ' + data.error);
+                    btnDownload.disabled = false;
+                    btnDownload.textContent = 'Download Update';
+                }
+            } catch (error) {
+                showError('Failed to start update: ' + error.message);
+                btnDownload.disabled = false;
+                btnDownload.textContent = 'Download Update';
+            }
+        }
+
+        // Start polling for update status
+        function startUpdatePolling() {
+            if (updatePollingInterval) {
+                clearInterval(updatePollingInterval);
+            }
+
+            updatePollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/v1/updates/status');
+                    const status = await response.json();
+                    handleUpdateStatus(status);
+
+                    // Stop polling if complete or error
+                    if (status.status === 'complete' || status.status === 'error' || status.status === 'idle') {
+                        clearInterval(updatePollingInterval);
+                        updatePollingInterval = null;
+                    }
+                } catch (error) {
+                    console.error('Failed to poll update status:', error);
+                }
+            }, 1000);
+        }
+
+        // Handle update status
+        function handleUpdateStatus(status) {
+            const container = document.getElementById('update-status-container');
+            const btnDownload = document.getElementById('btn-download-update');
+            const btnApply = document.getElementById('btn-apply-update');
+            const btnCheck = document.getElementById('btn-check-updates');
+
+            if (status.status === 'idle') {
+                return;
+            }
+
+            if (status.status === 'downloading' || status.status === 'extracting' || status.status === 'building') {
+                container.innerHTML = `
+                    <div class="update-progress">
+                        <div class="progress-header">
+                            <div class="progress-title">Updating...</div>
+                            <div class="progress-percent">${status.progress}%</div>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-bar-fill" style="width: ${status.progress}%"></div>
+                        </div>
+                        <div class="progress-message">${status.message}</div>
+                    </div>
+                `;
+                btnDownload.style.display = 'none';
+                btnApply.style.display = 'none';
+                btnCheck.disabled = true;
+            } else if (status.status === 'complete') {
+                container.innerHTML = `
+                    <div class="update-complete">
+                        <strong>Update Ready!</strong><br>
+                        ${status.message}
+                    </div>
+                `;
+                btnDownload.style.display = 'none';
+                btnApply.style.display = 'block';
+                btnCheck.disabled = false;
+            } else if (status.status === 'error') {
+                container.innerHTML = `
+                    <div class="update-error">
+                        <strong>Update Failed</strong><br>
+                        ${status.error}
+                    </div>
+                `;
+                btnDownload.style.display = 'block';
+                btnDownload.disabled = false;
+                btnDownload.textContent = 'Retry Download';
+                btnApply.style.display = 'none';
+                btnCheck.disabled = false;
+            }
+        }
+
+        // Apply update
+        async function applyUpdate() {
+            if (!confirm('This will restart the application to apply the update. Continue?')) {
+                return;
+            }
+
+            const btnApply = document.getElementById('btn-apply-update');
+            btnApply.disabled = true;
+            btnApply.textContent = 'Restarting...';
+
+            try {
+                const response = await fetch('/api/v1/updates/apply', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess('Applying update... The application will restart.');
+                    // Show a message that the app will restart
+                    document.getElementById('update-status-container').innerHTML = `
+                        <div class="update-complete">
+                            <strong>Restarting...</strong><br>
+                            The application is restarting. Please wait...
+                        </div>
+                    `;
+
+                    // Try to reconnect after a delay
+                    setTimeout(() => {
+                        checkServerConnection();
+                    }, 5000);
+                } else {
+                    showError('Failed to apply update: ' + data.error);
+                    btnApply.disabled = false;
+                    btnApply.textContent = 'Apply Update & Restart';
+                }
+            } catch (error) {
+                showError('Failed to apply update: ' + error.message);
+                btnApply.disabled = false;
+                btnApply.textContent = 'Apply Update & Restart';
+            }
+        }
+
+        // Check if server is back online after restart
+        function checkServerConnection() {
+            let attempts = 0;
+            const maxAttempts = 30;
+
+            const checkInterval = setInterval(async () => {
+                attempts++;
+                try {
+                    const response = await fetch('/health');
+                    if (response.ok) {
+                        clearInterval(checkInterval);
+                        showSuccess('Server is back online! Reloading...');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    }
+                } catch (error) {
+                    // Server not ready yet
+                    if (attempts >= maxAttempts) {
+                        clearInterval(checkInterval);
+                        showError('Server did not come back online. Please refresh the page manually.');
+                    }
+                }
+            }, 2000);
+        }
+
         // Initialize
         loadSettings();
+        loadVersionInfo();
     </script>
 </body>
 </html>

@@ -32,6 +32,9 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	// Register Template routes BEFORE auth middleware (reads from disk)
 	RegisterTemplateRoutes(v1, srv)
 
+	// Register Update routes BEFORE auth middleware (needed for standalone mode)
+	RegisterUpdateRoutes(v1, srv)
+
 	// Apply auth middleware to all other API routes
 	v1.Use(middleware.RequireAuth())
 	{

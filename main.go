@@ -30,6 +30,12 @@ import (
 
 const version = "1.0.0"
 
+// Build-time variables (set via -ldflags)
+var (
+	commitSHA  = "dev"
+	buildTime  = "unknown"
+)
+
 // Server constants
 const (
 	heartbeatInterval       = 60 * time.Second
@@ -273,6 +279,9 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Serve static files
 	router.Static("/static", "web/static")
+
+	// Initialize updater
+	api.InitUpdater(version, commitSHA)
 
 	// Register API routes
 	api.RegisterRoutes(router, srv)
