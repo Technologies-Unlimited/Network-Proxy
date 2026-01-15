@@ -29,6 +29,9 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	// Register Monitor routes BEFORE auth middleware (fetches from ThothOS using saved config)
 	RegisterMonitorRoutes(v1, srv)
 
+	// Register Template routes BEFORE auth middleware (reads from disk)
+	RegisterTemplateRoutes(v1, srv)
+
 	// Apply auth middleware to all other API routes
 	v1.Use(middleware.RequireAuth())
 	{

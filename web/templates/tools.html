@@ -375,6 +375,128 @@
                 text-align: center;
             }
         }
+
+        /* OID Save Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .btn-save-oid {
+            padding: 4px 10px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            color: var(--accent);
+            transition: all 0.2s;
+        }
+
+        .btn-save-oid:hover {
+            background: var(--accent);
+            color: var(--accent-text);
+        }
+
+        .btn-save-oid.saved {
+            background: var(--success);
+            border-color: var(--success);
+            color: white;
+            cursor: default;
+        }
+
+        .bulk-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+
+        .bulk-actions label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .snmp-checkbox {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+        }
+
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast.error {
+            background: var(--danger);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -412,6 +534,7 @@
                 <button class="tab" onclick="switchTab('ssl')">SSL Checker</button>
                 <button class="tab" onclick="switchTab('arp')">ARP Table</button>
                 <button class="tab" onclick="switchTab('mtu')">MTU Discovery</button>
+                <button class="tab" onclick="switchTab('templates')">OID Templates</button>
             </div>
 
             <!-- Traceroute Tab -->
@@ -951,11 +1074,156 @@
                 <div id="mtu-loading" class="loading" style="display: none;">Discovering path MTU (this may take a moment)</div>
                 <div id="mtu-result"></div>
             </div>
+
+            <!-- OID Template Library Tab -->
+            <div id="templates-tab" class="tab-content">
+                <div class="tool-form">
+                    <h3>Zabbix OID Template Library</h3>
+                    <div class="info-box">
+                        Browse and import pre-defined OID templates from Zabbix. These templates contain SNMP OIDs for various network vendors including Cisco, MikroTik, Juniper, Fortinet, and more. Import OIDs to your library for use with the MIB Browser and device monitoring.
+                    </div>
+
+                    <div class="template-actions" style="margin-bottom: 20px;">
+                        <button type="button" class="btn btn-primary" onclick="loadTemplateLibrary()">
+                            <span id="load-templates-text">Load Template Library</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="importAllTemplates()" style="margin-left: 10px;">
+                            Import All OIDs to Library
+                        </button>
+                    </div>
+
+                    <div id="templates-summary" style="display: none; margin-bottom: 20px; padding: 15px; background: var(--bg-secondary); border-radius: 8px;">
+                        <h4 style="margin-top: 0;">Template Library Summary</h4>
+                        <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+                            <div><strong>Total Templates:</strong> <span id="total-templates">0</span></div>
+                            <div><strong>Total OIDs:</strong> <span id="total-oids">0</span></div>
+                            <div><strong>Vendors:</strong> <span id="total-vendors">0</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="templates-loading" class="loading" style="display: none;">Loading template library...</div>
+
+                <div id="vendor-list" style="display: none;">
+                    <h4>Vendors</h4>
+                    <div id="vendor-cards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;"></div>
+                </div>
+
+                <div id="template-detail" style="display: none;">
+                    <div style="margin-bottom: 15px;">
+                        <button type="button" class="btn btn-secondary" onclick="backToVendorList()">← Back to Vendors</button>
+                    </div>
+                    <div id="template-info" class="tool-form">
+                        <h4 id="template-name">Template Name</h4>
+                        <div style="margin-bottom: 15px;">
+                            <div><strong>Vendor:</strong> <span id="template-vendor"></span></div>
+                            <div><strong>OID Count:</strong> <span id="template-oid-count"></span></div>
+                        </div>
+                        <div class="template-actions" style="margin-bottom: 15px;">
+                            <button type="button" class="btn btn-primary" onclick="importSelectedOIDs()">Import Selected OIDs</button>
+                            <button type="button" class="btn btn-secondary" onclick="selectAllTemplateOIDs()" style="margin-left: 10px;">Select All</button>
+                            <button type="button" class="btn btn-secondary" onclick="deselectAllTemplateOIDs()" style="margin-left: 10px;">Deselect All</button>
+                        </div>
+                    </div>
+                    <div id="template-oids-table" style="overflow-x: auto;"></div>
+                </div>
+
+                <div id="templates-result"></div>
+            </div>
         </main>
 
         <footer>
             <p>Network Monitor - Built with Go</p>
         </footer>
+    </div>
+
+    <!-- OID Save Modal -->
+    <div id="oid-modal" class="modal-overlay" onclick="closeOIDModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h3>Save OID to Library</h3>
+            <form id="save-oid-form">
+                <input type="hidden" id="modal-oid-value" name="oid">
+                <input type="hidden" id="modal-oid-type" name="data_type">
+
+                <div class="form-group">
+                    <label for="modal-oid-display">OID:</label>
+                    <input type="text" id="modal-oid-display" readonly style="background: var(--bg-secondary); font-family: monospace;">
+                </div>
+
+                <div class="form-group">
+                    <label for="modal-oid-name">Name: *</label>
+                    <input type="text" id="modal-oid-name" name="name" placeholder="e.g., sysDescr, ifInOctets, cpuLoad" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="modal-oid-description">Description:</label>
+                    <input type="text" id="modal-oid-description" name="description" placeholder="e.g., System description string">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="modal-oid-unit">Unit:</label>
+                        <select id="modal-oid-unit" name="unit">
+                            <option value="">None</option>
+                            <option value="%">Percent (%)</option>
+                            <option value="bytes">Bytes</option>
+                            <option value="Kbps">Kbps</option>
+                            <option value="Mbps">Mbps</option>
+                            <option value="Gbps">Gbps</option>
+                            <option value="ms">Milliseconds</option>
+                            <option value="seconds">Seconds</option>
+                            <option value="C">Celsius</option>
+                            <option value="F">Fahrenheit</option>
+                            <option value="MHz">MHz</option>
+                            <option value="RPM">RPM</option>
+                            <option value="V">Volts</option>
+                            <option value="W">Watts</option>
+                            <option value="dBm">dBm</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modal-oid-datatype">Data Type:</label>
+                        <select id="modal-oid-datatype" name="data_type_select">
+                            <option value="string">String</option>
+                            <option value="integer">Integer</option>
+                            <option value="counter">Counter</option>
+                            <option value="gauge">Gauge</option>
+                            <option value="timeticks">TimeTicks</option>
+                            <option value="ipaddress">IP Address</option>
+                            <option value="oid">OID</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modal-oid-sample">Sample Value (from query):</label>
+                    <input type="text" id="modal-oid-sample" readonly style="background: var(--bg-secondary); color: var(--text-secondary);">
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeOIDModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save to Library</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bulk Import Modal -->
+    <div id="bulk-oid-modal" class="modal-overlay" onclick="closeBulkOIDModal(event)">
+        <div class="modal" onclick="event.stopPropagation()" style="max-width: 700px;">
+            <h3>Bulk Import OIDs to Library</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">
+                Selected <span id="bulk-selected-count">0</span> OIDs for import.
+                You can edit names before saving.
+            </p>
+            <div id="bulk-oid-list" style="max-height: 400px; overflow-y: auto; margin-bottom: 20px;">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeBulkOIDModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveBulkOIDs()">Import All Selected</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1055,8 +1323,12 @@
             }
         }
 
+        // Store SNMP results globally for bulk operations
+        let currentSNMPResults = [];
+
         function renderSNMPResult(data) {
             const container = document.getElementById('snmp-result');
+            currentSNMPResults = data.results || [];
 
             if (data.error && data.results.length === 0) {
                 container.innerHTML = `<div class="result-container"><div class="error">Error: ${data.error}</div></div>`;
@@ -1074,16 +1346,39 @@
             if (data.results.length === 0) {
                 html += '<p>No results returned.</p>';
             } else {
-                html += '<table class="port-table" style="margin-top: 15px;">';
-                html += '<thead><tr><th>OID</th><th>Type</th><th>Value</th></tr></thead><tbody>';
+                // Bulk actions bar
+                html += `<div class="bulk-actions">
+                    <label>
+                        <input type="checkbox" id="select-all-oids" class="snmp-checkbox" onchange="toggleAllOIDs(this)">
+                        Select All
+                    </label>
+                    <button type="button" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="openBulkImportModal()">
+                        Import Selected to Library
+                    </button>
+                    <span id="selected-oid-count" style="color: var(--text-secondary); font-size: 12px;">0 selected</span>
+                </div>`;
 
-                data.results.forEach(result => {
+                html += '<table class="port-table" style="margin-top: 15px;">';
+                html += '<thead><tr><th style="width: 30px;"></th><th>OID</th><th>Type</th><th>Value</th><th style="width: 80px;">Action</th></tr></thead><tbody>';
+
+                data.results.forEach((result, index) => {
                     const value = result.value !== null ? escapeHtml(String(result.value)) : '<em>null</em>';
                     const hexNote = result.hex_value ? ` <span style="color: var(--text-secondary); font-size: 12px;">(hex: ${result.hex_value})</span>` : '';
-                    html += `<tr>
-                        <td style="font-family: monospace; font-size: 13px;">${escapeHtml(result.oid)}</td>
-                        <td><span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(result.type)}</span></td>
-                        <td style="word-break: break-word; max-width: 400px;">${value}${hexNote}</td>
+                    const escapedOid = escapeHtml(result.oid);
+                    const escapedType = escapeHtml(result.type);
+                    const escapedValue = result.value !== null ? escapeHtml(String(result.value)) : '';
+
+                    html += `<tr data-oid-index="${index}">
+                        <td><input type="checkbox" class="snmp-checkbox oid-select" data-index="${index}" onchange="updateSelectedCount()"></td>
+                        <td style="font-family: monospace; font-size: 13px;">${escapedOid}</td>
+                        <td><span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px; font-size: 12px;">${escapedType}</span></td>
+                        <td style="word-break: break-word; max-width: 350px;">${value}${hexNote}</td>
+                        <td>
+                            <button type="button" class="btn-save-oid" id="save-btn-${index}"
+                                onclick="openSaveOIDModal('${escapedOid}', '${escapedType}', '${escapedValue.replace(/'/g, "\\'")}')">
+                                Save
+                            </button>
+                        </td>
                     </tr>`;
                 });
 
@@ -1093,6 +1388,227 @@
 
             html += '</div>';
             container.innerHTML = html;
+        }
+
+        // Toggle all OID checkboxes
+        function toggleAllOIDs(selectAllCheckbox) {
+            const checkboxes = document.querySelectorAll('.oid-select');
+            checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+            updateSelectedCount();
+        }
+
+        // Update selected count display
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('.oid-select:checked');
+            const countEl = document.getElementById('selected-oid-count');
+            if (countEl) {
+                countEl.textContent = `${checkboxes.length} selected`;
+            }
+        }
+
+        // Map SNMP types to data types for storage
+        function mapSNMPTypeToDataType(snmpType) {
+            const typeMap = {
+                'INTEGER': 'integer',
+                'Integer32': 'integer',
+                'Gauge32': 'gauge',
+                'Gauge': 'gauge',
+                'Counter32': 'counter',
+                'Counter64': 'counter',
+                'Counter': 'counter',
+                'TimeTicks': 'timeticks',
+                'OCTET STRING': 'string',
+                'DisplayString': 'string',
+                'IpAddress': 'ipaddress',
+                'OBJECT IDENTIFIER': 'oid',
+                'OID': 'oid'
+            };
+            return typeMap[snmpType] || 'string';
+        }
+
+        // Open single OID save modal
+        function openSaveOIDModal(oid, type, sampleValue) {
+            document.getElementById('modal-oid-value').value = oid;
+            document.getElementById('modal-oid-display').value = oid;
+            document.getElementById('modal-oid-type').value = mapSNMPTypeToDataType(type);
+            document.getElementById('modal-oid-datatype').value = mapSNMPTypeToDataType(type);
+            document.getElementById('modal-oid-sample').value = sampleValue;
+            document.getElementById('modal-oid-name').value = '';
+            document.getElementById('modal-oid-description').value = '';
+            document.getElementById('modal-oid-unit').value = '';
+            document.getElementById('oid-modal').classList.add('active');
+        }
+
+        // Close single OID modal
+        function closeOIDModal(event) {
+            if (!event || event.target.classList.contains('modal-overlay')) {
+                document.getElementById('oid-modal').classList.remove('active');
+            }
+        }
+
+        // Handle single OID form submission
+        document.getElementById('save-oid-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const oidData = {
+                oid: document.getElementById('modal-oid-value').value,
+                name: document.getElementById('modal-oid-name').value,
+                description: document.getElementById('modal-oid-description').value,
+                unit: document.getElementById('modal-oid-unit').value,
+                data_type: document.getElementById('modal-oid-datatype').value
+            };
+
+            try {
+                const response = await fetch('/api/v1/snmp/oids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(oidData)
+                });
+
+                if (response.ok) {
+                    showToast('OID saved to library successfully!', 'success');
+                    closeOIDModal();
+
+                    // Mark the save button as saved
+                    const buttons = document.querySelectorAll('.btn-save-oid');
+                    buttons.forEach(btn => {
+                        if (btn.onclick.toString().includes(oidData.oid)) {
+                            btn.classList.add('saved');
+                            btn.textContent = 'Saved';
+                            btn.onclick = null;
+                        }
+                    });
+                } else {
+                    const error = await response.json();
+                    showToast(`Error: ${error.error || 'Failed to save OID'}`, 'error');
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Open bulk import modal
+        function openBulkImportModal() {
+            const selectedCheckboxes = document.querySelectorAll('.oid-select:checked');
+            if (selectedCheckboxes.length === 0) {
+                showToast('Please select at least one OID to import', 'error');
+                return;
+            }
+
+            const listContainer = document.getElementById('bulk-oid-list');
+            document.getElementById('bulk-selected-count').textContent = selectedCheckboxes.length;
+
+            let html = '';
+            selectedCheckboxes.forEach((cb, idx) => {
+                const index = parseInt(cb.dataset.index);
+                const result = currentSNMPResults[index];
+                if (result) {
+                    html += `<div style="padding: 10px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 10px;">
+                        <div style="font-family: monospace; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">${escapeHtml(result.oid)}</div>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" class="bulk-oid-name" data-index="${index}" placeholder="Name (required)"
+                                style="flex: 1; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                            <select class="bulk-oid-type" data-index="${index}"
+                                style="padding: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary);">
+                                <option value="string" ${mapSNMPTypeToDataType(result.type) === 'string' ? 'selected' : ''}>String</option>
+                                <option value="integer" ${mapSNMPTypeToDataType(result.type) === 'integer' ? 'selected' : ''}>Integer</option>
+                                <option value="counter" ${mapSNMPTypeToDataType(result.type) === 'counter' ? 'selected' : ''}>Counter</option>
+                                <option value="gauge" ${mapSNMPTypeToDataType(result.type) === 'gauge' ? 'selected' : ''}>Gauge</option>
+                                <option value="timeticks" ${mapSNMPTypeToDataType(result.type) === 'timeticks' ? 'selected' : ''}>TimeTicks</option>
+                            </select>
+                        </div>
+                    </div>`;
+                }
+            });
+
+            listContainer.innerHTML = html;
+            document.getElementById('bulk-oid-modal').classList.add('active');
+        }
+
+        // Close bulk import modal
+        function closeBulkOIDModal(event) {
+            if (!event || event.target.classList.contains('modal-overlay')) {
+                document.getElementById('bulk-oid-modal').classList.remove('active');
+            }
+        }
+
+        // Save all selected OIDs in bulk
+        async function saveBulkOIDs() {
+            const nameInputs = document.querySelectorAll('.bulk-oid-name');
+            const typeSelects = document.querySelectorAll('.bulk-oid-type');
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (let i = 0; i < nameInputs.length; i++) {
+                const nameInput = nameInputs[i];
+                const typeSelect = typeSelects[i];
+                const index = parseInt(nameInput.dataset.index);
+                const result = currentSNMPResults[index];
+
+                if (!nameInput.value.trim()) {
+                    // Skip OIDs without names
+                    errorCount++;
+                    continue;
+                }
+
+                const oidData = {
+                    oid: result.oid,
+                    name: nameInput.value.trim(),
+                    description: '',
+                    unit: '',
+                    data_type: typeSelect.value
+                };
+
+                try {
+                    const response = await fetch('/api/v1/snmp/oids', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(oidData)
+                    });
+
+                    if (response.ok) {
+                        successCount++;
+                        // Mark as saved in the results table
+                        const saveBtn = document.getElementById(`save-btn-${index}`);
+                        if (saveBtn) {
+                            saveBtn.classList.add('saved');
+                            saveBtn.textContent = 'Saved';
+                        }
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    errorCount++;
+                }
+            }
+
+            closeBulkOIDModal();
+
+            if (successCount > 0) {
+                showToast(`Successfully imported ${successCount} OID(s) to library!`, 'success');
+            }
+            if (errorCount > 0) {
+                showToast(`Failed to import ${errorCount} OID(s). Make sure all have names.`, 'error');
+            }
+
+            // Clear selection
+            document.querySelectorAll('.oid-select').forEach(cb => cb.checked = false);
+            document.getElementById('select-all-oids').checked = false;
+            updateSelectedCount();
+        }
+
+        // Toast notification helper
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
 
         // HTMX response handlers
@@ -2028,6 +2544,362 @@
 
             html += '</div>';
             container.innerHTML = html;
+        }
+
+        // ========================================
+        // OID Template Library Functions
+        // ========================================
+
+        let templateLibraryData = null;
+        let currentVendorTemplates = [];
+        let currentTemplateOIDs = [];
+
+        // Load the template library summary
+        async function loadTemplateLibrary() {
+            const loadingEl = document.getElementById('templates-loading');
+            const summaryEl = document.getElementById('templates-summary');
+            const vendorListEl = document.getElementById('vendor-list');
+            const loadBtn = document.getElementById('load-templates-text');
+
+            loadingEl.style.display = 'block';
+            loadBtn.textContent = 'Loading...';
+
+            try {
+                const response = await fetch('/api/v1/zabbix-templates');
+                if (!response.ok) {
+                    throw new Error('Failed to load templates');
+                }
+
+                templateLibraryData = await response.json();
+
+                // Update summary
+                document.getElementById('total-templates').textContent = templateLibraryData.totalTemplates || 0;
+                document.getElementById('total-oids').textContent = templateLibraryData.totalOids || 0;
+                document.getElementById('total-vendors').textContent = (templateLibraryData.vendors || []).length;
+
+                summaryEl.style.display = 'block';
+
+                // Render vendor cards
+                renderVendorCards(templateLibraryData.vendors || []);
+                vendorListEl.style.display = 'block';
+
+                loadBtn.textContent = 'Refresh Library';
+            } catch (error) {
+                showToast('Error loading template library: ' + error.message, 'error');
+                loadBtn.textContent = 'Load Template Library';
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        // Render vendor cards
+        function renderVendorCards(vendors) {
+            const container = document.getElementById('vendor-cards');
+
+            if (!vendors || vendors.length === 0) {
+                container.innerHTML = '<p>No templates found. Make sure Zabbix templates are in the templates/snmp directory.</p>';
+                return;
+            }
+
+            // Sort vendors by OID count descending
+            vendors.sort((a, b) => b.totalOids - a.totalOids);
+
+            let html = '';
+            for (const vendor of vendors) {
+                html += `
+                    <div class="vendor-card" onclick="loadVendorTemplates('${escapeHtml(vendor.name)}')" style="
+                        background: var(--bg-card);
+                        border: 1px solid var(--border);
+                        border-radius: 8px;
+                        padding: 15px;
+                        cursor: pointer;
+                        transition: all 0.3s;
+                    " onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                        <h4 style="margin: 0 0 10px 0; color: var(--accent);">${escapeHtml(vendor.name)}</h4>
+                        <div style="font-size: 13px; color: var(--text-secondary);">
+                            <div><strong>${vendor.templateCount}</strong> templates</div>
+                            <div><strong>${vendor.totalOids}</strong> OIDs</div>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); importVendorOIDs('${escapeHtml(vendor.name)}')">
+                                Import All
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // Load templates for a specific vendor
+        async function loadVendorTemplates(vendor) {
+            const loadingEl = document.getElementById('templates-loading');
+            const vendorListEl = document.getElementById('vendor-list');
+            const detailEl = document.getElementById('template-detail');
+
+            loadingEl.style.display = 'block';
+            vendorListEl.style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/v1/zabbix-templates/${encodeURIComponent(vendor)}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load vendor templates');
+                }
+
+                const data = await response.json();
+                currentVendorTemplates = data.templates || [];
+
+                // If only one template, show OIDs directly
+                if (currentVendorTemplates.length === 1) {
+                    await showTemplateOIDs(currentVendorTemplates[0]);
+                } else {
+                    // Show template list for this vendor
+                    renderTemplateList(vendor, currentVendorTemplates);
+                    detailEl.style.display = 'block';
+                }
+            } catch (error) {
+                showToast('Error loading vendor templates: ' + error.message, 'error');
+                vendorListEl.style.display = 'block';
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        // Render template list for a vendor
+        function renderTemplateList(vendor, templates) {
+            document.getElementById('template-name').textContent = vendor + ' Templates';
+            document.getElementById('template-vendor').textContent = vendor;
+            document.getElementById('template-oid-count').textContent = templates.reduce((sum, t) => sum + t.oidCount, 0);
+
+            let html = `
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox" onchange="toggleAllTemplates(this.checked)"></th>
+                            <th>Template Name</th>
+                            <th>OIDs</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            for (let i = 0; i < templates.length; i++) {
+                const template = templates[i];
+                html += `
+                    <tr>
+                        <td><input type="checkbox" class="template-checkbox" data-index="${i}"></td>
+                        <td><a href="#" onclick="event.preventDefault(); showTemplateOIDs(currentVendorTemplates[${i}])">${escapeHtml(template.name)}</a></td>
+                        <td>${template.oidCount}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="importTemplateOIDsFromList(${i})">Import</button>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table>';
+            document.getElementById('template-oids-table').innerHTML = html;
+        }
+
+        // Show OIDs for a specific template
+        async function showTemplateOIDs(template) {
+            const detailEl = document.getElementById('template-detail');
+            const tableEl = document.getElementById('template-oids-table');
+
+            document.getElementById('template-name').textContent = template.name;
+            document.getElementById('template-vendor').textContent = template.vendor || 'Unknown';
+            document.getElementById('template-oid-count').textContent = template.oidCount;
+
+            currentTemplateOIDs = template.oids || [];
+
+            let html = `
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;"><input type="checkbox" onchange="toggleAllOIDs(this.checked)" checked></th>
+                            <th>OID</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Unit</th>
+                            <th>Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            for (let i = 0; i < currentTemplateOIDs.length; i++) {
+                const oid = currentTemplateOIDs[i];
+                html += `
+                    <tr>
+                        <td><input type="checkbox" class="oid-checkbox" data-index="${i}" checked></td>
+                        <td style="font-family: monospace; font-size: 12px;">${escapeHtml(oid.oid)}</td>
+                        <td>${escapeHtml(oid.name)}</td>
+                        <td>${escapeHtml(oid.category || '-')}</td>
+                        <td>${escapeHtml(oid.unit || '-')}</td>
+                        <td>${escapeHtml(oid.dataType || 'counter')}</td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table>';
+            tableEl.innerHTML = html;
+            detailEl.style.display = 'block';
+        }
+
+        // Back to vendor list
+        function backToVendorList() {
+            document.getElementById('template-detail').style.display = 'none';
+            document.getElementById('vendor-list').style.display = 'block';
+            currentTemplateOIDs = [];
+            currentVendorTemplates = [];
+        }
+
+        // Toggle all template checkboxes
+        function toggleAllTemplates(checked) {
+            document.querySelectorAll('.template-checkbox').forEach(cb => cb.checked = checked);
+        }
+
+        // Toggle all OID checkboxes
+        function toggleAllOIDs(checked) {
+            document.querySelectorAll('.oid-checkbox').forEach(cb => cb.checked = checked);
+        }
+
+        // Select all template OIDs
+        function selectAllTemplateOIDs() {
+            toggleAllOIDs(true);
+        }
+
+        // Deselect all template OIDs
+        function deselectAllTemplateOIDs() {
+            toggleAllOIDs(false);
+        }
+
+        // Import selected OIDs from current template
+        async function importSelectedOIDs() {
+            const selectedOIDs = [];
+            document.querySelectorAll('.oid-checkbox:checked').forEach(cb => {
+                const index = parseInt(cb.dataset.index);
+                if (currentTemplateOIDs[index]) {
+                    selectedOIDs.push(currentTemplateOIDs[index]);
+                }
+            });
+
+            if (selectedOIDs.length === 0) {
+                showToast('No OIDs selected', 'warning');
+                return;
+            }
+
+            await importOIDsToLibrary(selectedOIDs);
+        }
+
+        // Import OIDs from a template in the list
+        async function importTemplateOIDsFromList(index) {
+            const template = currentVendorTemplates[index];
+            if (!template || !template.oids) {
+                showToast('No OIDs in this template', 'warning');
+                return;
+            }
+
+            await importOIDsToLibrary(template.oids);
+        }
+
+        // Import all OIDs for a vendor
+        async function importVendorOIDs(vendor) {
+            const loadingEl = document.getElementById('templates-loading');
+            loadingEl.style.display = 'block';
+
+            try {
+                const response = await fetch(`/api/v1/zabbix-templates/${encodeURIComponent(vendor)}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load vendor templates');
+                }
+
+                const data = await response.json();
+                const allOIDs = [];
+                for (const template of (data.templates || [])) {
+                    if (template.oids) {
+                        allOIDs.push(...template.oids);
+                    }
+                }
+
+                if (allOIDs.length === 0) {
+                    showToast('No OIDs found for this vendor', 'warning');
+                    return;
+                }
+
+                await importOIDsToLibrary(allOIDs);
+            } catch (error) {
+                showToast('Error importing vendor OIDs: ' + error.message, 'error');
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        // Import all templates
+        async function importAllTemplates() {
+            if (!confirm('This will import all unique OIDs from all templates to your library. This may take a moment. Continue?')) {
+                return;
+            }
+
+            const loadingEl = document.getElementById('templates-loading');
+            loadingEl.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/v1/zabbix-templates/import-all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to import templates');
+                }
+
+                const result = await response.json();
+                showToast(
+                    `Imported ${result.imported} OIDs (${result.skipped} skipped as duplicates)`,
+                    result.imported > 0 ? 'success' : 'info'
+                );
+            } catch (error) {
+                showToast('Error importing all templates: ' + error.message, 'error');
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        // Import OIDs to the library
+        async function importOIDsToLibrary(oids) {
+            try {
+                const response = await fetch('/api/v1/zabbix-templates/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ oids: oids })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to import OIDs');
+                }
+
+                const result = await response.json();
+                showToast(
+                    `Imported ${result.imported} OIDs (${result.skipped} skipped as duplicates)`,
+                    result.imported > 0 ? 'success' : 'info'
+                );
+
+                if (result.errors && result.errors.length > 0) {
+                    console.error('Import errors:', result.errors);
+                }
+            } catch (error) {
+                showToast('Error importing OIDs: ' + error.message, 'error');
+            }
+        }
+
+        // HTML escape helper
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
     </script>
