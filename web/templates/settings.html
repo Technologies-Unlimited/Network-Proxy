@@ -746,7 +746,10 @@
                     <div class="version-badge" id="version-badge">v1.0.0</div>
                     <div class="version-details">
                         <div class="version-title">Network Monitor</div>
-                        <div class="version-commit" id="version-commit">Build: dev</div>
+                        <div class="version-commit" id="version-commit">Commit: dev</div>
+                    </div>
+                    <div class="version-link" id="version-link" style="display: none;">
+                        <a href="#" target="_blank" id="github-commit-link" style="color: var(--accent); font-size: 0.85rem;">View on GitHub</a>
                     </div>
                 </div>
 
@@ -1098,7 +1101,16 @@
                 // Update version display
                 document.getElementById('version-badge').textContent = 'v' + data.currentVersion;
                 if (data.commitSHA && data.commitSHA !== 'dev') {
-                    document.getElementById('version-commit').textContent = 'Build: ' + data.commitSHA.substring(0, 8);
+                    const shortSHA = data.commitSHA.substring(0, 8);
+                    document.getElementById('version-commit').textContent = 'Commit: ' + shortSHA;
+
+                    // Show GitHub link
+                    const linkContainer = document.getElementById('version-link');
+                    const githubLink = document.getElementById('github-commit-link');
+                    githubLink.href = 'https://github.com/Technologies-Unlimited/Network-Monitor/commit/' + data.commitSHA;
+                    linkContainer.style.display = 'block';
+                } else {
+                    document.getElementById('version-commit').textContent = 'Development Build';
                 }
 
                 if (data.lastCheck) {
@@ -1165,29 +1177,81 @@
 
             if (updateCheckInfo.updateAvailable) {
                 const commitDate = new Date(updateCheckInfo.latestCommitDate).toLocaleDateString();
-                container.innerHTML = `
+                const latestVersion = updateCheckInfo.latestVersion || updateCheckInfo.currentVersion;
+                const currentVersion = updateCheckInfo.currentVersion || '1.0.0';
+                const currentCommit = updateCheckInfo.currentCommitSHA ? updateCheckInfo.currentCommitSHA.substring(0, 8) : 'dev';
+                const latestCommit = updateCheckInfo.latestCommitSHA.substring(0, 8);
+
+                // Check if it's a version upgrade or just a commit update
+                const isVersionUpgrade = latestVersion !== currentVersion;
+
+                let updateHtml = `
                     <div class="update-available">
                         <div class="update-header">
                             <div class="update-icon">!</div>
-                            <div class="update-title">Update Available</div>
+                            <div class="update-title">${isVersionUpgrade ? 'New Version Available' : 'Update Available'}</div>
                         </div>
                         <div class="update-details">
-                            <div>Latest commit: <code>${updateCheckInfo.latestCommitSHA.substring(0, 8)}</code> (${commitDate})</div>
+                `;
+
+                if (isVersionUpgrade) {
+                    updateHtml += `
+                            <div style="margin-bottom: 8px;">
+                                <strong>v${currentVersion}</strong> <span style="color: var(--text-secondary);">→</span> <strong style="color: #4caf50;">v${latestVersion}</strong>
+                            </div>
+                    `;
+                }
+
+                updateHtml += `
+                            <div>Commit: <code>${currentCommit}</code> → <code style="color: #4caf50;">${latestCommit}</code> (${commitDate})</div>
                             <div class="commit-msg">"${updateCheckInfo.latestCommitMsg}"</div>
+                `;
+
+                // Show release notes if available
+                if (updateCheckInfo.releaseNotes) {
+                    updateHtml += `
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                                <div style="font-weight: 600; margin-bottom: 6px;">Release Notes:</div>
+                                <div style="font-size: 0.9rem; color: var(--text-secondary); white-space: pre-wrap;">${escapeHtml(updateCheckInfo.releaseNotes.substring(0, 500))}${updateCheckInfo.releaseNotes.length > 500 ? '...' : ''}</div>
+                            </div>
+                    `;
+                }
+
+                // Show link to release if available
+                if (updateCheckInfo.releaseUrl) {
+                    updateHtml += `
+                            <div style="margin-top: 8px;">
+                                <a href="${updateCheckInfo.releaseUrl}" target="_blank" style="color: var(--accent); font-size: 0.9rem;">View release on GitHub</a>
+                            </div>
+                    `;
+                }
+
+                updateHtml += `
                         </div>
                     </div>
                 `;
+
+                container.innerHTML = updateHtml;
                 btnDownload.style.display = 'block';
                 btnApply.style.display = 'none';
             } else {
+                const currentVersion = updateCheckInfo.currentVersion || '1.0.0';
+                const currentCommit = updateCheckInfo.latestCommitSHA.substring(0, 8);
                 container.innerHTML = `
                     <div class="no-updates">
-                        You are running the latest version. Commit: <code>${updateCheckInfo.latestCommitSHA.substring(0, 8)}</code>
+                        You are running the latest version: <strong>v${currentVersion}</strong> (commit: <code>${currentCommit}</code>)
                     </div>
                 `;
                 btnDownload.style.display = 'none';
                 btnApply.style.display = 'none';
             }
+        }
+
+        // Helper function to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Download update

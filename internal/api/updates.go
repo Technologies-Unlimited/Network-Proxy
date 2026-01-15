@@ -88,13 +88,17 @@ func checkForUpdates() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"success":         true,
-			"currentVersion":  info.CurrentVersion,
-			"latestCommitSHA": info.LatestCommitSHA,
+			"success":          true,
+			"currentVersion":   info.CurrentVersion,
+			"currentCommitSHA": info.CurrentCommitSHA,
+			"latestVersion":    info.LatestVersion,
+			"latestCommitSHA":  info.LatestCommitSHA,
 			"latestCommitDate": info.LatestCommitDate,
-			"latestCommitMsg": info.LatestCommitMsg,
-			"updateAvailable": info.UpdateAvailable,
-			"lastChecked":     info.LastChecked,
+			"latestCommitMsg":  info.LatestCommitMsg,
+			"releaseNotes":     info.ReleaseNotes,
+			"releaseUrl":       info.ReleaseURL,
+			"updateAvailable":  info.UpdateAvailable,
+			"lastChecked":      info.LastChecked,
 		})
 	}
 }

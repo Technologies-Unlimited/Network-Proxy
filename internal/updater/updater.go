@@ -26,10 +26,13 @@ const (
 // VersionInfo contains version information
 type VersionInfo struct {
 	CurrentVersion   string    `json:"currentVersion"`
+	CurrentCommitSHA string    `json:"currentCommitSha"`
 	LatestVersion    string    `json:"latestVersion"`
 	LatestCommitSHA  string    `json:"latestCommitSha"`
 	LatestCommitDate time.Time `json:"latestCommitDate"`
 	LatestCommitMsg  string    `json:"latestCommitMessage"`
+	ReleaseNotes     string    `json:"releaseNotes,omitempty"`
+	ReleaseURL       string    `json:"releaseUrl,omitempty"`
 	UpdateAvailable  bool      `json:"updateAvailable"`
 	LastChecked      time.Time `json:"lastChecked"`
 }
@@ -55,17 +58,27 @@ type GitHubCommit struct {
 
 // GitHubRelease represents a GitHub release from the API
 type GitHubRelease struct {
-	TagName     string    `json:"tag_name"`
-	Name        string    `json:"name"`
-	Body        string    `json:"body"`
-	Draft       bool      `json:"draft"`
-	Prerelease  bool      `json:"prerelease"`
-	PublishedAt time.Time `json:"published_at"`
-	HTMLURL     string    `json:"html_url"`
-	Assets      []struct {
+	TagName         string    `json:"tag_name"`
+	Name            string    `json:"name"`
+	Body            string    `json:"body"`
+	Draft           bool      `json:"draft"`
+	Prerelease      bool      `json:"prerelease"`
+	PublishedAt     time.Time `json:"published_at"`
+	HTMLURL         string    `json:"html_url"`
+	TargetCommitish string    `json:"target_commitish"`
+	Assets          []struct {
 		Name               string `json:"name"`
 		BrowserDownloadURL string `json:"browser_download_url"`
 	} `json:"assets"`
+}
+
+// GitHubTag represents a GitHub tag from the API
+type GitHubTag struct {
+	Name   string `json:"name"`
+	Commit struct {
+		SHA string `json:"sha"`
+		URL string `json:"url"`
+	} `json:"commit"`
 }
 
 // UpdateStatus represents the status of an update operation
@@ -108,23 +121,242 @@ func New(currentVersion, commitSHA string) *Updater {
 	}
 }
 
-// CheckForUpdates checks GitHub for the latest version
+// CheckForUpdates checks GitHub for the latest version using releases/tags
 func (u *Updater) CheckForUpdates() (*VersionInfo, error) {
 	log.Info().Msg("Checking for updates from GitHub...")
 
-	// Get the latest commit on the production branch
-	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", GitHubAPI, GitHubOwner, GitHubRepo, Branch)
+	// First, try to get the latest release (provides version info)
+	latestVersion := ""
+	releaseNotes := ""
+	releaseURL := ""
+	latestTagCommitSHA := ""
+
+	release, err := u.getLatestRelease()
+	if err != nil {
+		log.Warn().Err(err).Msg("No releases found, falling back to tags")
+	} else {
+		latestVersion = strings.TrimPrefix(release.TagName, "v")
+		releaseNotes = release.Body
+		releaseURL = release.HTMLURL
+		log.Info().Str("release", release.TagName).Msg("Found latest release")
+	}
+
+	// Get the commit SHA for the latest tag/release
+	if latestVersion != "" {
+		tagSHA, err := u.getTagCommitSHA("v" + latestVersion)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to get tag commit SHA")
+		} else {
+			latestTagCommitSHA = tagSHA
+		}
+	}
+
+	// Also get the latest commit on the production branch for comparison
+	commit, err := u.getLatestCommit()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest commit: %w", err)
+	}
+
+	// Get first line of commit message
+	commitMsg := commit.Commit.Message
+	if idx := strings.Index(commitMsg, "\n"); idx > 0 {
+		commitMsg = commitMsg[:idx]
+	}
+
+	// Use the branch commit SHA if no tag was found
+	latestCommitSHA := commit.SHA
+	if latestTagCommitSHA != "" {
+		// If we have a release, check if there are newer commits beyond the release
+		if latestTagCommitSHA != commit.SHA {
+			log.Info().
+				Str("releaseCommit", u.shortSHA(latestTagCommitSHA)).
+				Str("branchCommit", u.shortSHA(commit.SHA)).
+				Msg("Branch has commits beyond the latest release")
+		}
+		latestCommitSHA = commit.SHA // Always use the latest branch commit
+	}
+
+	// Determine if update is available
+	updateAvailable := false
+
+	// First check semantic version
+	if latestVersion != "" && u.currentVersion != "" {
+		if compareVersions(latestVersion, u.currentVersion) > 0 {
+			updateAvailable = true
+			log.Info().
+				Str("currentVersion", u.currentVersion).
+				Str("latestVersion", latestVersion).
+				Msg("Newer version available")
+		}
+	}
+
+	// Also check commit SHA - if versions match but commits differ, there's an update
+	if !updateAvailable && u.currentCommitSHA != "" && u.currentCommitSHA != "dev" {
+		currentShort := u.shortSHA(u.currentCommitSHA)
+		latestShort := u.shortSHA(latestCommitSHA)
+		if currentShort != latestShort {
+			updateAvailable = true
+			log.Info().
+				Str("currentCommit", currentShort).
+				Str("latestCommit", latestShort).
+				Msg("Newer commit available")
+		}
+	}
+
+	// If no current commit SHA (dev build), always show update available
+	if u.currentCommitSHA == "" || u.currentCommitSHA == "dev" {
+		updateAvailable = true
+	}
+
+	// If no version found from releases, use current version
+	if latestVersion == "" {
+		latestVersion = u.currentVersion
+	}
+
+	info := &VersionInfo{
+		CurrentVersion:   u.currentVersion,
+		CurrentCommitSHA: u.currentCommitSHA,
+		LatestVersion:    latestVersion,
+		LatestCommitSHA:  latestCommitSHA,
+		LatestCommitDate: commit.Commit.Committer.Date,
+		LatestCommitMsg:  commitMsg,
+		ReleaseNotes:     releaseNotes,
+		ReleaseURL:       releaseURL,
+		UpdateAvailable:  updateAvailable,
+		LastChecked:      time.Now(),
+	}
+
+	u.lastCheck = info
+
+	log.Info().
+		Str("currentVersion", u.currentVersion).
+		Str("latestVersion", latestVersion).
+		Str("latestCommit", u.shortSHA(latestCommitSHA)).
+		Str("currentCommit", u.shortSHA(u.currentCommitSHA)).
+		Bool("updateAvailable", updateAvailable).
+		Msg("Update check complete")
+
+	return info, nil
+}
+
+// getLatestRelease fetches the latest release from GitHub
+func (u *Updater) getLatestRelease() (*GitHubRelease, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", GitHubAPI, GitHubOwner, GitHubRepo)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "Network-Monitor-Updater")
 
 	resp, err := u.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch latest commit: %w", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("no releases found")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, err
+	}
+
+	return &release, nil
+}
+
+// getTagCommitSHA gets the commit SHA for a specific tag
+func (u *Updater) getTagCommitSHA(tagName string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/git/ref/tags/%s", GitHubAPI, GitHubOwner, GitHubRepo, tagName)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Network-Monitor-Updater")
+
+	resp, err := u.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get tag: status %d", resp.StatusCode)
+	}
+
+	var ref struct {
+		Object struct {
+			SHA  string `json:"sha"`
+			Type string `json:"type"`
+		} `json:"object"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ref); err != nil {
+		return "", err
+	}
+
+	// If it's an annotated tag, we need to get the underlying commit
+	if ref.Object.Type == "tag" {
+		return u.getTagObject(ref.Object.SHA)
+	}
+
+	return ref.Object.SHA, nil
+}
+
+// getTagObject resolves an annotated tag to its commit SHA
+func (u *Updater) getTagObject(tagSHA string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/git/tags/%s", GitHubAPI, GitHubOwner, GitHubRepo, tagSHA)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Network-Monitor-Updater")
+
+	resp, err := u.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get tag object: status %d", resp.StatusCode)
+	}
+
+	var tag struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tag); err != nil {
+		return "", err
+	}
+
+	return tag.Object.SHA, nil
+}
+
+// getLatestCommit gets the latest commit on the production branch
+func (u *Updater) getLatestCommit() (*GitHubCommit, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/commits/%s", GitHubAPI, GitHubOwner, GitHubRepo, Branch)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "Network-Monitor-Updater")
+
+	resp, err := u.httpClient.Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -134,43 +366,55 @@ func (u *Updater) CheckForUpdates() (*VersionInfo, error) {
 
 	var commit GitHubCommit
 	if err := json.NewDecoder(resp.Body).Decode(&commit); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, err
 	}
 
-	// Get first line of commit message
-	commitMsg := commit.Commit.Message
-	if idx := strings.Index(commitMsg, "\n"); idx > 0 {
-		commitMsg = commitMsg[:idx]
+	return &commit, nil
+}
+
+// compareVersions compares two semantic version strings
+// Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+func compareVersions(v1, v2 string) int {
+	// Strip 'v' prefix if present
+	v1 = strings.TrimPrefix(v1, "v")
+	v2 = strings.TrimPrefix(v2, "v")
+
+	parts1 := strings.Split(v1, ".")
+	parts2 := strings.Split(v2, ".")
+
+	// Pad shorter version with zeros
+	for len(parts1) < 3 {
+		parts1 = append(parts1, "0")
+	}
+	for len(parts2) < 3 {
+		parts2 = append(parts2, "0")
 	}
 
-	// Compare SHAs to determine if update is available
-	updateAvailable := u.currentCommitSHA != "" && commit.SHA != u.currentCommitSHA
+	for i := 0; i < 3; i++ {
+		n1 := parseVersionPart(parts1[i])
+		n2 := parseVersionPart(parts2[i])
 
-	// If no current commit SHA, check if the commit is newer than a reasonable build date
-	if u.currentCommitSHA == "" {
-		// Always show as update available if we don't have a commit SHA
-		updateAvailable = true
+		if n1 > n2 {
+			return 1
+		}
+		if n1 < n2 {
+			return -1
+		}
 	}
 
-	info := &VersionInfo{
-		CurrentVersion:   u.currentVersion,
-		LatestVersion:    u.currentVersion, // We use commit-based versioning
-		LatestCommitSHA:  commit.SHA,
-		LatestCommitDate: commit.Commit.Committer.Date,
-		LatestCommitMsg:  commitMsg,
-		UpdateAvailable:  updateAvailable,
-		LastChecked:      time.Now(),
+	return 0
+}
+
+// parseVersionPart parses a version part, handling pre-release suffixes
+func parseVersionPart(part string) int {
+	// Handle pre-release versions like "1-beta"
+	if idx := strings.IndexAny(part, "-+"); idx > 0 {
+		part = part[:idx]
 	}
 
-	u.lastCheck = info
-
-	log.Info().
-		Str("latestCommit", commit.SHA[:8]).
-		Str("currentCommit", u.shortSHA(u.currentCommitSHA)).
-		Bool("updateAvailable", updateAvailable).
-		Msg("Update check complete")
-
-	return info, nil
+	var n int
+	fmt.Sscanf(part, "%d", &n)
+	return n
 }
 
 // GetLastCheck returns the last version check result
@@ -249,15 +493,28 @@ func (u *Updater) DownloadAndUpdate() error {
 	}
 	newBinaryPath := filepath.Join(sourceDir, newBinaryName)
 
-	// Get the commit SHA to embed in the build
+	// Get the commit SHA and version to embed in the build
 	commitSHA := ""
-	if u.lastCheck != nil && u.lastCheck.LatestCommitSHA != "" {
-		commitSHA = u.lastCheck.LatestCommitSHA
+	latestVersion := ""
+	if u.lastCheck != nil {
+		if u.lastCheck.LatestCommitSHA != "" {
+			commitSHA = u.lastCheck.LatestCommitSHA
+		}
+		if u.lastCheck.LatestVersion != "" {
+			latestVersion = u.lastCheck.LatestVersion
+		}
 	}
 
 	// Build with ldflags to embed version info
 	ldflags := fmt.Sprintf("-X main.commitSHA=%s", commitSHA)
-	log.Info().Str("commitSHA", commitSHA).Str("ldflags", ldflags).Msg("Building with embedded commit SHA")
+	if latestVersion != "" {
+		ldflags += fmt.Sprintf(" -X main.version=%s", latestVersion)
+	}
+	log.Info().
+		Str("commitSHA", commitSHA).
+		Str("version", latestVersion).
+		Str("ldflags", ldflags).
+		Msg("Building with embedded version info")
 	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", newBinaryName, ".")
 	cmd.Dir = sourceDir
 	cmd.Env = append(os.Environ(),

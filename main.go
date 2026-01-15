@@ -30,10 +30,9 @@ import (
 	"gorm.io/gorm"
 )
 
-const version = "1.0.0"
-
 // Build-time variables (set via -ldflags)
 var (
+	version    = "1.0.0"
 	commitSHA  = "dev"
 	buildTime  = "unknown"
 )
