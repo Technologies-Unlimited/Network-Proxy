@@ -249,7 +249,16 @@ func (u *Updater) DownloadAndUpdate() error {
 	}
 	newBinaryPath := filepath.Join(sourceDir, newBinaryName)
 
-	cmd := exec.Command("go", "build", "-o", newBinaryName, ".")
+	// Get the commit SHA to embed in the build
+	commitSHA := ""
+	if u.lastCheck != nil && u.lastCheck.LatestCommitSHA != "" {
+		commitSHA = u.lastCheck.LatestCommitSHA
+	}
+
+	// Build with ldflags to embed version info
+	ldflags := fmt.Sprintf("-X main.commitSHA=%s", commitSHA)
+	log.Info().Str("commitSHA", commitSHA).Str("ldflags", ldflags).Msg("Building with embedded commit SHA")
+	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", newBinaryName, ".")
 	cmd.Dir = sourceDir
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
