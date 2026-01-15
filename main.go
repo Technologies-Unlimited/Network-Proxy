@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -134,8 +136,17 @@ func init() {
 }
 
 func main() {
-	// Initialize logger
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	// Initialize logger with both console and file output
+	logFile, err := os.OpenFile("network-monitor.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Printf("Failed to open log file: %v\n", err)
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
+	} else {
+		// Write to both console and file
+		consoleWriter := zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}
+		multi := zerolog.MultiLevelWriter(consoleWriter, logFile)
+		log.Logger = zerolog.New(multi).With().Timestamp().Logger()
+	}
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
@@ -286,22 +297,47 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Register API routes
 	api.RegisterRoutes(router, srv)
 
-	// Create HTTP server
-	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", serverPort),
-		Handler: router,
-	}
-
 	// Start node status monitor goroutine
 	go startNodeStatusMonitor(db)
 
-	// Start server in goroutine
+	// Try to bind to the port, killing any existing process if needed
+	addr := fmt.Sprintf(":%d", serverPort)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		// Port is in use, try to kill the process using it
+		log.Warn().Msgf("Port %d is in use, attempting to kill existing process...", serverPort)
+		if killErr := killProcessOnPort(serverPort); killErr != nil {
+			log.Error().Err(killErr).Msgf("Failed to kill process on port %d", serverPort)
+		} else {
+			// Wait a moment for the port to be released
+			time.Sleep(2 * time.Second)
+			// Try again
+			listener, err = net.Listen("tcp", addr)
+			if err != nil {
+				log.Fatal().Err(err).Msgf("Failed to bind to port %d even after killing existing process", serverPort)
+			}
+			log.Info().Msgf("Successfully claimed port %d after killing previous process", serverPort)
+		}
+	}
+
+	httpServer := &http.Server{
+		Handler: router,
+	}
+
+	// Start server using the listener we already have
 	go func() {
 		log.Info().Msgf("Server starting on port %d", serverPort)
 		log.Info().Msgf("Web UI available at http://localhost:%d", serverPort)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("Failed to start server")
 		}
+	}()
+
+	// Auto-launch browser after a short delay to ensure server is ready
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		url := fmt.Sprintf("http://localhost:%d", serverPort)
+		openBrowser(url)
 	}()
 
 	// Wait for interrupt signal for graceful shutdown
@@ -332,6 +368,122 @@ func printBanner() {
 ╚══════════════════════════════════════════════════════════╝
 `
 	fmt.Println(banner)
+}
+
+// openBrowser opens the specified URL in the default browser
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default: // Linux and other Unix-like systems
+		cmd = exec.Command("xdg-open", url)
+	}
+	if err := cmd.Start(); err != nil {
+		log.Warn().Err(err).Msg("Failed to open browser automatically")
+	} else {
+		log.Info().Str("url", url).Msg("Browser opened")
+	}
+}
+
+// killProcessOnPort kills any process using the specified port (Windows only for now)
+func killProcessOnPort(port int) error {
+	if runtime.GOOS != "windows" {
+		// On Unix-like systems, use lsof and kill
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("lsof -ti:%d | xargs kill -9", port))
+		return cmd.Run()
+	}
+
+	// On Windows, use netstat to find the PID and taskkill to kill it
+	cmd := exec.Command("cmd", "/c", fmt.Sprintf("for /f \"tokens=5\" %%a in ('netstat -aon ^| findstr :%d ^| findstr LISTENING') do taskkill /F /PID %%a", port))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Try alternative approach - parse netstat output manually
+		netstatCmd := exec.Command("netstat", "-aon")
+		netstatOutput, netstatErr := netstatCmd.Output()
+		if netstatErr != nil {
+			return fmt.Errorf("netstat failed: %v", netstatErr)
+		}
+
+		// Find the PID for the listening port
+		lines := string(netstatOutput)
+		searchStr := fmt.Sprintf(":%d", port)
+		for _, line := range splitLines(lines) {
+			if contains(line, searchStr) && contains(line, "LISTENING") {
+				// Extract PID (last column)
+				fields := splitFields(line)
+				if len(fields) > 0 {
+					pid := fields[len(fields)-1]
+					killCmd := exec.Command("taskkill", "/F", "/PID", pid)
+					if killErr := killCmd.Run(); killErr != nil {
+						log.Warn().Str("pid", pid).Err(killErr).Msg("Failed to kill process")
+					} else {
+						log.Info().Str("pid", pid).Msgf("Killed process on port %d", port)
+						return nil
+					}
+				}
+			}
+		}
+		return fmt.Errorf("could not find process on port %d: %s", port, string(output))
+	}
+	log.Info().Msgf("Killed process on port %d", port)
+	return nil
+}
+
+// Helper functions for string parsing
+func splitLines(s string) []string {
+	var lines []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			line := s[start:i]
+			if len(line) > 0 && line[len(line)-1] == '\r' {
+				line = line[:len(line)-1]
+			}
+			lines = append(lines, line)
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}
+
+func splitFields(s string) []string {
+	var fields []string
+	start := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' || s[i] == '\t' {
+			if start >= 0 {
+				fields = append(fields, s[start:i])
+				start = -1
+			}
+		} else {
+			if start < 0 {
+				start = i
+			}
+		}
+	}
+	if start >= 0 {
+		fields = append(fields, s[start:])
+	}
+	return fields
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || findSubstring(s, substr) >= 0)
+}
+
+func findSubstring(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
 
 func getOutboundIP() string {

@@ -335,11 +335,11 @@ start "" "%s" server
 		}
 
 		u.updateStatus.Status = "complete"
-		u.updateStatus.Message = "Update downloaded and ready. Please restart the application to apply the update."
+		u.updateStatus.Message = "Update downloaded and ready. Click 'Apply Update' to automatically restart with the new version."
 		u.updateStatus.Progress = 100
 		u.updateStatus.CompletedAt = time.Now()
 
-		log.Info().Msg("Update prepared. Application needs to restart to apply changes.")
+		log.Info().Msg("Update prepared. Ready for live update.")
 		return nil
 	}
 
@@ -360,26 +360,98 @@ start "" "%s" server
 	return nil
 }
 
-// ApplyUpdate runs the update script (Windows) or restarts the application
+// ApplyUpdate applies the update and restarts the application automatically
 func (u *Updater) ApplyUpdate() error {
+	currentExe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get current executable: %w", err)
+	}
+
+	newBinaryName := "network-monitor-new"
 	if runtime.GOOS == "windows" {
-		updateScript := filepath.Join(u.installDir, "update.bat")
-		if _, err := os.Stat(updateScript); os.IsNotExist(err) {
-			return fmt.Errorf("no update prepared")
+		newBinaryName += ".exe"
+	}
+	newBinaryPath := filepath.Join(u.installDir, newBinaryName)
+
+	// Check if update binary exists
+	if _, err := os.Stat(newBinaryPath); os.IsNotExist(err) {
+		return fmt.Errorf("no update prepared - new binary not found")
+	}
+
+	log.Info().
+		Str("currentExe", currentExe).
+		Str("newBinary", newBinaryPath).
+		Msg("Applying live update...")
+
+	if runtime.GOOS == "windows" {
+		// On Windows: rename current exe, copy new one, start new process, exit
+		oldExePath := currentExe + ".old"
+
+		// Remove old backup if exists
+		os.Remove(oldExePath)
+
+		// Rename current exe to .old (Windows allows renaming running executables)
+		if err := os.Rename(currentExe, oldExePath); err != nil {
+			return fmt.Errorf("failed to rename current executable: %w", err)
 		}
 
-		// Run the update script
-		cmd := exec.Command("cmd", "/c", "start", "", updateScript)
+		// Copy new binary to the original location
+		if err := copyFile(newBinaryPath, currentExe); err != nil {
+			// Restore old exe
+			os.Rename(oldExePath, currentExe)
+			return fmt.Errorf("failed to copy new binary: %w", err)
+		}
+
+		// Clean up the new binary temp file
+		os.Remove(newBinaryPath)
+
+		// Start the new process with the same arguments
+		log.Info().Msg("Starting new version...")
+		cmd := exec.Command(currentExe, "server")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Dir = u.installDir
+
 		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("failed to start update script: %w", err)
+			// Restore old exe
+			os.Remove(currentExe)
+			os.Rename(oldExePath, currentExe)
+			return fmt.Errorf("failed to start new version: %w", err)
 		}
 
-		// Exit the application so the script can replace the binary
-		log.Info().Msg("Starting update script and exiting...")
+		log.Info().Int("newPID", cmd.Process.Pid).Msg("New version started, exiting old process...")
+
+		// Give the new process a moment to start
+		time.Sleep(500 * time.Millisecond)
+
+		// Exit the current process
 		os.Exit(0)
 	}
 
-	return fmt.Errorf("manual restart required")
+	// On Unix: we can do in-place replacement
+	backupPath := currentExe + ".backup"
+	if err := copyFile(currentExe, backupPath); err != nil {
+		log.Warn().Err(err).Msg("Failed to create backup")
+	}
+
+	if err := os.Rename(newBinaryPath, currentExe); err != nil {
+		if err := copyFile(newBinaryPath, currentExe); err != nil {
+			return fmt.Errorf("failed to install update: %w", err)
+		}
+	}
+
+	// Start new process
+	cmd := exec.Command(currentExe, "server")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start new version: %w", err)
+	}
+
+	log.Info().Int("newPID", cmd.Process.Pid).Msg("New version started, exiting old process...")
+	os.Exit(0)
+
+	return nil
 }
 
 // Helper functions
