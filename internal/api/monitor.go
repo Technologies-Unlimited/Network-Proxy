@@ -2,9 +2,11 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/templates"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -15,6 +17,8 @@ type MonitoringConfig struct {
 	ICMPMonitoringTemplates []thothos.ICMPMonitoringTemplate `json:"icmpMonitoringTemplates"`
 	ICMPPollingTemplates    []thothos.ICMPPollingTemplate    `json:"icmpPollingTemplates"`
 	OIDs                    []thothos.OID                    `json:"oids"`
+	ZabbixTemplateOIDs      []templates.ParsedOID            `json:"zabbixTemplateOids"`
+	ZabbixTemplates         []templates.TemplateInfo         `json:"zabbixTemplates"`
 	SNMPv2Communities       []thothos.SNMPv2Community        `json:"snmpv2Communities"`
 	SNMPv3Communities       []thothos.SNMPv3Community        `json:"snmpv3Communities"`
 	SNMPv2Templates         []thothos.SNMPv2Template         `json:"snmpv2Templates"`
@@ -67,6 +71,22 @@ func getMonitoringData(srv *server.Server) gin.HandlerFunc {
 		// Fetch all monitoring templates
 		config := MonitoringConfig{}
 		var fetchErrors []string
+
+		// Load Zabbix template OIDs from local templates directory
+		templatesDir := filepath.Join(".", "templates", "snmp")
+		templateList, err := templates.ScanTemplatesDirectory(templatesDir)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to scan Zabbix templates directory")
+			fetchErrors = append(fetchErrors, "Zabbix templates: "+err.Error())
+		} else {
+			config.ZabbixTemplates = templateList
+			// Collect all OIDs from templates and deduplicate
+			var allOIDs []templates.ParsedOID
+			for _, t := range templateList {
+				allOIDs = append(allOIDs, t.OIDs...)
+			}
+			config.ZabbixTemplateOIDs = templates.DeduplicateOIDs(allOIDs)
+		}
 
 		// Fetch ICMP Monitoring Templates
 		icmpMonitoring, err := client.GetICMPMonitoringTemplates()
@@ -483,6 +503,21 @@ func syncMonitoringData(srv *server.Server) gin.HandlerFunc {
 		config := MonitoringConfig{}
 		var fetchErrors []string
 
+		// Load Zabbix template OIDs from local templates directory
+		templatesDir := filepath.Join(".", "templates", "snmp")
+		templateList, err := templates.ScanTemplatesDirectory(templatesDir)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to scan Zabbix templates directory")
+			fetchErrors = append(fetchErrors, "Zabbix templates: "+err.Error())
+		} else {
+			config.ZabbixTemplates = templateList
+			var allOIDs []templates.ParsedOID
+			for _, t := range templateList {
+				allOIDs = append(allOIDs, t.OIDs...)
+			}
+			config.ZabbixTemplateOIDs = templates.DeduplicateOIDs(allOIDs)
+		}
+
 		icmpMonitoring, err := client.GetICMPMonitoringTemplates()
 		if err != nil {
 			fetchErrors = append(fetchErrors, "ICMP monitoring: "+err.Error())
@@ -550,6 +585,8 @@ func syncMonitoringData(srv *server.Server) gin.HandlerFunc {
 			Int("icmpMonitoring", len(config.ICMPMonitoringTemplates)).
 			Int("icmpPolling", len(config.ICMPPollingTemplates)).
 			Int("oids", len(config.OIDs)).
+			Int("zabbixTemplates", len(config.ZabbixTemplates)).
+			Int("zabbixOids", len(config.ZabbixTemplateOIDs)).
 			Int("snmpv2Communities", len(config.SNMPv2Communities)).
 			Int("snmpv3Communities", len(config.SNMPv3Communities)).
 			Int("snmpv2Templates", len(config.SNMPv2Templates)).
@@ -562,9 +599,11 @@ func syncMonitoringData(srv *server.Server) gin.HandlerFunc {
 			"success": true,
 			"message": "Monitoring data synced successfully",
 			"counts": gin.H{
-				"icmpMonitoring":   len(config.ICMPMonitoringTemplates),
-				"icmpPolling":      len(config.ICMPPollingTemplates),
-				"oids":             len(config.OIDs),
+				"icmpMonitoring":    len(config.ICMPMonitoringTemplates),
+				"icmpPolling":       len(config.ICMPPollingTemplates),
+				"oids":              len(config.OIDs),
+				"zabbixTemplates":   len(config.ZabbixTemplates),
+				"zabbixTemplateOids": len(config.ZabbixTemplateOIDs),
 				"snmpv2Communities": len(config.SNMPv2Communities),
 				"snmpv3Communities": len(config.SNMPv3Communities),
 				"snmpv2Templates":  len(config.SNMPv2Templates),

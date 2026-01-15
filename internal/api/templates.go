@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -38,27 +39,27 @@ func listTemplates(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Group by vendor
-		vendorMap := templates.GetVendorTemplates(templateList)
+		// Group by manufacturer
+		manufacturerMap := templates.GetVendorTemplates(templateList)
 
 		// Build summary response
-		type VendorSummary struct {
+		type ManufacturerSummary struct {
 			Name          string `json:"name"`
 			TemplateCount int    `json:"templateCount"`
 			TotalOIDs     int    `json:"totalOids"`
 		}
 
-		var vendors []VendorSummary
+		var manufacturers []ManufacturerSummary
 		totalOIDs := 0
 		totalTemplates := 0
 
-		for vendor, tmpls := range vendorMap {
+		for manufacturer, tmpls := range manufacturerMap {
 			oidCount := 0
 			for _, t := range tmpls {
 				oidCount += t.OIDCount
 			}
-			vendors = append(vendors, VendorSummary{
-				Name:          vendor,
+			manufacturers = append(manufacturers, ManufacturerSummary{
+				Name:          manufacturer,
 				TemplateCount: len(tmpls),
 				TotalOIDs:     oidCount,
 			})
@@ -67,17 +68,17 @@ func listTemplates(srv *server.Server) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"vendors":        vendors,
+			"manufacturers":  manufacturers,
 			"totalTemplates": totalTemplates,
 			"totalOids":      totalOIDs,
 		})
 	}
 }
 
-// listVendorTemplates returns templates for a specific vendor
+// listVendorTemplates returns templates for a specific manufacturer
 func listVendorTemplates(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vendor := c.Param("vendor")
+		manufacturer := c.Param("vendor") // URL param kept for API compatibility
 		templatesDir := filepath.Join(".", "templates", "snmp")
 
 		templateList, err := templates.ScanTemplatesDirectory(templatesDir)
@@ -88,20 +89,20 @@ func listVendorTemplates(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Filter by vendor (case-insensitive partial match)
-		var vendorTemplates []templates.TemplateInfo
+		// Filter by manufacturer (case-insensitive partial match)
+		var manufacturerTemplates []templates.TemplateInfo
 		for _, t := range templateList {
-			if containsIgnoreCase(t.Name, vendor) ||
-			   containsIgnoreCase(t.Vendor, vendor) ||
-			   containsIgnoreCase(t.FilePath, vendor) {
-				vendorTemplates = append(vendorTemplates, t)
+			if containsIgnoreCase(t.Name, manufacturer) ||
+			   containsIgnoreCase(t.Manufacturer, manufacturer) ||
+			   containsIgnoreCase(t.FilePath, manufacturer) {
+				manufacturerTemplates = append(manufacturerTemplates, t)
 			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"vendor":    vendor,
-			"templates": vendorTemplates,
-			"count":     len(vendorTemplates),
+			"manufacturer": manufacturer,
+			"templates":    manufacturerTemplates,
+			"count":        len(manufacturerTemplates),
 		})
 	}
 }
@@ -109,7 +110,7 @@ func listVendorTemplates(srv *server.Server) gin.HandlerFunc {
 // getTemplateOIDs returns all OIDs from a specific template
 func getTemplateOIDs(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		vendor := c.Param("vendor")
+		manufacturer := c.Param("vendor") // URL param kept for API compatibility
 		templateName := c.Param("template")
 		templatesDir := filepath.Join(".", "templates", "snmp")
 
@@ -123,13 +124,14 @@ func getTemplateOIDs(srv *server.Server) gin.HandlerFunc {
 
 		// Find matching template
 		for _, t := range templateList {
-			if (containsIgnoreCase(t.Name, vendor) || containsIgnoreCase(t.FilePath, vendor)) &&
+			if (containsIgnoreCase(t.Name, manufacturer) || containsIgnoreCase(t.FilePath, manufacturer)) &&
 			   containsIgnoreCase(t.Name, templateName) {
 				c.JSON(http.StatusOK, gin.H{
-					"template": t.Name,
-					"vendor":   t.Vendor,
-					"oids":     t.OIDs,
-					"count":    t.OIDCount,
+					"template":     t.Name,
+					"manufacturer": t.Manufacturer,
+					"model":        t.Model,
+					"oids":         t.OIDs,
+					"count":        t.OIDCount,
 				})
 				return
 			}
@@ -334,19 +336,21 @@ func importAllTemplateOIDs(srv *server.Server) gin.HandlerFunc {
 // buildDescription creates a rich description from parsed OID data
 func buildDescription(oid templates.ParsedOID) string {
 	desc := oid.Description
-	if oid.Vendor != "" || oid.TemplateName != "" {
+	parts := []string{}
+	if oid.Manufacturer != "" && oid.Manufacturer != "Unknown" {
+		parts = append(parts, "Manufacturer: "+oid.Manufacturer)
+	}
+	if oid.Model != "" && oid.Model != "Unknown" {
+		parts = append(parts, "Model: "+oid.Model)
+	}
+	if oid.TemplateName != "" {
+		parts = append(parts, "Template: "+oid.TemplateName)
+	}
+	if len(parts) > 0 {
 		if desc != "" {
 			desc += " | "
 		}
-		if oid.Vendor != "" {
-			desc += "Vendor: " + oid.Vendor
-		}
-		if oid.TemplateName != "" {
-			if oid.Vendor != "" {
-				desc += ", "
-			}
-			desc += "Template: " + oid.TemplateName
-		}
+		desc += strings.Join(parts, ", ")
 	}
 	return desc
 }
