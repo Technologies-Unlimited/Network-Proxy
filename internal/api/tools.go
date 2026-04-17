@@ -1823,8 +1823,12 @@ func mtuDiscovery(srv *server.Server) gin.HandlerFunc {
 
 		lastSuccess := low
 
-		// Test if target is reachable at all
-		testCmd := exec.Command("ping", "-n", "1", "-w", fmt.Sprintf("%d", req.Timeout*1000), req.Target)
+		// All numeric arguments to ping are validated above (Timeout 1..10,
+		// MTU 28..9000) so they're safe to format. The target is screened by
+		// validateTarget(); we never pass it through a shell.
+		timeoutMs := strconv.Itoa(req.Timeout * 1000)
+
+		testCmd := exec.Command("ping", "-n", "1", "-w", timeoutMs, req.Target)
 		if err := testCmd.Run(); err != nil {
 			response.Duration = time.Since(startTime).Nanoseconds()
 			response.Error = "Target is not reachable"
@@ -1837,7 +1841,11 @@ func mtuDiscovery(srv *server.Server) gin.HandlerFunc {
 			mid := (low + high) / 2
 
 			// Windows ping: -f = don't fragment, -l = size, -n = count, -w = timeout in ms
-			cmd := exec.Command("ping", "-f", "-l", fmt.Sprintf("%d", mid), "-n", "1", "-w", fmt.Sprintf("%d", req.Timeout*1000), req.Target)
+			cmd := exec.Command("ping", "-f",
+				"-l", strconv.Itoa(mid),
+				"-n", "1",
+				"-w", timeoutMs,
+				req.Target)
 			err := cmd.Run()
 
 			if err == nil {

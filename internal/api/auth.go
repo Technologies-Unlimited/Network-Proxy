@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/netutil"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -21,12 +24,105 @@ import (
 
 // AuthService handles authentication with ThothOS
 type AuthService struct {
-	db *gorm.DB
+	db        *gorm.DB
+	mfaLimits *mfaLimiter
 }
 
 // NewAuthService creates a new auth service
 func NewAuthService(db *gorm.DB) *AuthService {
-	return &AuthService{db: db}
+	return &AuthService{
+		db:        db,
+		mfaLimits: newMFALimiter(),
+	}
+}
+
+// mfaLimiter tracks MFA failure counts per (userID, source-IP) so we can
+// throttle brute-force attempts on the 6-digit code endpoint without a
+// shared store. State is process-local — operators that run multiple
+// replicas behind a load balancer should put a real rate-limiter in front.
+type mfaLimiter struct {
+	mu      sync.Mutex
+	entries map[string]*mfaAttempt
+}
+
+type mfaAttempt struct {
+	failures int
+	notUntil time.Time
+}
+
+func newMFALimiter() *mfaLimiter {
+	return &mfaLimiter{entries: make(map[string]*mfaAttempt)}
+}
+
+const (
+	// mfaSoftFailures is the number of failures before we start delaying
+	// further attempts; mfaHardFailures is the lockout threshold.
+	mfaSoftFailures = 5
+	mfaHardFailures = 20
+	// Lockout escalates from 5s up to mfaMaxBackoff for soft failures, and
+	// to mfaHardLockout once hard threshold is hit.
+	mfaMaxBackoff  = 5 * time.Minute
+	mfaHardLockout = 30 * time.Minute
+	// Stale entries are pruned after this idle window so the map can't grow
+	// unboundedly from one-off attempts.
+	mfaEntryTTL = 1 * time.Hour
+)
+
+// allow returns nil if the caller may attempt verification, or an error
+// describing how long they must wait.
+func (l *mfaLimiter) allow(key string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.gcLocked()
+	a, ok := l.entries[key]
+	if !ok {
+		return nil
+	}
+	if remaining := time.Until(a.notUntil); remaining > 0 {
+		return fmt.Errorf("too many MFA attempts; try again in %s", remaining.Round(time.Second))
+	}
+	return nil
+}
+
+// recordFailure increments the failure counter and applies an exponential
+// backoff (5s, 10s, 20s, ..., capped). After mfaHardFailures, the caller is
+// locked out for mfaHardLockout.
+func (l *mfaLimiter) recordFailure(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	a, ok := l.entries[key]
+	if !ok {
+		a = &mfaAttempt{}
+		l.entries[key] = a
+	}
+	a.failures++
+	switch {
+	case a.failures >= mfaHardFailures:
+		a.notUntil = time.Now().Add(mfaHardLockout)
+	case a.failures >= mfaSoftFailures:
+		backoff := time.Duration(1<<(a.failures-mfaSoftFailures)) * 5 * time.Second
+		if backoff > mfaMaxBackoff {
+			backoff = mfaMaxBackoff
+		}
+		a.notUntil = time.Now().Add(backoff)
+	}
+}
+
+// recordSuccess clears the counter for this key.
+func (l *mfaLimiter) recordSuccess(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.entries, key)
+}
+
+// gcLocked removes entries idle past mfaEntryTTL. Caller must hold l.mu.
+func (l *mfaLimiter) gcLocked() {
+	now := time.Now()
+	for k, a := range l.entries {
+		if a.notUntil.Before(now.Add(-mfaEntryTTL)) {
+			delete(l.entries, k)
+		}
+	}
 }
 
 // Global auth service instance
@@ -96,7 +192,7 @@ func RegisterAuthRoutes(router *gin.Engine, db *gorm.DB) {
 		auth.POST("/verify-mfa", svc.handleVerifyMFA)
 		auth.GET("/status", svc.handleAuthStatus)
 		auth.POST("/logout", svc.handleLogout)
-		auth.POST("/standalone", handleEnableStandalone)
+		auth.POST("/standalone", svc.handleEnableStandalone)
 	}
 
 	// Login page route
@@ -142,7 +238,15 @@ func (s *AuthService) handleLogin(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read ThothOS login response body")
+		c.JSON(http.StatusBadGateway, LoginResponse{
+			Success: false,
+			Error:   "Failed to read response from ThothOS",
+		})
+		return
+	}
 
 	var thothosResp LoginResponse
 	if err := json.Unmarshal(body, &thothosResp); err != nil {
@@ -167,13 +271,25 @@ func (s *AuthService) handleLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, thothosResp)
 }
 
-// handleVerifyMFA handles MFA verification and completes the login
+// handleVerifyMFA handles MFA verification and completes the login. Failed
+// attempts are throttled per (userID, source-IP) to defeat brute-forcing
+// the 6-digit code.
 func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 	var req VerifyMFARequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, VerifyMFAResponse{
 			Success: false,
 			Error:   "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	limitKey := req.UserID + "|" + c.ClientIP()
+	if err := s.mfaLimits.allow(limitKey); err != nil {
+		log.Warn().Str("userId", req.UserID).Str("ip", c.ClientIP()).Err(err).Msg("MFA attempt throttled")
+		c.JSON(http.StatusTooManyRequests, VerifyMFAResponse{
+			Success: false,
+			Error:   err.Error(),
 		})
 		return
 	}
@@ -216,7 +332,15 @@ func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to read ThothOS verify-mfa response body")
+		c.JSON(http.StatusBadGateway, VerifyMFAResponse{
+			Success: false,
+			Error:   "Failed to read response from ThothOS",
+		})
+		return
+	}
 
 	var thothosResp VerifyMFAResponse
 	if err := json.Unmarshal(body, &thothosResp); err != nil {
@@ -229,9 +353,13 @@ func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 	}
 
 	if !thothosResp.Success {
+		// Treat any non-success response from ThothOS as a verification
+		// failure for rate-limiting purposes.
+		s.mfaLimits.recordFailure(limitKey)
 		c.JSON(resp.StatusCode, thothosResp)
 		return
 	}
+	s.mfaLimits.recordSuccess(limitKey)
 
 	log.Info().
 		Str("userId", thothosResp.UserID).
@@ -258,8 +386,15 @@ func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 		IsActive:                true,
 	}
 
-	// Delete any existing config and insert new one
-	s.db.Where("1 = 1").Delete(&models.ProxyConfig{})
+	// Replace any existing single-row ProxyConfig record. Use an unscoped
+	// truncate-style delete with an explicit predicate; the previous
+	// `Where("1 = 1").Delete(...)` worked but is exactly the kind of
+	// statement that becomes a footgun the moment ProxyConfig grows a
+	// real per-tenant primary key. GORM requires *some* WHERE for safety,
+	// so we filter on the always-true `id > 0`.
+	if err := s.db.Unscoped().Where("id > ?", 0).Delete(&models.ProxyConfig{}).Error; err != nil {
+		log.Error().Err(err).Msg("Failed to clear previous ProxyConfig rows")
+	}
 	if err := s.db.Create(&config).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to save proxy configuration")
 		c.JSON(http.StatusInternalServerError, VerifyMFAResponse{
@@ -320,10 +455,54 @@ func (s *AuthService) handleAuthStatus(c *gin.Context) {
 	})
 }
 
-// handleEnableStandalone enables standalone mode (no ThothOS authentication)
-func handleEnableStandalone(c *gin.Context) {
+// handleEnableStandalone enables standalone mode (no ThothOS authentication).
+//
+// SECURITY: this endpoint disables authentication on every other endpoint,
+// so we gate it tightly:
+//   1. Caller must come from the loopback interface (127.0.0.0/8 or ::1).
+//   2. EITHER no ProxyConfig exists yet (legitimate first-run setup),
+//      OR the request carries the matching NETWORK_MONITOR_BOOTSTRAP_TOKEN
+//      via the Authorization: Bearer <token> header.
+//
+// Without these gates, anyone reachable to the server could disable auth
+// with a single curl POST.
+func (s *AuthService) handleEnableStandalone(c *gin.Context) {
+	if !isLoopbackRequest(c) {
+		log.Warn().
+			Str("ip", c.ClientIP()).
+			Msg("Refused remote /auth/standalone request")
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "standalone mode can only be enabled from a local loopback connection",
+		})
+		return
+	}
+
+	// First-run check: a fresh install with no saved config can flip on
+	// without a token. Once a config exists, require the bootstrap token
+	// so a stolen LAN session can't undo the operator's setup.
+	var existing models.ProxyConfig
+	configExists := s.db.First(&existing).Error == nil
+
+	bootstrapToken := os.Getenv("NETWORK_MONITOR_BOOTSTRAP_TOKEN")
+	supplied := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+
+	if configExists {
+		if bootstrapToken == "" || supplied == "" || !constantTimeEqual(supplied, bootstrapToken) {
+			log.Warn().Msg("Refused /auth/standalone: config exists but bootstrap token missing/mismatched")
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"error":   "ProxyConfig exists; standalone enable requires NETWORK_MONITOR_BOOTSTRAP_TOKEN",
+			})
+			return
+		}
+	}
+
 	middleware.SetStandaloneMode(true)
-	log.Info().Msg("Standalone mode enabled via API")
+	log.Info().
+		Bool("configExisted", configExists).
+		Str("ip", c.ClientIP()).
+		Msg("Standalone mode enabled via API")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -332,10 +511,37 @@ func handleEnableStandalone(c *gin.Context) {
 	})
 }
 
+// isLoopbackRequest returns true if the connecting client IP is on the
+// loopback interface. Honours X-Forwarded-For ONLY if the real RemoteAddr
+// is loopback (i.e. behind a trusted local reverse proxy).
+func isLoopbackRequest(c *gin.Context) bool {
+	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		host = c.Request.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// constantTimeEqual is a wrapper around subtle.ConstantTimeCompare for
+// strings, returning a bool. Used so the bootstrap-token check doesn't
+// leak length/timing information to a network attacker.
+func constantTimeEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var diff byte
+	for i := 0; i < len(a); i++ {
+		diff |= a[i] ^ b[i]
+	}
+	return diff == 0
+}
+
 // handleLogout clears the authentication configuration
 func (s *AuthService) handleLogout(c *gin.Context) {
-	// Clear the configuration
-	s.db.Where("1 = 1").Delete(&models.ProxyConfig{})
+	if err := s.db.Unscoped().Where("id > ?", 0).Delete(&models.ProxyConfig{}).Error; err != nil {
+		log.Error().Err(err).Msg("Failed to clear ProxyConfig on logout")
+	}
 
 	// Clear global auth context
 	middleware.SetGlobalAuthContext(nil)
@@ -388,7 +594,7 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 	// Register the proxy
 	proxyConfig, err := client.RegisterProxy(thothos.ProxyRegistrationInput{
 		ProxyName:   config.ProxyName,
-		Description: fmt.Sprintf("Network Monitor Proxy registered via login"),
+		Description: "Network Monitor Proxy registered via login",
 		SupernetID:  "default",
 		SubnetID:    "default",
 		IPAddress:   getOutboundIP(),
@@ -444,16 +650,11 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 	log.Info().Msg("ThothOS registration complete")
 }
 
-// getOutboundIP gets the preferred outbound IP of this machine
+// getOutboundIP returns the local IP that would reach the public internet,
+// delegating to the shared netutil helper. Returns "" if unavailable;
+// callers should not silently substitute 127.0.0.1.
 func getOutboundIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		return "127.0.0.1"
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-	return localAddr.IP.String()
+	return netutil.OutboundIP()
 }
 
 // pullInitialConfigFromClient pulls configuration using an existing client

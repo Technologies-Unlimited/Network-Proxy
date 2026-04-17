@@ -5,10 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
+	"time"
 
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/envcfg"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
 	"github.com/gin-gonic/gin"
@@ -179,38 +184,171 @@ func (c *ConfigCache) GetVLANs() []thothos.VLAN {
 func verifyWebhookSignature(payload []byte, signature string) bool {
 	secret := GetWebhookSecret()
 	if secret == "" {
-		// SECURITY: Reject webhooks if no secret is configured in production
-		// This prevents unauthorized webhook injection
 		log.Error().Msg("Webhook secret not configured - rejecting webhook for security")
 		return false
 	}
-
 	if signature == "" {
 		log.Warn().Msg("Webhook received without signature")
 		return false
 	}
 
+	// Length-check first so the constant-time compare doesn't leak length
+	// via early-return.
+	expected := computeWebhookHMAC(secret, payload)
+	if len(signature) != len(expected) {
+		return false
+	}
+	return hmac.Equal([]byte(signature), []byte(expected))
+}
+
+// computeWebhookHMAC computes the canonical webhook signature: sha256-HMAC
+// over the raw request body. Wrapped so the replay-protection variant
+// (signature-with-timestamp) shares the same primitive.
+func computeWebhookHMAC(secret string, payload []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
-	expectedMAC := hex.EncodeToString(mac.Sum(nil))
+	return hex.EncodeToString(mac.Sum(nil))
+}
 
-	return hmac.Equal([]byte(signature), []byte(expectedMAC))
+// computeWebhookHMACWithTimestamp binds a timestamp into the signed input so
+// captured (body, signature) pairs can't be replayed indefinitely. The
+// timestamp is included in the HMAC pre-image as `timestamp + "." + body`.
+func computeWebhookHMACWithTimestamp(secret, timestamp string, payload []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(payload)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// webhookReplayWindow is the maximum acceptable skew between a signed
+// webhook timestamp and now. Anything outside the window is rejected even
+// if the signature is otherwise valid.
+const webhookReplayWindow = 5 * time.Minute
+
+// seenWebhookIDs tracks recently-processed webhook IDs to defend against
+// in-window replays. Entries expire after webhookReplayWindow. A background
+// ticker (started by init) sweeps the map every minute so the hot path
+// stays O(1) — the previous implementation walked the whole map on every
+// webhook, which became a latency spike at scale.
+var (
+	seenWebhookMu  sync.Mutex
+	seenWebhookIDs = map[string]time.Time{}
+)
+
+func init() {
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for range t.C {
+			gcSeenWebhookIDs(time.Now())
+		}
+	}()
+}
+
+func gcSeenWebhookIDs(now time.Time) {
+	seenWebhookMu.Lock()
+	defer seenWebhookMu.Unlock()
+	for k, ts := range seenWebhookIDs {
+		if now.Sub(ts) > webhookReplayWindow {
+			delete(seenWebhookIDs, k)
+		}
+	}
+}
+
+// validateAndConsumeWebhookID returns true if id has not been seen recently
+// and records it. An empty id is allowed (legacy senders) but loses replay
+// protection at the ID layer; the timestamp window still applies.
+func validateAndConsumeWebhookID(id string) bool {
+	if id == "" {
+		return true
+	}
+	seenWebhookMu.Lock()
+	defer seenWebhookMu.Unlock()
+	if _, dup := seenWebhookIDs[id]; dup {
+		return false
+	}
+	seenWebhookIDs[id] = time.Now()
+	return true
+}
+
+// verifyWebhookTimestamp parses an X-Webhook-Timestamp header (RFC3339 or
+// unix seconds) and returns an error if it is missing, malformed, or
+// outside the allowed skew window.
+func verifyWebhookTimestamp(ts string) error {
+	if ts == "" {
+		return fmt.Errorf("missing X-Webhook-Timestamp")
+	}
+	var sent time.Time
+	if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		sent = t
+	} else if secs, err := strconv.ParseInt(ts, 10, 64); err == nil {
+		sent = time.Unix(secs, 0)
+	} else {
+		return fmt.Errorf("malformed timestamp: %s", ts)
+	}
+	if d := time.Since(sent); d > webhookReplayWindow || d < -webhookReplayWindow {
+		return fmt.Errorf("timestamp outside replay window: skew=%s", d.Round(time.Second))
+	}
+	return nil
 }
 
 // handleWebhook handles incoming webhooks from ThothOS
 func handleWebhook(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Read the body
 		body, err := io.ReadAll(c.Request.Body)
 		if err != nil {
+			// Distinguish "body exceeded the BodyLimit middleware cap" from
+			// a generic read error so senders can tell whether to retry
+			// (network blip) or fix their payload (oversized).
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				log.Warn().Int64("limit", maxBytesErr.Limit).Msg("Webhook body exceeded size limit")
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+					"error": fmt.Sprintf("payload exceeded %d bytes", maxBytesErr.Limit),
+				})
+				return
+			}
 			log.Error().Err(err).Msg("Failed to read webhook body")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read body"})
 			return
 		}
 
-		// Verify signature
+		// Replay protection: if the sender includes a timestamp, validate
+		// it falls inside the allowed skew window AND verify the signature
+		// covers (timestamp || body). If no timestamp is sent, fall back to
+		// the legacy body-only verification path so older callers still
+		// work — operators that want to require timestamps everywhere can
+		// set WEBHOOK_REQUIRE_TIMESTAMP=true.
 		signature := c.GetHeader("X-Webhook-Signature")
-		if !verifyWebhookSignature(body, signature) {
+		timestamp := c.GetHeader("X-Webhook-Timestamp")
+		webhookID := c.GetHeader("X-Webhook-Id")
+		requireTS := envcfg.Bool("WEBHOOK_REQUIRE_TIMESTAMP")
+
+		if timestamp != "" || requireTS {
+			if err := verifyWebhookTimestamp(timestamp); err != nil {
+				log.Warn().Err(err).Msg("Webhook timestamp rejected")
+				c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+				return
+			}
+			secret := GetWebhookSecret()
+			if secret == "" {
+				log.Error().Msg("Webhook secret not configured - rejecting timestamped webhook")
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "secret not configured"})
+				return
+			}
+			expected := computeWebhookHMACWithTimestamp(secret, timestamp, body)
+			if len(signature) != len(expected) || !hmac.Equal([]byte(signature), []byte(expected)) {
+				log.Warn().Msg("Invalid webhook signature (timestamped)")
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
+				return
+			}
+			if !validateAndConsumeWebhookID(webhookID) {
+				log.Warn().Str("id", webhookID).Msg("Replayed webhook id rejected")
+				c.JSON(http.StatusConflict, gin.H{"error": "Replayed webhook"})
+				return
+			}
+		} else if !verifyWebhookSignature(body, signature) {
 			log.Warn().Msg("Invalid webhook signature")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
 			return

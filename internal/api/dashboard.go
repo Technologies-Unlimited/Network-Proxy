@@ -9,38 +9,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// getDashboardDeviceCount returns the total device count as plain text
+// getDashboardDeviceCount returns the total device count as plain text,
+// scoped to the caller's company.
 func getDashboardDeviceCount(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var count int64
-		srv.DB.Model(&models.Device{}).Count(&count)
+		scopeByCompany(c, srv.DB).Model(&models.Device{}).Count(&count)
 		c.String(http.StatusOK, "%d", count)
 	}
 }
 
-// getDashboardDevicesUp returns the count of devices with status "up"
+// getDashboardDevicesUp returns the count of devices with status "up", scoped.
 func getDashboardDevicesUp(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var count int64
-		srv.DB.Model(&models.Device{}).Where("status = ?", "up").Count(&count)
+		scopeByCompany(c, srv.DB).Model(&models.Device{}).Where("status = ?", "up").Count(&count)
 		c.String(http.StatusOK, "%d", count)
 	}
 }
 
-// getDashboardDevicesDown returns the count of devices with status "down"
+// getDashboardDevicesDown returns the count of devices with status "down", scoped.
 func getDashboardDevicesDown(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var count int64
-		srv.DB.Model(&models.Device{}).Where("status = ?", "down").Count(&count)
+		scopeByCompany(c, srv.DB).Model(&models.Device{}).Where("status = ?", "down").Count(&count)
 		c.String(http.StatusOK, "%d", count)
 	}
 }
 
-// getDashboardActiveAlerts returns the count of active alerts
+// getDashboardActiveAlerts returns the count of active alerts, scoped.
 func getDashboardActiveAlerts(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var count int64
-		srv.DB.Model(&models.Alert{}).Where("status = ?", "active").Count(&count)
+		scopeByCompany(c, srv.DB).Model(&models.Alert{}).Where("status = ?", "active").Count(&count)
 		c.String(http.StatusOK, "%d", count)
 	}
 }
@@ -50,7 +51,7 @@ func getDashboardRecentAlerts(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var alerts []models.Alert
 
-		result := srv.DB.Preload("Device").
+		result := scopeByCompany(c, srv.DB).Preload("Device").
 			Where("status = ?", "active").
 			Order("triggered_at DESC").
 			Limit(5).
@@ -92,12 +93,12 @@ func getDashboardRecentAlerts(srv *server.Server) gin.HandlerFunc {
 			</div>`,
 				severityColor,
 				severityColor,
-				alert.Title,
-				alert.Message,
-				hostname,
+				hesc(alert.Title),
+				hesc(alert.Message),
+				hesc(hostname),
 				alert.TriggeredAt.Format("2006-01-02 15:04"),
 				severityColor,
-				alert.Severity,
+				hesc(alert.Severity),
 			)
 		}
 

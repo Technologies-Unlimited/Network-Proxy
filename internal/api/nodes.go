@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,14 +17,85 @@ import (
 	"sync"
 	"time"
 
+	nodeGrpc "github.com/Technologies-Unlimited/Network-Proxy/internal/grpc"
 	pb "github.com/Technologies-Unlimited/Network-Proxy/internal/grpc/pb/node"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/safego"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
+
+// pingPeerNode opens a one-shot gRPC connection to the target node, sends 3
+// Ping RPCs, and returns the average round-trip latency in microseconds. Any
+// dial/RPC error is propagated so the caller can surface the peer as
+// disconnected. The connection is closed before this function returns.
+func pingPeerNode(ctx context.Context, target *models.Node) (int64, error) {
+	if target == nil {
+		return 0, fmt.Errorf("target node is nil")
+	}
+	if target.IPAddress == "" || target.GRPCPort == 0 {
+		return 0, fmt.Errorf("target node %q has no IP/port", target.Name)
+	}
+
+	dialOpts, err := peerDialOptions()
+	if err != nil {
+		return 0, err
+	}
+
+	addr := fmt.Sprintf("%s:%d", target.IPAddress, target.GRPCPort)
+	conn, err := grpc.NewClient(addr, dialOpts...)
+	if err != nil {
+		return 0, fmt.Errorf("dial %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	client := pb.NewNodeServiceClient(conn)
+
+	const samples = 3
+	var totalUs int64
+	var ok int64
+	for i := 0; i < samples; i++ {
+		callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		start := time.Now()
+		_, err := client.Ping(callCtx, &pb.PingRequest{
+			RequesterId: "network-monitor-server",
+			Sequence:    int64(i),
+		})
+		cancel()
+		if err != nil {
+			continue
+		}
+		totalUs += time.Since(start).Microseconds()
+		ok++
+	}
+	if ok == 0 {
+		return 0, fmt.Errorf("no successful ping samples to %s", addr)
+	}
+	return totalUs / ok, nil
+}
+
+// peerDialOptions returns the auth-aware dial options used by every
+// node-to-node bandwidth-test connection. Centralising this means the API
+// handlers and the gRPC peer code share a single security posture.
+func peerDialOptions() ([]grpc.DialOption, error) {
+	cfg := nodeGrpc.LoadSecurityConfigFromEnv()
+	authOpts, err := cfg.DialOptions()
+	if err != nil {
+		return nil, err
+	}
+	return append([]grpc.DialOption{
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(GRPCMaxMsgSize),
+			grpc.MaxCallSendMsgSize(GRPCMaxMsgSize),
+		),
+		grpc.WithWriteBufferSize(GRPCWriteBufferSize),
+		grpc.WithReadBufferSize(GRPCReadBufferSize),
+		grpc.WithInitialWindowSize(int32(GRPCInitWindowSize)),
+		grpc.WithInitialConnWindowSize(int32(GRPCConnWindowSize)),
+	}, authOpts...), nil
+}
 
 // Bandwidth test constants
 const (
@@ -47,33 +119,128 @@ type CPUStats struct {
 	Samples  []float64
 }
 
-// getCPUUsage returns current CPU usage percentage (Windows-compatible)
+// getCPUUsage returns current CPU usage as a percentage (0-100).
+// Supports Windows (wmic), Linux (/proc/stat sample), and macOS (top).
+//
+// Returns 0 only when the platform-specific probe genuinely fails — the
+// previous implementation silently returned 0 on every non-Windows host,
+// which made the "Low CPU usage" diagnostic line a permanent lie.
 func getCPUUsage() float64 {
-	if runtime.GOOS == "windows" {
-		// Use WMIC to get CPU usage on Windows
-		cmd := exec.Command("wmic", "cpu", "get", "loadpercentage")
-		output, err := cmd.Output()
-		if err != nil {
-			return 0
+	switch runtime.GOOS {
+	case "windows":
+		return cpuUsageWindows()
+	case "linux":
+		return cpuUsageLinux()
+	case "darwin":
+		return cpuUsageDarwin()
+	}
+	return 0
+}
+
+func cpuUsageWindows() float64 {
+	cmd := exec.Command("wmic", "cpu", "get", "loadpercentage")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "LoadPercentage" {
+			continue
 		}
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" && line != "LoadPercentage" {
-				if val, err := strconv.ParseFloat(line, 64); err == nil {
-					return val
-				}
-			}
+		if val, err := strconv.ParseFloat(line, 64); err == nil {
+			return val
 		}
 	}
 	return 0
 }
 
-// listNodes returns all nodes
+// cpuUsageLinux samples /proc/stat twice 100ms apart and computes
+// 100 * (1 - idle_delta / total_delta). No external dependency required.
+func cpuUsageLinux() float64 {
+	read := func() (idle, total uint64, ok bool) {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return 0, 0, false
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if !strings.HasPrefix(line, "cpu ") {
+				continue
+			}
+			fields := strings.Fields(line)
+			for i, f := range fields[1:] {
+				v, err := strconv.ParseUint(f, 10, 64)
+				if err != nil {
+					return 0, 0, false
+				}
+				total += v
+				if i == 3 { // idle is the 4th field
+					idle = v
+				}
+			}
+			return idle, total, true
+		}
+		return 0, 0, false
+	}
+	idle1, total1, ok := read()
+	if !ok {
+		return 0
+	}
+	time.Sleep(100 * time.Millisecond)
+	idle2, total2, ok := read()
+	if !ok || total2 <= total1 {
+		return 0
+	}
+	idleDelta := float64(idle2 - idle1)
+	totalDelta := float64(total2 - total1)
+	return 100 * (1 - idleDelta/totalDelta)
+}
+
+// cpuUsageDarwin shells to `top -l 1 -n 0` and parses the "CPU usage" line.
+func cpuUsageDarwin() float64 {
+	cmd := exec.Command("top", "-l", "1", "-n", "0")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		if !strings.HasPrefix(line, "CPU usage:") {
+			continue
+		}
+		// "CPU usage: 4.76% user, 9.52% sys, 85.71% idle"
+		fields := strings.Split(line, ",")
+		var user, sys float64
+		for _, f := range fields {
+			f = strings.TrimSpace(f)
+			f = strings.TrimPrefix(f, "CPU usage:")
+			f = strings.TrimSpace(f)
+			parts := strings.SplitN(f, "%", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			val, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+			if err != nil {
+				continue
+			}
+			label := strings.TrimSpace(parts[1])
+			switch label {
+			case "user":
+				user = val
+			case "sys":
+				sys = val
+			}
+		}
+		return user + sys
+	}
+	return 0
+}
+
+// listNodes returns nodes as an HTML table; paginated, company-scoped.
 func listNodes(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var nodes []models.Node
-		result := srv.DB.Find(&nodes)
+		result := scopeByCompany(c, srv.DB).Limit(limit).Offset(offset).Find(&nodes)
 
 		if result.Error != nil {
 			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading nodes</p>`))
@@ -142,7 +309,10 @@ func listNodes(srv *server.Server) gin.HandlerFunc {
 						<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;" onclick="viewNode('%s')">View</button>
 						<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);" hx-delete="/api/v1/nodes/%s" hx-confirm="Delete this node?" hx-target="#nodes-table" hx-swap="innerHTML">Delete</button>
 					</td>
-				</tr>`, node.Name, node.Hostname, node.IPAddress, grpcPort, statusColor, statusText, lastSeen, node.ID, node.ID)
+				</tr>`,
+				hesc(node.Name), hesc(node.Hostname), hesc(node.IPAddress),
+				hesc(grpcPort), statusColor, hesc(statusText), hesc(lastSeen),
+				hesc(node.ID), hesc(node.ID))
 		}
 
 		html += `
@@ -153,18 +323,18 @@ func listNodes(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// listNodesJSON returns all nodes as JSON
+// listNodesJSON returns nodes as JSON. Paginated, company-scoped.
 func listNodesJSON(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var nodes []models.Node
-		result := srv.DB.Find(&nodes)
-
-		if result.Error != nil {
+		var total int64
+		scopeByCompany(c, srv.DB).Model(&models.Node{}).Count(&total)
+		if err := scopeByCompany(c, srv.DB).Limit(limit).Offset(offset).Find(&nodes).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading nodes"})
 			return
 		}
-
-		c.JSON(http.StatusOK, gin.H{"nodes": nodes})
+		c.JSON(http.StatusOK, gin.H{"nodes": nodes, "total": total, "limit": limit, "offset": offset})
 	}
 }
 
@@ -412,26 +582,31 @@ func getNodePeers(srv *server.Server) gin.HandlerFunc {
 
 // ===== Node Peer Management =====
 
-// listNodePeers returns all node peer connections
+// listNodePeers returns node peer connections; paginated, scoped to nodes
+// the caller's company owns.
 func listNodePeers(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var peers []models.NodePeer
-		result := srv.DB.Preload("SourceNode").Preload("TargetNode").Find(&peers)
-
-		if result.Error != nil {
+		var total int64
+		scopeByNodeOwnership(c, srv.DB).Model(&models.NodePeer{}).Count(&total)
+		if err := scopeByNodeOwnership(c, srv.DB).Preload("SourceNode").Preload("TargetNode").
+			Limit(limit).Offset(offset).Find(&peers).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading peers"})
 			return
 		}
-
-		c.JSON(http.StatusOK, gin.H{"peers": peers})
+		c.JSON(http.StatusOK, gin.H{"peers": peers, "total": total, "limit": limit, "offset": offset})
 	}
 }
 
-// listNodePeersHTML returns HTML table of peer connections
+// listNodePeersHTML returns HTML table of peer connections; paginated,
+// scoped to nodes the caller's company owns.
 func listNodePeersHTML(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var peers []models.NodePeer
-		result := srv.DB.Preload("SourceNode").Preload("TargetNode").Find(&peers)
+		result := scopeByNodeOwnership(c, srv.DB).Preload("SourceNode").Preload("TargetNode").
+			Limit(limit).Offset(offset).Find(&peers)
 
 		if result.Error != nil {
 			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading peer connections</p>`))
@@ -492,7 +667,11 @@ func listNodePeersHTML(srv *server.Server) gin.HandlerFunc {
 						<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;" hx-post="/api/v1/node-peers/%s/refresh" hx-target="#peers-table" hx-swap="innerHTML">Refresh</button>
 						<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);" hx-delete="/api/v1/node-peers/%s" hx-confirm="Unlink these nodes?" hx-target="#peers-table" hx-swap="innerHTML">Unlink</button>
 					</td>
-				</tr>`, peer.SourceNode.Name, peer.SourceNode.IPAddress, peer.TargetNode.Name, peer.TargetNode.IPAddress, statusColor, statusText, latency, peer.ID, peer.ID)
+				</tr>`,
+				hesc(peer.SourceNode.Name), hesc(peer.SourceNode.IPAddress),
+				hesc(peer.TargetNode.Name), hesc(peer.TargetNode.IPAddress),
+				statusColor, hesc(statusText), hesc(latency),
+				hesc(peer.ID), hesc(peer.ID))
 		}
 
 		html += `
@@ -591,16 +770,23 @@ func refreshNodePeer(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// TODO: Implement actual gRPC ping to check connection status
-		// For now, set status based on node statuses
-		if peer.SourceNode.Status == "online" && peer.TargetNode.Status == "online" {
-			peer.Status = "connected"
-			now := time.Now()
-			peer.LastPing = &now
-			// Simulate latency measurement
-			peer.Latency = 1500 // 1.5ms in microseconds
-		} else {
+		// Real gRPC ping. Connect to the target node and measure round-trip
+		// latency over three samples; the previous implementation hard-coded
+		// 1500us regardless of whether the peer was even reachable.
+		latencyUs, pingErr := pingPeerNode(c.Request.Context(), &peer.TargetNode)
+		if pingErr != nil {
+			log.Debug().
+				Err(pingErr).
+				Str("peer_id", peer.ID).
+				Str("target", peer.TargetNode.Name).
+				Msg("Peer ping failed")
 			peer.Status = "disconnected"
+			peer.Latency = 0
+		} else {
+			now := time.Now()
+			peer.Status = "connected"
+			peer.LastPing = &now
+			peer.Latency = latencyUs
 		}
 
 		if err := srv.DB.Save(&peer).Error; err != nil {
@@ -615,11 +801,13 @@ func refreshNodePeer(srv *server.Server) gin.HandlerFunc {
 
 // ===== Bandwidth Tests =====
 
-// listBandwidthTests returns all bandwidth test results
+// listBandwidthTests returns recent bandwidth test results scoped to nodes
+// owned by the caller's company.
 func listBandwidthTests(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tests []models.BandwidthTestResult
-		result := srv.DB.Preload("SourceNode").Preload("TargetNode").
+		result := scopeByNodeOwnership(c, srv.DB).
+			Preload("SourceNode").Preload("TargetNode").
 			Order("created_at DESC").
 			Limit(50).
 			Find(&tests)
@@ -633,11 +821,12 @@ func listBandwidthTests(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// listBandwidthTestsHTML returns HTML table of bandwidth tests
+// listBandwidthTestsHTML returns HTML table of bandwidth tests, scoped.
 func listBandwidthTestsHTML(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tests []models.BandwidthTestResult
-		result := srv.DB.Preload("SourceNode").Preload("TargetNode").
+		result := scopeByNodeOwnership(c, srv.DB).
+			Preload("SourceNode").Preload("TargetNode").
 			Order("created_at DESC").
 			Limit(50).
 			Find(&tests)
@@ -708,7 +897,11 @@ func listBandwidthTestsHTML(srv *server.Server) gin.HandlerFunc {
 						<span style="padding: 4px 12px; background: %s; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">%s</span>
 					</td>
 					<td style="padding: 12px; color: var(--text-secondary);">%s</td>
-				</tr>`, test.ID, test.SourceNode.Name, test.TargetNode.Name, test.TestType, upload, download, latency, statusColor, test.Status, test.CreatedAt.Format("2006-01-02 15:04"))
+				</tr>`,
+				hesc(test.ID),
+				hesc(test.SourceNode.Name), hesc(test.TargetNode.Name),
+				hesc(test.TestType), hesc(upload), hesc(download), hesc(latency),
+				statusColor, hesc(test.Status), test.CreatedAt.Format("2006-01-02 15:04"))
 		}
 
 		html += `
@@ -797,8 +990,17 @@ func startBandwidthTest(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Run real gRPC bandwidth test
-		go runRealBandwidthTest(srv, &test, &sourceNode, &targetNode, req.Duration)
+		// Run real gRPC bandwidth test in a panic-recovered goroutine.
+		// runRealBandwidthTest does ~200 lines of nested gRPC streams and
+		// dereferences plenty of pointers; a single nil-deref used to take
+		// the whole process down. safego.Go logs the stack and returns.
+		testCopy := test
+		srcCopy := sourceNode
+		dstCopy := targetNode
+		dur := req.Duration
+		safego.Go("bandwidth-test:"+test.ID, func() {
+			runRealBandwidthTest(srv, &testCopy, &srcCopy, &dstCopy, dur)
+		})
 
 		c.JSON(http.StatusCreated, gin.H{"test": test})
 	}
@@ -835,6 +1037,11 @@ func cancelBandwidthTest(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
+		// Actually stop the in-flight goroutine. cancelBandwidthRun returns
+		// false if the run already completed; we still mark the row
+		// "cancelled" so the UI reflects user intent.
+		stopped := cancelBandwidthRun(test.ID)
+
 		test.Status = "cancelled"
 		endTime := time.Now()
 		test.EndTime = &endTime
@@ -844,17 +1051,18 @@ func cancelBandwidthTest(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"test": test})
+		c.JSON(http.StatusOK, gin.H{"test": test, "stopped_in_flight": stopped})
 	}
 }
 
 // ===== Scheduled Tests =====
 
-// listScheduledTests returns all scheduled tests
+// listScheduledTests returns scheduled tests scoped to caller's nodes.
 func listScheduledTests(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tests []models.ScheduledTest
-		result := srv.DB.Preload("SourceNode").Preload("TargetNode").Find(&tests)
+		result := scopeByNodeOwnership(c, srv.DB).
+			Preload("SourceNode").Preload("TargetNode").Find(&tests)
 
 		if result.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading scheduled tests"})
@@ -865,11 +1073,12 @@ func listScheduledTests(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// listScheduledTestsHTML returns HTML table of scheduled tests
+// listScheduledTestsHTML returns HTML table of scheduled tests, scoped.
 func listScheduledTestsHTML(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tests []models.ScheduledTest
-		result := srv.DB.Preload("SourceNode").Preload("TargetNode").Find(&tests)
+		result := scopeByNodeOwnership(c, srv.DB).
+			Preload("SourceNode").Preload("TargetNode").Find(&tests)
 
 		if result.Error != nil {
 			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading scheduled tests</p>`))
@@ -928,7 +1137,11 @@ func listScheduledTestsHTML(srv *server.Server) gin.HandlerFunc {
 						<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;" hx-post="/api/v1/scheduled-tests/%s/run-now" hx-target="#scheduled-table" hx-swap="innerHTML">Run Now</button>
 						<button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);" hx-delete="/api/v1/scheduled-tests/%s" hx-confirm="Delete this schedule?" hx-target="#scheduled-table" hx-swap="innerHTML">Delete</button>
 					</td>
-				</tr>`, test.Name, test.SourceNode.Name, test.TargetNode.Name, test.CronSchedule, test.TestType, enabledColor, enabledText, lastRun, test.ID, test.ID)
+				</tr>`,
+				hesc(test.Name), hesc(test.SourceNode.Name), hesc(test.TargetNode.Name),
+				hesc(test.CronSchedule), hesc(test.TestType),
+				enabledColor, hesc(enabledText), hesc(lastRun),
+				hesc(test.ID), hesc(test.ID))
 		}
 
 		html += `
@@ -1490,18 +1703,12 @@ func runParallelUploadTestWithAddr(ctx context.Context, targetAddr string, bwCli
 			var err error
 
 			if targetAddr != "" && streamID > 0 {
-				// Create a new connection for this stream
-				conn, err = grpc.NewClient(targetAddr,
-					grpc.WithTransportCredentials(insecure.NewCredentials()),
-					grpc.WithDefaultCallOptions(
-						grpc.MaxCallRecvMsgSize(GRPCMaxMsgSize),
-						grpc.MaxCallSendMsgSize(GRPCMaxMsgSize),
-					),
-					grpc.WithWriteBufferSize(GRPCWriteBufferSize),
-					grpc.WithReadBufferSize(GRPCReadBufferSize),
-					grpc.WithInitialWindowSize(int32(GRPCInitWindowSize)),
-					grpc.WithInitialConnWindowSize(int32(GRPCConnWindowSize)),
-				)
+				dialOpts, dialErr := peerDialOptions()
+				if dialErr != nil {
+					log.Error().Err(dialErr).Msgf("[PARALLEL-UPLOAD] Stream %d aborted: %v", streamID, dialErr)
+					return
+				}
+				conn, err = grpc.NewClient(targetAddr, dialOpts...)
 				if err != nil {
 					log.Error().Err(err).Msgf("[PARALLEL-UPLOAD] Stream %d failed to connect", streamID)
 					return
@@ -1548,8 +1755,19 @@ func runParallelUploadTestWithAddr(ctx context.Context, targetAddr string, bwCli
 				}
 			}
 
-			// Close stream
-			stream.CloseAndRecv()
+			// Close stream with a bounded wait. CloseAndRecv reads the
+			// server's final StreamResult; if the peer hangs, the goroutine
+			// would leak. Run it in a daughter goroutine and time out.
+			closeDone := make(chan struct{})
+			go func() {
+				defer close(closeDone)
+				_, _ = stream.CloseAndRecv()
+			}()
+			select {
+			case <-closeDone:
+			case <-time.After(5 * time.Second):
+				log.Warn().Msgf("[PARALLEL-UPLOAD] Stream %d CloseAndRecv timed out after 5s", streamID)
+			}
 
 			mu.Lock()
 			totalBytes += localBytes
@@ -1562,12 +1780,20 @@ func runParallelUploadTestWithAddr(ctx context.Context, targetAddr string, bwCli
 
 	wg.Wait()
 
-	durationMs := duration * 1000
-	mbps := float64(totalBytes*8) / float64(durationMs) / 1000
+	mbps := mbpsFromBytes(totalBytes, duration*1000)
 	log.Info().Msgf("[PARALLEL-UPLOAD-END] Total=%d bytes, Streams=%d, Throughput=%.2f Mbps",
 		totalBytes, numStreams, mbps)
 
 	return totalBytes, allLatencies
+}
+
+// mbpsFromBytes safely converts a byte total + duration into Mbps. Guards
+// against duration==0 producing +Inf/NaN downstream.
+func mbpsFromBytes(bytes int64, durationMs int) float64 {
+	if durationMs <= 0 {
+		return 0
+	}
+	return float64(bytes*8) / float64(durationMs) / 1000
 }
 
 // runParallelDownloadTest runs multiple download streams in parallel with separate connections
@@ -1596,18 +1822,12 @@ func runParallelDownloadTestWithAddr(ctx context.Context, targetAddr string, bwC
 			var err error
 
 			if targetAddr != "" && streamID > 0 {
-				// Create a new connection for this stream
-				conn, err = grpc.NewClient(targetAddr,
-					grpc.WithTransportCredentials(insecure.NewCredentials()),
-					grpc.WithDefaultCallOptions(
-						grpc.MaxCallRecvMsgSize(GRPCMaxMsgSize),
-						grpc.MaxCallSendMsgSize(GRPCMaxMsgSize),
-					),
-					grpc.WithWriteBufferSize(GRPCWriteBufferSize),
-					grpc.WithReadBufferSize(GRPCReadBufferSize),
-					grpc.WithInitialWindowSize(int32(GRPCInitWindowSize)),
-					grpc.WithInitialConnWindowSize(int32(GRPCConnWindowSize)),
-				)
+				dialOpts, dialErr := peerDialOptions()
+				if dialErr != nil {
+					log.Error().Err(dialErr).Msgf("[PARALLEL-DOWNLOAD] Stream %d aborted: %v", streamID, dialErr)
+					return
+				}
+				conn, err = grpc.NewClient(targetAddr, dialOpts...)
 				if err != nil {
 					log.Error().Err(err).Msgf("[PARALLEL-DOWNLOAD] Stream %d failed to connect", streamID)
 					return
@@ -1640,7 +1860,9 @@ func runParallelDownloadTestWithAddr(ctx context.Context, targetAddr string, bwC
 				recvTime := time.Now().UnixNano() - recvStart
 
 				if err != nil {
-					if err.Error() != "EOF" {
+					// io.EOF is the normal end-of-stream marker; only log
+					// real recv errors to avoid spamming the logs.
+					if !errors.Is(err, io.EOF) {
 						log.Debug().Err(err).Msgf("[PARALLEL-DOWNLOAD] Stream %d recv error", streamID)
 					}
 					break
@@ -1665,44 +1887,52 @@ func runParallelDownloadTestWithAddr(ctx context.Context, targetAddr string, bwC
 
 	wg.Wait()
 
-	durationMs := duration * 1000
-	mbps := float64(totalBytes*8) / float64(durationMs) / 1000
+	mbps := mbpsFromBytes(totalBytes, duration*1000)
 	log.Info().Msgf("[PARALLEL-DOWNLOAD-END] Total=%d bytes, Streams=%d, Throughput=%.2f Mbps",
 		totalBytes, numStreams, mbps)
 
 	return totalBytes, allLatencies
 }
 
-// runRealBandwidthTest performs actual gRPC bandwidth test between two nodes
+// runRealBandwidthTest performs an actual gRPC bandwidth test between two
+// nodes. It refuses to silently fall back to 127.0.0.1 when a node has no
+// recorded IP — that previously made every "test" measure loopback and
+// reported impossible throughput numbers.
 func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, sourceNode, targetNode *models.Node, duration int) {
 	log.Info().Msgf("Starting real bandwidth test %s: %s -> %s (mode: %s)", test.ID, sourceNode.Name, targetNode.Name, test.TestMode)
 
-	// Get IP addresses - use localhost if not set
-	sourceIP := sourceNode.IPAddress
-	if sourceIP == "" {
-		sourceIP = "127.0.0.1"
-	}
-	targetIP := targetNode.IPAddress
-	if targetIP == "" {
-		targetIP = "127.0.0.1"
+	failTest := func(msg string) {
+		log.Error().Str("test_id", test.ID).Msg(msg)
+		test.Status = "failed"
+		test.ErrorMessage = msg
+		now := time.Now()
+		test.EndTime = &now
+		srv.DB.Save(test)
 	}
 
-	// Determine target address based on test mode
+	// Determine target address based on test mode. Refuse direct mode if the
+	// target node has no IP — the previous silent 127.0.0.1 fallback turned
+	// every direct test into a loopback test and reported nonsense Mbps.
 	var targetAddr string
 	switch test.TestMode {
 	case "local":
-		// Force traffic through localhost/loopback
-		// This tests local system performance without hitting the network
 		targetAddr = fmt.Sprintf("127.0.0.1:%d", targetNode.GRPCPort)
 		log.Info().Msgf("LOCAL mode: forcing traffic through loopback to %s", targetAddr)
 	case "gateway":
-		// Route traffic through a specific gateway address
-		// This tests the network path through the gateway
+		if test.GatewayAddress == "" {
+			failTest("gateway test requested but no gateway_address was provided")
+			return
+		}
 		targetAddr = test.GatewayAddress
 		log.Info().Msgf("GATEWAY mode: routing traffic through gateway %s", targetAddr)
 	default: // "direct"
-		// Direct peer-to-peer connection (default behavior)
-		targetAddr = fmt.Sprintf("%s:%d", targetIP, targetNode.GRPCPort)
+		if targetNode.IPAddress == "" {
+			failTest(fmt.Sprintf(
+				"target node %q has no IP address recorded; refusing to fall back to loopback",
+				targetNode.Name))
+			return
+		}
+		targetAddr = fmt.Sprintf("%s:%d", targetNode.IPAddress, targetNode.GRPCPort)
 		log.Info().Msgf("DIRECT mode: connecting directly to %s", targetAddr)
 	}
 
@@ -1712,28 +1942,24 @@ func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, 
 
 	log.Info().Msgf("Connecting to target node at %s", targetAddr)
 
-	// For bidirectional tests: warmup (up to 10s) + upload duration + warmup (up to 10s) + download duration + buffer
-	// So total timeout = 2*duration + 30s warmup + 30s buffer = 2*duration + 60
+	// Register the cancel func so cancelBandwidthTest can stop the run.
+	// Using context.Background() (not the request ctx) is intentional — the
+	// HTTP request that started this returned immediately, so its ctx is
+	// already cancelled. The user-facing cancel path goes through the
+	// bandwidthRuns registry instead.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(duration*2+60)*time.Second)
 	defer cancel()
+	registerBandwidthRun(test.ID, cancel)
+	defer unregisterBandwidthRun(test.ID)
 
-	// Connect with high-throughput options
-	conn, err := grpc.NewClient(targetAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(GRPCMaxMsgSize),
-			grpc.MaxCallSendMsgSize(GRPCMaxMsgSize),
-		),
-		grpc.WithWriteBufferSize(GRPCWriteBufferSize),
-		grpc.WithReadBufferSize(GRPCReadBufferSize),
-		grpc.WithInitialWindowSize(int32(GRPCInitWindowSize)),
-		grpc.WithInitialConnWindowSize(int32(GRPCConnWindowSize)),
-	)
+	dialOpts, err := peerDialOptions()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to connect to target node")
-		test.Status = "failed"
-		test.ErrorMessage = fmt.Sprintf("Failed to connect to target: %v", err)
-		srv.DB.Save(test)
+		failTest(fmt.Sprintf("gRPC security misconfigured: %v", err))
+		return
+	}
+	conn, err := grpc.NewClient(targetAddr, dialOpts...)
+	if err != nil {
+		failTest(fmt.Sprintf("Failed to connect to target: %v", err))
 		return
 	}
 	defer conn.Close()
@@ -1836,11 +2062,10 @@ func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, 
 	test.BytesReceived = totalBytesReceived
 	test.Status = "completed"
 
-	// Calculate speeds in Mbps (bits per second / 1,000,000)
-	if measurementDurationMs > 0 {
-		test.UploadSpeed = float64(totalBytesSent*8) / float64(measurementDurationMs) / 1000
-		test.DownloadSpeed = float64(totalBytesReceived*8) / float64(measurementDurationMs) / 1000
-	}
+	// Calculate speeds in Mbps (bits per second / 1,000,000). Use the helper
+	// so a zero duration produces 0 instead of +Inf.
+	test.UploadSpeed = mbpsFromBytes(totalBytesSent, int(measurementDurationMs))
+	test.DownloadSpeed = mbpsFromBytes(totalBytesReceived, int(measurementDurationMs))
 
 	// Calculate latency stats and save samples for charting
 	if len(latencies) > 0 {
@@ -1921,24 +2146,31 @@ func calculateCPUStats(samples []float64) CPUStats {
 
 // ===== Prometheus Metrics Proxy =====
 
-// queryMetrics proxies queries to Prometheus
+// queryMetrics used to forward to a hard-coded http://localhost:9090, which
+// returned 502 in single-binary deployments (the 99% case) because no
+// external Prometheus was running. With the in-process registry, the
+// dashboard should hit /api/v1/metrics directly and parse the exposition
+// format client-side, OR forward to an external Prometheus only when
+// PROMETHEUS_URL is explicitly set. We do the latter here so existing
+// dashboard JS still works for operators who *do* run Prometheus.
 func queryMetrics(_ *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get Prometheus URL from environment or use default
 		prometheusURL := os.Getenv("PROMETHEUS_URL")
 		if prometheusURL == "" {
-			prometheusURL = "http://localhost:9090"
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "no external Prometheus configured; set PROMETHEUS_URL env, " +
+					"or scrape the in-process /api/v1/metrics endpoint directly",
+			})
+			return
 		}
 
-		// Get query parameters
 		query := c.Query("query")
 		if query == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "query parameter is required"})
 			return
 		}
 
-		// Build Prometheus query URL
-		queryType := c.DefaultQuery("type", "query") // "query" for instant, "query_range" for range
+		queryType := c.DefaultQuery("type", "query")
 		var promURL string
 
 		switch queryType {
@@ -1946,12 +2178,10 @@ func queryMetrics(_ *server.Server) gin.HandlerFunc {
 			start := c.Query("start")
 			end := c.Query("end")
 			step := c.DefaultQuery("step", "15s")
-
 			if start == "" || end == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "start and end parameters required for range queries"})
 				return
 			}
-
 			promURL = fmt.Sprintf("%s/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 				prometheusURL,
 				url.QueryEscape(query),
@@ -1960,7 +2190,6 @@ func queryMetrics(_ *server.Server) gin.HandlerFunc {
 				url.QueryEscape(step),
 			)
 		default:
-			// Instant query
 			timeParam := c.Query("time")
 			if timeParam != "" {
 				promURL = fmt.Sprintf("%s/api/v1/query?query=%s&time=%s",
@@ -1976,19 +2205,18 @@ func queryMetrics(_ *server.Server) gin.HandlerFunc {
 			}
 		}
 
-		// Create HTTP client with timeout
 		client := &http.Client{Timeout: 30 * time.Second}
-
-		// Make request to Prometheus
 		resp, err := client.Get(promURL)
 		if err != nil {
 			log.Error().Err(err).Str("url", promURL).Msg("Failed to query Prometheus")
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to connect to Prometheus: %v", err)})
 			return
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}()
 
-		// Read response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to read Prometheus response")
@@ -1996,7 +2224,6 @@ func queryMetrics(_ *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Parse and forward the response
 		var promResponse map[string]interface{}
 		if err := json.Unmarshal(body, &promResponse); err != nil {
 			log.Error().Err(err).Msg("Failed to parse Prometheus response")
@@ -2004,7 +2231,6 @@ func queryMetrics(_ *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Return the Prometheus response
 		c.JSON(resp.StatusCode, promResponse)
 	}
 }

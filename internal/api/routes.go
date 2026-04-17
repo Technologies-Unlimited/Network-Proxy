@@ -17,27 +17,35 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 
-	// Register webhook routes BEFORE auth middleware (webhooks verify via signature)
+	// Register webhook routes BEFORE auth middleware (webhooks verify via HMAC signature)
 	RegisterWebhookRoutes(v1, srv)
 
-	// Register settings routes BEFORE auth middleware (needed for UI theming)
-	RegisterSettingsRoutes(v1, srv)
+	// Public settings: theme bootstrap + redacted connection status only.
+	// Sensitive ThothOS configuration is gated below, under RequireAuth.
+	RegisterPublicSettingsRoutes(v1, srv)
 
-	// Register IPAM routes BEFORE auth middleware (fetches from ThothOS using saved config)
-	RegisterIPAMRoutes(v1, srv)
-
-	// Register Monitor routes BEFORE auth middleware (fetches from ThothOS using saved config)
-	RegisterMonitorRoutes(v1, srv)
-
-	// Register Template routes BEFORE auth middleware (reads from disk)
-	RegisterTemplateRoutes(v1, srv)
-
-	// Register Update routes BEFORE auth middleware (needed for standalone mode)
-	RegisterUpdateRoutes(v1, srv)
-
-	// Apply auth middleware to all other API routes
+	// Apply auth middleware to all sensitive API routes
 	v1.Use(middleware.RequireAuth())
 	{
+		// ThothOS settings — auth required so the API key cannot be read
+		// or overwritten by anyone with network access.
+		RegisterAuthedSettingsRoutes(v1, srv)
+
+		// IPAM, Monitor, Templates, Updates were previously public; gate them
+		// behind auth as well. They expose tenant-scoped data and trigger
+		// outbound calls / writes that should not be unauthenticated.
+		RegisterIPAMRoutes(v1, srv)
+		RegisterMonitorRoutes(v1, srv)
+		RegisterTemplateRoutes(v1, srv)
+		RegisterUpdateRoutes(v1, srv)
+
+		// Auth-gated Prometheus scrape endpoint. main.go calls
+		// SetMetricsHandler unless METRICS_PUBLIC=true, in which case it
+		// mounts the handler on the root router itself.
+		if h := GetMetricsHandler(); h != nil {
+			v1.GET("/metrics", gin.WrapH(h))
+		}
+
 		// Device routes
 		devices := v1.Group("/devices")
 		{

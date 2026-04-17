@@ -1,7 +1,6 @@
 package api
 
 import (
-	htmlpkg "html"
 	"net/http"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -9,13 +8,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// listDevices returns all devices
+// listDevices returns devices (paginated).
 func listDevices(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var devices []models.Device
 
-		// Preload relationships
-		result := srv.DB.Preload("SNMPTemplate").Find(&devices)
+		// Tenant scoping: in standalone mode this is a no-op; otherwise
+		// the result is filtered to the caller's CompanyID.
+		result := scopeByCompany(c, srv.DB).Preload("SNMPTemplate").
+			Limit(limit).Offset(offset).Find(&devices)
 
 		if result.Error != nil {
 			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading devices</p>`))
@@ -62,12 +64,19 @@ func listDevices(srv *server.Server) gin.HandlerFunc {
 				lastSeen = device.LastSeen.Format("2006-01-02 15:04")
 			}
 
-			// Escape all user-provided data to prevent XSS
-			safeHostname := htmlpkg.EscapeString(device.Hostname)
-			safeIPAddress := htmlpkg.EscapeString(device.IPAddress)
-			safeDeviceType := htmlpkg.EscapeString(device.DeviceType)
-			safeLocation := htmlpkg.EscapeString(device.Location)
-			safeID := htmlpkg.EscapeString(device.ID)
+			// Escape all user-provided data to prevent XSS. Use the package
+			// helpers so every emit site shares one escaping policy.
+			safeHostname := hesc(device.Hostname)
+			safeIPAddress := hesc(device.IPAddress)
+			safeDeviceType := hesc(device.DeviceType)
+			safeLocation := hesc(device.Location)
+			safeStatus := hesc(statusText)
+			safeID := hesc(device.ID)
+			// JS string contexts need stricter escaping than HTML; e.g.
+			// hostname `O'Brien` would break out of a single-quoted JS arg
+			// even after HTML-escaping.
+			jsID := jsStringEscape(device.ID)
+			jsHostname := jsStringEscape(device.Hostname)
 
 			html += `
 				<tr style="border-bottom: 1px solid var(--border);">
@@ -76,13 +85,13 @@ func listDevices(srv *server.Server) gin.HandlerFunc {
 					<td style="padding: 12px; color: var(--text-primary);">` + safeDeviceType + `</td>
 					<td style="padding: 12px; color: var(--text-primary);">` + safeLocation + `</td>
 					<td style="padding: 12px; text-align: center;">
-						<span style="padding: 4px 12px; background: ` + statusColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + statusText + `</span>
+						<span style="padding: 4px 12px; background: ` + statusColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + safeStatus + `</span>
 					</td>
 					<td style="padding: 12px; color: var(--text-secondary);">` + lastSeen + `</td>
 					<td style="padding: 12px; text-align: center;">
 						<a href="/visualize?device=` + safeID + `" class="btn btn-primary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px; text-decoration: none;">View</a>
-						<button onclick="showEditDeviceForm('` + safeID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
-						<button onclick="deleteDevice('` + safeID + `', '` + safeHostname + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
+						<button onclick="showEditDeviceForm('` + jsID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
+						<button onclick="deleteDevice('` + jsID + `', '` + jsHostname + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
 					</td>
 				</tr>`
 		}
