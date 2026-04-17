@@ -18,9 +18,11 @@ type Device struct {
 	DeviceType  string // router, switch, server, etc.
 	Location    string
 	Description string
-	Status      string `gorm:"default:'unknown'"` // up, down, unknown
-	LastSeen    *time.Time
-	NodeID      string         `gorm:"index"` // Reference to monitoring node
+	// Status is read every dashboard refresh ("devices up" / "devices down"
+	// counters), so it gets its own index.
+	Status      string `gorm:"default:'unknown';index"`
+	LastSeen    *time.Time `gorm:"index"`
+	NodeID      string         `gorm:"index"`
 	CreatedAt   time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt   time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt   gorm.DeletedAt `gorm:"index"`

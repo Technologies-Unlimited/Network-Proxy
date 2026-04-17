@@ -30,12 +30,43 @@ type SNMPTemplate struct {
 	Devices []Device `gorm:"foreignKey:SNMPTemplateID"`
 }
 
-// BeforeCreate generates UUID for new SNMP templates
+// BeforeCreate generates UUID for new SNMP templates.
 func (s *SNMPTemplate) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
 		s.ID = uuid.New().String()
 	}
 	return nil
+}
+
+// BeforeSave encrypts the SNMP credentials at rest. Community strings,
+// SNMPv3 auth/priv passwords are sensitive; storing plaintext lets anyone
+// with read on network-monitor.db pivot to the monitored devices.
+func (s *SNMPTemplate) BeforeSave(tx *gorm.DB) error {
+	for _, ptr := range []*string{&s.Community, &s.AuthPassword, &s.PrivPassword} {
+		enc, err := EncryptField(*ptr)
+		if err != nil {
+			return err
+		}
+		*ptr = enc
+	}
+	return nil
+}
+
+// AfterFind decrypts the SNMP credentials after loading.
+func (s *SNMPTemplate) AfterFind(tx *gorm.DB) error {
+	for _, ptr := range []*string{&s.Community, &s.AuthPassword, &s.PrivPassword} {
+		plain, err := DecryptField(*ptr)
+		if err != nil {
+			return err
+		}
+		*ptr = plain
+	}
+	return nil
+}
+
+// AfterSave restores plaintext to the in-memory struct after persisting.
+func (s *SNMPTemplate) AfterSave(tx *gorm.DB) error {
+	return s.AfterFind(tx)
 }
 
 // OID represents an SNMP Object Identifier to poll

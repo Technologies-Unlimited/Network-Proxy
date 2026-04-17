@@ -25,33 +25,43 @@ const (
 	ThemeSacred ThemeType = "sacred"
 )
 
-// GetSetting retrieves a setting value by key
+// GetSetting retrieves a setting value by key. Secret-keyed settings (see
+// secretSettingKeys) are transparently decrypted.
 func GetSetting(db *gorm.DB, key string) (string, error) {
 	var setting Settings
 	result := db.Where("key = ?", key).First(&setting)
 	if result.Error != nil {
 		return "", result.Error
 	}
+	if secretSettingKeys[key] {
+		return DecryptField(setting.Value)
+	}
 	return setting.Value, nil
 }
 
-// SetSetting creates or updates a setting
+// SetSetting creates or updates a setting. Secret-keyed settings are
+// transparently encrypted before persisting.
 func SetSetting(db *gorm.DB, key, value string) error {
+	storeValue := value
+	if secretSettingKeys[key] {
+		enc, err := EncryptField(value)
+		if err != nil {
+			return err
+		}
+		storeValue = enc
+	}
+
 	var setting Settings
 	result := db.Where("key = ?", key).First(&setting)
 
 	if result.Error == gorm.ErrRecordNotFound {
-		// Create new setting
-		setting = Settings{Key: key, Value: value}
+		setting = Settings{Key: key, Value: storeValue}
 		return db.Create(&setting).Error
 	}
-
 	if result.Error != nil {
 		return result.Error
 	}
-
-	// Update existing setting
-	setting.Value = value
+	setting.Value = storeValue
 	return db.Save(&setting).Error
 }
 
@@ -81,6 +91,13 @@ const (
 	SettingThothOSAPIKey = "thothos_api_key"
 	SettingProxyName     = "proxy_name"
 )
+
+// secretSettingKeys lists settings whose Value column must be transparently
+// encrypted at rest. Anything in this set is run through EncryptField on
+// SetSetting and DecryptField on GetSetting.
+var secretSettingKeys = map[string]bool{
+	SettingThothOSAPIKey: true,
+}
 
 // ThothOSConfig represents the ThothOS connection settings
 type ThothOSConfig struct {

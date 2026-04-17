@@ -3,10 +3,14 @@ package grpc
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"runtime"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,10 +20,18 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// DiagnosticMode reports whether per-second bandwidth-test diagnostics
+// should be logged. Defaults to off to keep production logs quiet; set
+// NETWORK_MONITOR_DIAGNOSTIC=true to enable. The previous always-on default
+// emitted multi-line metrics for every test and bloated stdout.
+func DiagnosticMode() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("NETWORK_MONITOR_DIAGNOSTIC")))
+	return v == "true" || v == "1" || v == "yes"
+}
+
 const (
 	DefaultChunkSize  = 4 * 1024 * 1024 // 4MB for maximum throughput (reduced overhead per byte)
 	LatencySampleRate = 100             // Only sample latency every N chunks to reduce overhead
-	DiagnosticMode    = true            // Enable detailed diagnostic logging
 
 	// gRPC tuning constants for high-throughput
 	GRPCMaxMsgSize      = 8 * 1024 * 1024  // 8MB max message size
@@ -79,22 +91,20 @@ func (s *Server) StartTest(ctx context.Context, req *pb.StartTestRequest) (*pb.S
 	}, nil
 }
 
-// runTest executes the bandwidth test
+// runTest is the server-side bookkeeping loop for a peer-initiated test.
+//
+// The actual data movement happens on the StreamUpload / StreamDownload /
+// BidirectionalStream RPCs that the source node opens against this server.
+// Those handlers update test.BytesSent / test.BytesReceived as bytes flow,
+// and runTest only watches the deadline and the cancel signal. This replaces
+// the previous implementation, which fabricated byte counters with no actual
+// network traffic and reported impossible Mbps numbers.
 func (s *Server) runTest(ctx context.Context, test *BandwidthTest, req *pb.StartTestRequest) {
-	chunkSize := int(req.ChunkSize)
-	if chunkSize <= 0 {
-		chunkSize = DefaultChunkSize
+	if req.ChunkSize <= 0 {
+		req.ChunkSize = DefaultChunkSize
 	}
-
-	duration := time.Duration(req.DurationSeconds) * time.Second
-	deadline := time.Now().Add(duration)
-
-	// Generate random data for sending
-	data := make([]byte, chunkSize)
-	rand.Read(data)
-
-	var sequence int64
-	ticker := time.NewTicker(1 * time.Millisecond) // Send as fast as possible
+	deadline := time.Now().Add(time.Duration(req.DurationSeconds) * time.Second)
+	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -107,13 +117,28 @@ func (s *Server) runTest(ctx context.Context, test *BandwidthTest, req *pb.Start
 				s.finishTest(test, pb.TestState_TEST_STATE_COMPLETED, "")
 				return
 			}
-
-			// In a real implementation, we'd stream to the peer
-			// For now, simulate data transfer
-			atomic.AddInt64(&test.BytesSent, int64(chunkSize))
-			atomic.AddInt64(&test.BytesReceived, int64(chunkSize))
-			sequence++
 		}
+	}
+}
+
+// addBytesSent records bytes that the source node sent to this server.
+// Called by the streaming RPC handlers as data is received.
+func (s *Server) addBytesSent(testID string, n int64) {
+	s.testsLock.RLock()
+	test, ok := s.tests[testID]
+	s.testsLock.RUnlock()
+	if ok && test != nil {
+		atomic.AddInt64(&test.BytesSent, n)
+	}
+}
+
+// addBytesReceived records bytes that this server sent back to the source.
+func (s *Server) addBytesReceived(testID string, n int64) {
+	s.testsLock.RLock()
+	test, ok := s.tests[testID]
+	s.testsLock.RUnlock()
+	if ok && test != nil {
+		atomic.AddInt64(&test.BytesReceived, n)
 	}
 }
 
@@ -190,7 +215,7 @@ func (s *Server) StreamUpload(stream grpc.ClientStreamingServer[pb.DataChunk, pb
 	bytesThisSecond := int64(0)
 	var recvErrors int64
 
-	if DiagnosticMode {
+	if DiagnosticMode() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		log.Printf("[DIAG-UPLOAD-START] Goroutines=%d, HeapAlloc=%.2fMB, HeapSys=%.2fMB",
@@ -207,7 +232,7 @@ func (s *Server) StreamUpload(stream grpc.ClientStreamingServer[pb.DataChunk, pb
 		}
 		if err != nil {
 			recvErrors++
-			if DiagnosticMode {
+			if DiagnosticMode() {
 				log.Printf("[DIAG-UPLOAD-ERROR] Recv error after %d chunks: %v", totalChunks, err)
 			}
 			return err
@@ -226,11 +251,13 @@ func (s *Server) StreamUpload(stream grpc.ClientStreamingServer[pb.DataChunk, pb
 		totalBytes += chunkLen
 		bytesThisSecond += chunkLen
 		totalChunks++
+		// Surface progress to GetTestStatus while the stream is still running.
+		s.addBytesSent(chunk.TestId, chunkLen)
 
 		// Track per-second throughput
 		if time.Since(lastSecond) >= time.Second {
 			perSecondBytes = append(perSecondBytes, bytesThisSecond)
-			if DiagnosticMode && len(perSecondBytes) <= 5 {
+			if DiagnosticMode() && len(perSecondBytes) <= 5 {
 				mbps := float64(bytesThisSecond*8) / 1000000
 				log.Printf("[DIAG-UPLOAD] Second %d: %.2f Mbps, chunks=%d, avgRecv=%.2fµs",
 					len(perSecondBytes), mbps, totalChunks, float64(totalRecvNs)/float64(totalChunks)/1000)
@@ -258,7 +285,7 @@ func (s *Server) StreamUpload(stream grpc.ClientStreamingServer[pb.DataChunk, pb
 	durationMs := time.Since(startTime).Milliseconds()
 	throughputMbps := float64(totalBytes*8) / float64(durationMs) / 1000
 
-	if DiagnosticMode {
+	if DiagnosticMode() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
@@ -356,7 +383,7 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 	bytesThisSecond := int64(0)
 	var sendErrors int64
 
-	if DiagnosticMode {
+	if DiagnosticMode() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		log.Printf("[DIAG-DOWNLOAD-START] ChunkSize=%d KB, Duration=%ds, Goroutines=%d, HeapAlloc=%.2fMB",
@@ -376,7 +403,7 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 
 		if err := stream.Send(chunk); err != nil {
 			sendErrors++
-			if DiagnosticMode {
+			if DiagnosticMode() {
 				log.Printf("[DIAG-DOWNLOAD-ERROR] Send error at chunk %d: %v", sequence, err)
 			}
 			return err
@@ -395,11 +422,12 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 
 		bytesThisSecond += int64(chunkSize)
 		sequence++
+		s.addBytesReceived(req.TestId, int64(chunkSize))
 
 		// Track per-second throughput
 		if time.Since(lastSecond) >= time.Second {
 			perSecondBytes = append(perSecondBytes, bytesThisSecond)
-			if DiagnosticMode && len(perSecondBytes) <= 5 {
+			if DiagnosticMode() && len(perSecondBytes) <= 5 {
 				mbps := float64(bytesThisSecond*8) / 1000000
 				avgSendUs := float64(totalSendNs) / float64(sequence) / 1000
 				log.Printf("[DIAG-DOWNLOAD] Second %d: %.2f Mbps, chunks=%d, avgSend=%.2fµs",
@@ -419,7 +447,7 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 	durationMs := time.Since(startTime).Milliseconds()
 	throughputMbps := float64(totalBytes*8) / float64(durationMs) / 1000
 
-	if DiagnosticMode {
+	if DiagnosticMode() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
@@ -479,20 +507,20 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 
 // BidirectionalStream handles bidirectional bandwidth testing
 func (s *Server) BidirectionalStream(stream grpc.BidiStreamingServer[pb.DataChunk, pb.DataChunk]) error {
-	// Generate random data for responses
 	data := make([]byte, DefaultChunkSize)
 	rand.Read(data)
 
 	for {
 		chunk, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
 
-		// Echo back with our own data
+		s.addBytesSent(chunk.TestId, int64(len(chunk.Data)))
+
 		response := &pb.DataChunk{
 			TestId:      chunk.TestId,
 			Sequence:    chunk.Sequence,
@@ -504,6 +532,7 @@ func (s *Server) BidirectionalStream(stream grpc.BidiStreamingServer[pb.DataChun
 		if err := stream.Send(response); err != nil {
 			return err
 		}
+		s.addBytesReceived(chunk.TestId, int64(len(data)))
 
 		if chunk.IsFinal {
 			return nil
@@ -726,7 +755,9 @@ func (s *Server) runUploadTest(ctx context.Context, client pb.BandwidthServiceCl
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
-			stream.CloseAndRecv()
+			if _, closeErr := stream.CloseAndRecv(); closeErr != nil {
+				log.Printf("upload: CloseAndRecv after ctx cancel: %v", closeErr)
+			}
 			return totalBytes, latencies, ctx.Err()
 		default:
 		}
@@ -747,13 +778,15 @@ func (s *Server) runUploadTest(ctx context.Context, client pb.BandwidthServiceCl
 		sequence++
 	}
 
-	// Send final chunk
-	stream.Send(&pb.DataChunk{
+	// Send final chunk; ignore EOF (peer already closed) but log other errors.
+	if err := stream.Send(&pb.DataChunk{
 		TestId:      testID,
 		Sequence:    sequence,
 		TimestampNs: time.Now().UnixNano(),
 		IsFinal:     true,
-	})
+	}); err != nil && !errors.Is(err, io.EOF) {
+		log.Printf("upload: send final chunk: %v", err)
+	}
 
 	result, err := stream.CloseAndRecv()
 	if err != nil {
@@ -810,69 +843,88 @@ func (s *Server) runBidirectionalTest(ctx context.Context, client pb.BandwidthSe
 		return 0, 0, nil, err
 	}
 
-	var uploadBytes, downloadBytes int64
-	var latencies []int64
+	var (
+		uploadBytes int64
+		recvMu      sync.Mutex
+		downloadBytes int64
+		latencies   []int64
+	)
 	deadline := time.Now().Add(duration)
 	var sequence int64
 
-	// Start receiver goroutine
+	// Receiver goroutine. Always runs to completion before this function
+	// returns; the previous version returned early on ctx cancellation,
+	// leaking the goroutine and racing on shared state.
 	recvDone := make(chan struct{})
 	go func() {
 		defer close(recvDone)
 		for {
-			chunk, err := stream.Recv()
-			if err != nil {
+			chunk, recvErr := stream.Recv()
+			if recvErr != nil {
 				return
 			}
-
-			downloadBytes += int64(len(chunk.Data))
-
+			n := int64(len(chunk.Data))
+			recvMu.Lock()
+			downloadBytes += n
 			if chunk.TimestampNs > 0 {
-				latency := (time.Now().UnixNano() - chunk.TimestampNs) / 1000
-				latencies = append(latencies, latency)
+				latencies = append(latencies, (time.Now().UnixNano()-chunk.TimestampNs)/1000)
 			}
-
-			if chunk.IsFinal {
+			isFinal := chunk.IsFinal
+			recvMu.Unlock()
+			if isFinal {
 				return
 			}
 		}
 	}()
 
-	// Send data
+	// finish closes the send side and waits for the receiver to drain.
+	finish := func(returnErr error) (int64, int64, []int64, error) {
+		// Always try to send the final marker; ignore the error because the
+		// peer may have already closed.
+		_ = stream.Send(&pb.DataChunk{
+			TestId:      testID,
+			Sequence:    sequence,
+			TimestampNs: time.Now().UnixNano(),
+			IsFinal:     true,
+		})
+		if closeErr := stream.CloseSend(); closeErr != nil {
+			log.Printf("bidir: CloseSend error: %v", closeErr)
+		}
+		<-recvDone
+
+		recvMu.Lock()
+		dlBytes := downloadBytes
+		lats := append([]int64(nil), latencies...)
+		recvMu.Unlock()
+
+		return uploadBytes, dlBytes, lats, returnErr
+	}
+
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
-			stream.CloseSend()
-			return uploadBytes, downloadBytes, latencies, ctx.Err()
+			return finish(ctx.Err())
 		default:
 		}
 
-		err := stream.Send(&pb.DataChunk{
+		if sendErr := stream.Send(&pb.DataChunk{
 			TestId:      testID,
 			Sequence:    sequence,
 			Data:        data,
 			TimestampNs: time.Now().UnixNano(),
 			IsFinal:     false,
-		})
-		if err != nil {
-			break
+		}); sendErr != nil {
+			// EOF on send means the peer closed its side; treat as a clean
+			// stop. Other errors propagate up.
+			if errors.Is(sendErr, io.EOF) {
+				break
+			}
+			return finish(sendErr)
 		}
 
 		uploadBytes += int64(len(data))
 		sequence++
 	}
 
-	// Send final
-	stream.Send(&pb.DataChunk{
-		TestId:      testID,
-		Sequence:    sequence,
-		TimestampNs: time.Now().UnixNano(),
-		IsFinal:     true,
-	})
-	stream.CloseSend()
-
-	// Wait for receiver
-	<-recvDone
-
-	return uploadBytes, downloadBytes, latencies, nil
+	return finish(nil)
 }

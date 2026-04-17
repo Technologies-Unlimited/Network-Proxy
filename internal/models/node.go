@@ -15,8 +15,11 @@ type Node struct {
 	Hostname  string `gorm:"not null" json:"hostname"`
 	IPAddress string `gorm:"not null" json:"ip_address"`
 	Version   string `json:"version"`
-	Status    string `gorm:"default:'offline'" json:"status"` // online, offline, connecting
-	LastSeen  *time.Time `json:"last_seen"`
+	// Status + LastSeen drive the node-status-monitor sweep that runs every
+	// 30s; a composite (status, last_seen) covers both the WHERE and the
+	// `Updates(status='offline')` mass write.
+	Status    string `gorm:"default:'offline';index:idx_node_status_lastseen,priority:1" json:"status"`
+	LastSeen  *time.Time `gorm:"index:idx_node_status_lastseen,priority:2" json:"last_seen"`
 	CreatedAt time.Time      `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -97,7 +100,9 @@ type BandwidthTestResult struct {
 	GatewayAddress      string `json:"gateway_address,omitempty"`               // Gateway IP:port when test_mode is "gateway"
 	ActualTargetAddress string `json:"actual_target_address,omitempty"`         // The actual IP:port used for the test
 
-	CreatedAt time.Time      `gorm:"autoCreateTime"`
+	// Indexed because the dashboard's "recent tests" panel does
+	// ORDER BY created_at DESC LIMIT 50 on every page load.
+	CreatedAt time.Time      `gorm:"autoCreateTime;index:idx_btr_created,sort:desc"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	// Relationships

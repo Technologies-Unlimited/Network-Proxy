@@ -7,21 +7,26 @@ import (
 	"gorm.io/gorm"
 )
 
-// Alert represents a monitoring alert
+// Alert represents a monitoring alert.
+//
+// Indexes are sized for the dashboard's hot queries:
+//   * Status alone — `active` count badge.
+//   * (Status, TriggeredAt) — paginated active alerts list.
+//   * Source/Metric — engine de-dup lookup in TriggerAlert.
 type Alert struct {
 	ID          string         `gorm:"primaryKey"`
-	CompanyID   string         `gorm:"not null;index"` // ThothOS company ID for multi-tenancy
+	CompanyID   string         `gorm:"not null;index"`
 	DeviceID    string         `gorm:"not null;index"`
 	Device      *Device        `gorm:"foreignKey:DeviceID"`
-	Severity    string         `gorm:"not null"` // critical, warning, info
-	Status      string         `gorm:"default:'active'"` // active, acknowledged, resolved
+	Severity    string         `gorm:"not null;index"`
+	Status      string         `gorm:"default:'active';index:idx_alert_status;index:idx_alert_status_triggered,priority:1"`
 	Title       string         `gorm:"not null"`
 	Message     string
-	Source      string         // icmp, snmp, system
-	Metric      string         // ping_latency, snmp_oid, etc.
-	Value       string         // Current value
-	Threshold   string         // Threshold that was exceeded
-	TriggeredAt time.Time      `gorm:"not null"`
+	Source      string         `gorm:"index:idx_alert_dedup,priority:1"`
+	Metric      string         `gorm:"index:idx_alert_dedup,priority:2"`
+	Value       string
+	Threshold   string
+	TriggeredAt time.Time      `gorm:"not null;index:idx_alert_status_triggered,priority:2,sort:desc"`
 	AckedAt     *time.Time
 	AckedBy     *string
 	ResolvedAt  *time.Time

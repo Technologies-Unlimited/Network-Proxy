@@ -11,7 +11,6 @@ import (
 	pb "github.com/Technologies-Unlimited/Network-Proxy/internal/grpc/pb/node"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -44,6 +43,10 @@ type Server struct {
 	onHeartbeat    func(nodeID string, status string)
 	onPeerConnect  func(peerID, peerName string)
 	onTestComplete func(testID string, results *pb.TestResults)
+
+	// Security posture loaded from env at Start time. Reused for outbound
+	// peer connections so client and server hold consistent expectations.
+	security SecurityConfig
 }
 
 // PeerConnection represents a connection to another node
@@ -102,7 +105,9 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 }
 
-// Start starts the gRPC server
+// Start starts the gRPC server. TLS and bearer-token auth are required by
+// default; see SecurityConfig for the env-var contract and the explicit
+// NODE_GRPC_ALLOW_INSECURE escape hatch for trusted environments.
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.grpcPort)
 	lis, err := net.Listen("tcp", addr)
@@ -111,15 +116,23 @@ func (s *Server) Start() error {
 	}
 	s.listener = lis
 
-	// Create gRPC server with high-throughput options
-	s.grpcServer = grpc.NewServer(
+	s.security = LoadSecurityConfigFromEnv()
+	authOpts, err := s.security.ServerOptions()
+	if err != nil {
+		lis.Close()
+		return err
+	}
+
+	opts := append([]grpc.ServerOption{
 		grpc.MaxRecvMsgSize(GRPCMaxMsgSize),
 		grpc.MaxSendMsgSize(GRPCMaxMsgSize),
 		grpc.WriteBufferSize(GRPCWriteBufferSize),
 		grpc.ReadBufferSize(GRPCReadBufferSize),
 		grpc.InitialWindowSize(int32(GRPCInitWindowSize)),
 		grpc.InitialConnWindowSize(int32(GRPCConnWindowSize)),
-	)
+	}, authOpts...)
+
+	s.grpcServer = grpc.NewServer(opts...)
 	pb.RegisterNodeServiceServer(s.grpcServer, s)
 	pb.RegisterBandwidthServiceServer(s.grpcServer, s)
 
@@ -155,9 +168,13 @@ func (s *Server) Stop() {
 // ConnectToPeer establishes a connection to another node
 func (s *Server) ConnectToPeer(nodeID, name, ipAddress string, port int) error {
 	addr := fmt.Sprintf("%s:%d", ipAddress, port)
-	// Connect with high-throughput options
-	conn, err := grpc.NewClient(addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+
+	authOpts, err := s.security.DialOptions()
+	if err != nil {
+		return fmt.Errorf("connect to peer %s: %w", addr, err)
+	}
+
+	dialOpts := append([]grpc.DialOption{
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(GRPCMaxMsgSize),
 			grpc.MaxCallSendMsgSize(GRPCMaxMsgSize),
@@ -166,7 +183,9 @@ func (s *Server) ConnectToPeer(nodeID, name, ipAddress string, port int) error {
 		grpc.WithReadBufferSize(GRPCReadBufferSize),
 		grpc.WithInitialWindowSize(int32(GRPCInitWindowSize)),
 		grpc.WithInitialConnWindowSize(int32(GRPCConnWindowSize)),
-	)
+	}, authOpts...)
+
+	conn, err := grpc.NewClient(addr, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to peer %s: %w", addr, err)
 	}
