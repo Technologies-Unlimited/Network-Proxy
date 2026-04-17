@@ -11,72 +11,92 @@ import (
 	"gorm.io/gorm"
 )
 
-// Engine manages alert rule evaluation and notification
-type Engine struct {
-	db         *gorm.DB
-	evaluators map[string]*RuleEvaluator
-	notifiers  []Notifier
-	mu         sync.RWMutex
-	interval   time.Duration
-
-	// Alert state tracking to prevent duplicate alerts
-	alertStates map[string]*AlertState
-	statesMu    sync.RWMutex
+// MetricSource is the interface the engine uses to retrieve current metric
+// values for a device. The default implementation reads from the database;
+// callers (e.g. the API server) can inject one backed by Prometheus, an
+// in-memory registry, or both.
+type MetricSource interface {
+	Get(metric string, device *models.Device) (string, error)
 }
 
-// AlertState tracks the state of an alert condition
+// Engine manages alert rule evaluation and notification.
+type Engine struct {
+	db        *gorm.DB
+	notifiers []Notifier
+	notifyMu  sync.RWMutex
+	interval  time.Duration
+
+	metrics MetricSource
+
+	// Alert state tracking. The state map and the AlertState fields are both
+	// guarded by statesMu — taking the lock for the whole evaluate-then-mutate
+	// section keeps GetActiveAlerts() and concurrent rule-evaluations safe.
+	alertStates map[string]*AlertState
+	statesMu    sync.Mutex
+}
+
+// AlertState tracks the state of an alert condition.
 type AlertState struct {
 	RuleID       string
 	DeviceID     string
 	ConditionMet bool
 	FirstSeen    time.Time
 	LastChecked  time.Time
-	AlertID      string // ID of active alert if triggered
-	Value        string // Last measured value
+	AlertID      string
+	Value        string
 }
 
-// NewEngine creates a new alerting engine
+// NewEngine creates a new alerting engine.
 func NewEngine(db *gorm.DB) *Engine {
 	engine := &Engine{
 		db:          db,
-		evaluators:  make(map[string]*RuleEvaluator),
 		notifiers:   make([]Notifier, 0),
-		interval:    30 * time.Second, // Check rules every 30 seconds
+		interval:    30 * time.Second,
 		alertStates: make(map[string]*AlertState),
+		metrics:     &DBMetricSource{db: db},
 	}
 
-	// Register default notifiers
 	engine.AddNotifier(&ConsoleNotifier{})
 
-	// Add email notifier if configured
-	if emailConfig := getEmailConfig(); emailConfig != nil {
-		engine.AddNotifier(emailConfig)
+	if email := NewEmailNotifier(); email != nil {
+		engine.AddNotifier(email)
 	}
 
 	return engine
 }
 
-// AddNotifier adds a notification handler
+// SetMetricSource replaces the metric source. Useful when the host wants to
+// wire in a Prometheus-backed implementation after construction.
+func (e *Engine) SetMetricSource(src MetricSource) {
+	if src == nil {
+		return
+	}
+	e.metrics = src
+}
+
+// AddNotifier adds a notification handler.
 func (e *Engine) AddNotifier(notifier Notifier) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.notifyMu.Lock()
+	defer e.notifyMu.Unlock()
 	e.notifiers = append(e.notifiers, notifier)
 	log.Info().Str("type", fmt.Sprintf("%T", notifier)).Msg("Added notifier")
 }
 
-// SetInterval sets the rule evaluation interval
+// SetInterval sets the rule evaluation interval.
 func (e *Engine) SetInterval(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
 	e.interval = interval
 }
 
-// Start begins the alert evaluation loop
+// Start begins the alert evaluation loop.
 func (e *Engine) Start(ctx context.Context) {
 	ticker := time.NewTicker(e.interval)
 	defer ticker.Stop()
 
 	log.Info().Dur("interval", e.interval).Msg("Alert engine started")
 
-	// Initial evaluation
 	e.EvaluateRules()
 
 	for {
@@ -90,9 +110,8 @@ func (e *Engine) Start(ctx context.Context) {
 	}
 }
 
-// EvaluateRules evaluates all enabled alert rules
+// EvaluateRules evaluates all enabled alert rules.
 func (e *Engine) EvaluateRules() {
-	// Fetch all enabled alert rules
 	var rules []models.AlertRule
 	if err := e.db.Where("enabled = ?", true).Find(&rules).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to fetch alert rules")
@@ -106,46 +125,33 @@ func (e *Engine) EvaluateRules() {
 
 	log.Debug().Int("count", len(rules)).Msg("Evaluating alert rules")
 
-	// Fetch all devices
 	var devices []models.Device
 	if err := e.db.Find(&devices).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to fetch devices")
 		return
 	}
 
-	// Evaluate each rule against each device
 	var wg sync.WaitGroup
-	for _, rule := range rules {
-		for _, device := range devices {
+	for i := range rules {
+		for j := range devices {
 			wg.Add(1)
-			go func(r models.AlertRule, d models.Device) {
+			go func(r *models.AlertRule, d *models.Device) {
 				defer wg.Done()
-				e.evaluateRuleForDevice(&r, &d)
-			}(rule, device)
+				e.evaluateRuleForDevice(r, d)
+			}(&rules[i], &devices[j])
 		}
 	}
 
 	wg.Wait()
 }
 
-// evaluateRuleForDevice evaluates a single rule against a single device
+// evaluateRuleForDevice evaluates a single rule against a single device.
+//
+// The whole state read/mutate sequence runs under statesMu so that
+// GetActiveAlerts() and any concurrent evaluation of (rule, device) sees a
+// consistent snapshot.
 func (e *Engine) evaluateRuleForDevice(rule *models.AlertRule, device *models.Device) {
-	stateKey := fmt.Sprintf("%s:%s", rule.ID, device.ID)
-
-	// Get or create alert state
-	e.statesMu.Lock()
-	state, exists := e.alertStates[stateKey]
-	if !exists {
-		state = &AlertState{
-			RuleID:   rule.ID,
-			DeviceID: device.ID,
-		}
-		e.alertStates[stateKey] = state
-	}
-	e.statesMu.Unlock()
-
-	// Get current value based on metric type
-	value, err := e.getMetricValue(rule.Metric, device)
+	value, err := e.metrics.Get(rule.Metric, device)
 	if err != nil {
 		log.Debug().
 			Err(err).
@@ -156,110 +162,72 @@ func (e *Engine) evaluateRuleForDevice(rule *models.AlertRule, device *models.De
 		return
 	}
 
-	// Evaluate condition
 	conditionMet := EvaluateCondition(rule.Condition, rule.Threshold, value)
+
+	stateKey := fmt.Sprintf("%s:%s", rule.ID, device.ID)
+
+	e.statesMu.Lock()
+	state, exists := e.alertStates[stateKey]
+	if !exists {
+		state = &AlertState{RuleID: rule.ID, DeviceID: device.ID}
+		e.alertStates[stateKey] = state
+	}
 
 	state.LastChecked = time.Now()
 	state.Value = value
 
-	// Handle condition state changes
+	var (
+		shouldTrigger bool
+		alertIDToClear string
+	)
+
 	if conditionMet && !state.ConditionMet {
-		// Condition just became true
 		state.ConditionMet = true
 		state.FirstSeen = time.Now()
-		log.Debug().
-			Str("rule", rule.Name).
-			Str("device", device.Hostname).
-			Str("value", value).
-			Str("threshold", rule.Threshold).
-			Msg("Alert condition met")
 	} else if !conditionMet && state.ConditionMet {
-		// Condition just became false - resolve alert
 		state.ConditionMet = false
-		if state.AlertID != "" {
-			e.resolveAlert(state.AlertID)
-			state.AlertID = ""
+		alertIDToClear = state.AlertID
+		state.AlertID = ""
+	}
+
+	if state.ConditionMet && state.AlertID == "" {
+		duration := time.Since(state.FirstSeen)
+		requiredDuration := time.Duration(rule.Duration) * time.Second
+		if duration >= requiredDuration {
+			shouldTrigger = true
 		}
+	}
+	e.statesMu.Unlock()
+
+	if alertIDToClear != "" {
+		e.resolveAlert(alertIDToClear)
 		log.Debug().
 			Str("rule", rule.Name).
 			Str("device", device.Hostname).
 			Msg("Alert condition resolved")
 	}
 
-	// Check if condition has been true for required duration
-	if state.ConditionMet && state.AlertID == "" {
-		duration := time.Since(state.FirstSeen)
-		requiredDuration := time.Duration(rule.Duration) * time.Second
-
-		if duration >= requiredDuration {
-			// Trigger alert
-			alert := e.TriggerAlert(rule, device, value)
-			if alert != nil {
-				state.AlertID = alert.ID
+	if shouldTrigger {
+		alert := e.TriggerAlert(rule, device, value)
+		if alert != nil {
+			e.statesMu.Lock()
+			if s := e.alertStates[stateKey]; s != nil {
+				s.AlertID = alert.ID
 			}
-		} else {
-			log.Debug().
-				Str("rule", rule.Name).
-				Str("device", device.Hostname).
-				Dur("elapsed", duration).
-				Dur("required", requiredDuration).
-				Msg("Alert condition met but duration not satisfied")
+			e.statesMu.Unlock()
 		}
 	}
 }
 
-// getMetricValue retrieves the current value for a metric
-func (e *Engine) getMetricValue(metric string, device *models.Device) (string, error) {
-	switch metric {
-	case "device_status":
-		// Return "1" for up, "0" for down
-		if device.Status == "up" {
-			return "1", nil
-		}
-		return "0", nil
-	case "ping_latency":
-		latency, err := CheckPingLatency(device.ID, e.db)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("%.2f", latency), nil
-	case "last_seen":
-		// Return seconds since last seen
-		if device.LastSeen == nil {
-			return "999999", nil // Very high number if never seen
-		}
-		secondsSince := time.Since(*device.LastSeen).Seconds()
-		return fmt.Sprintf("%.0f", secondsSince), nil
-	case "packet_loss":
-		// For now, return 0 as we don't track packet loss separately
-		// This would come from the ping statistics in a real implementation
-		if device.Status == "down" {
-			return "100", nil // 100% packet loss if down
-		}
-		return "0", nil // 0% packet loss if up
-	default:
-		return "", fmt.Errorf("unsupported metric: %s", metric)
-	}
-}
-
-// TriggerAlert creates and sends a new alert
+// TriggerAlert creates and sends a new alert.
 func (e *Engine) TriggerAlert(rule *models.AlertRule, device *models.Device, value string) *models.Alert {
-	// Check if there's already an active alert for this rule and device
 	var existingAlert models.Alert
 	err := e.db.Where("device_id = ? AND status = 'active' AND source = ? AND metric = ?",
 		device.ID, rule.Source, rule.Metric).First(&existingAlert).Error
-
 	if err == nil {
-		// Alert already exists
-		log.Debug().
-			Str("rule", rule.Name).
-			Str("device", device.Hostname).
-			Str("alert_id", existingAlert.ID).
-			Msg("Active alert already exists")
 		return &existingAlert
 	}
 
-	// Create new alert
 	alert := &models.Alert{
 		DeviceID:    device.ID,
 		Severity:    rule.Severity,
@@ -287,13 +255,11 @@ func (e *Engine) TriggerAlert(rule *models.AlertRule, device *models.Device, val
 		Str("threshold", rule.Threshold).
 		Msg("Alert triggered")
 
-	// Send notifications
 	e.sendNotifications(alert, rule)
 
 	return alert
 }
 
-// formatAlertMessage creates a human-readable alert message
 func (e *Engine) formatAlertMessage(rule *models.AlertRule, device *models.Device, value string) string {
 	conditionText := map[string]string{
 		"gt": "greater than",
@@ -303,33 +269,24 @@ func (e *Engine) formatAlertMessage(rule *models.AlertRule, device *models.Devic
 		"ge": "greater than or equal to",
 		"le": "less than or equal to",
 	}
-
 	condition := conditionText[rule.Condition]
 	if condition == "" {
 		condition = rule.Condition
 	}
-
 	return fmt.Sprintf(
 		"Device %s (%s): %s is %s (threshold: %s %s). Rule: %s",
-		device.Hostname,
-		device.IPAddress,
-		rule.Metric,
-		value,
-		condition,
-		rule.Threshold,
-		rule.Name,
+		device.Hostname, device.IPAddress, rule.Metric, value,
+		condition, rule.Threshold, rule.Name,
 	)
 }
 
-// sendNotifications sends alert notifications via all configured notifiers
 func (e *Engine) sendNotifications(alert *models.Alert, rule *models.AlertRule) {
-	e.mu.RLock()
+	e.notifyMu.RLock()
 	notifiers := make([]Notifier, len(e.notifiers))
 	copy(notifiers, e.notifiers)
-	e.mu.RUnlock()
+	e.notifyMu.RUnlock()
 
 	for _, notifier := range notifiers {
-		// Check if this notifier type is enabled for this rule
 		switch notifier.(type) {
 		case *EmailNotifier:
 			if !rule.NotifyEmail {
@@ -353,7 +310,6 @@ func (e *Engine) sendNotifications(alert *models.Alert, rule *models.AlertRule) 
 	}
 }
 
-// resolveAlert marks an alert as resolved
 func (e *Engine) resolveAlert(alertID string) {
 	now := time.Now()
 	if err := e.db.Model(&models.Alert{}).
@@ -365,11 +321,10 @@ func (e *Engine) resolveAlert(alertID string) {
 		log.Error().Err(err).Str("alert_id", alertID).Msg("Failed to resolve alert")
 		return
 	}
-
 	log.Info().Str("alert_id", alertID).Msg("Alert resolved")
 }
 
-// GetActiveAlerts returns all active alerts
+// GetActiveAlerts returns all active alerts.
 func (e *Engine) GetActiveAlerts() ([]models.Alert, error) {
 	var alerts []models.Alert
 	err := e.db.Where("status = 'active'").
@@ -379,7 +334,19 @@ func (e *Engine) GetActiveAlerts() ([]models.Alert, error) {
 	return alerts, err
 }
 
-// AcknowledgeAlert marks an alert as acknowledged
+// GetAlertStateSnapshot returns a deep copy of the in-memory alert state map.
+// Safe to call concurrently with rule evaluation.
+func (e *Engine) GetAlertStateSnapshot() map[string]AlertState {
+	e.statesMu.Lock()
+	defer e.statesMu.Unlock()
+	snapshot := make(map[string]AlertState, len(e.alertStates))
+	for k, v := range e.alertStates {
+		snapshot[k] = *v
+	}
+	return snapshot
+}
+
+// AcknowledgeAlert marks an alert as acknowledged.
 func (e *Engine) AcknowledgeAlert(alertID string, acknowledgedBy string) error {
 	now := time.Now()
 	return e.db.Model(&models.Alert{}).
@@ -389,11 +356,4 @@ func (e *Engine) AcknowledgeAlert(alertID string, acknowledgedBy string) error {
 			"acked_at": &now,
 			"acked_by": &acknowledgedBy,
 		}).Error
-}
-
-// getEmailConfig loads email configuration from environment
-func getEmailConfig() *EmailNotifier {
-	// This would load from environment variables
-	// For now, return nil to disable email notifications
-	return nil
 }

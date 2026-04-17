@@ -10,18 +10,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// listAlerts returns all alerts
+// listAlerts returns alerts (paginated). Filter ?status=, paginate
+// ?page=&page_size=.
 func listAlerts(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var alerts []models.Alert
 
-		// Filter by status if provided
-		query := srv.DB.Preload("Device")
+		// scopeByCompany applies the WHERE company_id = ? filter required
+		// for tenant isolation. Without it, every operator saw every
+		// other tenant's alerts.
+		query := scopeByCompany(c, srv.DB).Preload("Device")
 		if status := c.Query("status"); status != "" {
 			query = query.Where("status = ?", status)
 		}
 
-		result := query.Order("triggered_at DESC").Find(&alerts)
+		result := query.Order("triggered_at DESC").Limit(limit).Offset(offset).Find(&alerts)
 
 		if result.Error != nil {
 			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading alerts</p>`))
@@ -62,12 +66,12 @@ func listAlerts(srv *server.Server) gin.HandlerFunc {
 			html += `<div style="padding: 15px; margin-bottom: 10px; background: var(--bg-secondary); border-left: 4px solid ` + severityColor + `; border-radius: 4px;">
 				<div style="display: flex; justify-content: space-between; align-items: start;">
 					<div style="flex: 1;">
-						<h4 style="margin: 0 0 5px 0; color: ` + severityColor + `;">` + alert.Title + statusBadge + `</h4>
-						<p style="margin: 0 0 5px 0; color: var(--text-secondary); font-size: 14px;">` + alert.Message + `</p>
-						<p style="margin: 0; color: var(--text-secondary); font-size: 12px;">Device: ` + hostname + ` | Triggered: ` + alert.TriggeredAt.Format("2006-01-02 15:04") + `</p>
+						<h4 style="margin: 0 0 5px 0; color: ` + severityColor + `;">` + hesc(alert.Title) + statusBadge + `</h4>
+						<p style="margin: 0 0 5px 0; color: var(--text-secondary); font-size: 14px;">` + hesc(alert.Message) + `</p>
+						<p style="margin: 0; color: var(--text-secondary); font-size: 12px;">Device: ` + hesc(hostname) + ` | Triggered: ` + alert.TriggeredAt.Format("2006-01-02 15:04") + `</p>
 					</div>
 					<div style="display: flex; gap: 8px; margin-left: 10px;">
-						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; white-space: nowrap;">` + alert.Severity + `</span>
+						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; white-space: nowrap;">` + hesc(alert.Severity) + `</span>
 					</div>
 				</div>
 			</div>`
@@ -148,11 +152,12 @@ func resolveAlert(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// listAlertRules returns all alert rules
+// listAlertRules returns alert rules (paginated, company-scoped).
 func listAlertRules(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit, offset := Page(c)
 		var rules []models.AlertRule
-		result := srv.DB.Find(&rules)
+		result := scopeByCompany(c, srv.DB).Limit(limit).Offset(offset).Find(&rules)
 
 		if result.Error != nil {
 			c.Data(http.StatusOK, "text/html", []byte(`<p style="color: var(--danger);">Error loading alert rules</p>`))
@@ -206,19 +211,24 @@ func listAlertRules(srv *server.Server) gin.HandlerFunc {
 				conditionSymbol = "≠"
 			}
 
+			// Rule fields and IDs are operator-controlled but still routed
+			// through hesc; rule.Name is also embedded inside a JS string
+			// literal for the delete confirm, so we additionally JS-escape
+			// single-quote/backslash to keep it from breaking out.
+			jsName := jsStringEscape(rule.Name)
 			html += `
 				<tr style="border-bottom: 1px solid var(--border);">
-					<td style="padding: 12px; color: var(--text-primary);">` + rule.Name + `</td>
-					<td style="padding: 12px; color: var(--text-primary);">` + rule.Metric + `</td>
-					<td style="padding: 12px; text-align: center; color: var(--text-primary);">` + conditionSymbol + `</td>
-					<td style="padding: 12px; text-align: center; color: var(--text-primary);">` + rule.Threshold + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + hesc(rule.Name) + `</td>
+					<td style="padding: 12px; color: var(--text-primary);">` + hesc(rule.Metric) + `</td>
+					<td style="padding: 12px; text-align: center; color: var(--text-primary);">` + hesc(conditionSymbol) + `</td>
+					<td style="padding: 12px; text-align: center; color: var(--text-primary);">` + hesc(rule.Threshold) + `</td>
 					<td style="padding: 12px; text-align: center;">
-						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + rule.Severity + `</span>
+						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase;">` + hesc(rule.Severity) + `</span>
 					</td>
 					<td style="padding: 12px; text-align: center;">` + enabledBadge + `</td>
 					<td style="padding: 12px; text-align: center;">
-						<button onclick="showEditRuleForm('` + rule.ID + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
-						<button onclick="deleteRule('` + rule.ID + `', '` + rule.Name + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
+						<button onclick="showEditRuleForm('` + hesc(rule.ID) + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Edit</button>
+						<button onclick="deleteRule('` + hesc(rule.ID) + `', '` + jsName + `')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px; background: var(--danger);">Delete</button>
 					</td>
 				</tr>`
 		}
