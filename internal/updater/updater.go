@@ -2,6 +2,8 @@ package updater
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/envcfg"
 	"github.com/rs/zerolog/log"
 )
 
@@ -458,6 +461,14 @@ func (u *Updater) DownloadAndUpdate() error {
 		return u.setError(fmt.Errorf("failed to download update: %w", err))
 	}
 
+	// Verify the source archive against the published SHA256SUMS file before
+	// extracting. The previous implementation downloaded and immediately
+	// executed code with no integrity check, so any GitHub-side compromise
+	// (or in-flight tampering) would be applied silently.
+	if err := u.verifyArtifact(zipPath, "source.zip"); err != nil {
+		return u.setError(fmt.Errorf("source archive integrity check failed: %w", err))
+	}
+
 	u.updateStatus.Status = "extracting"
 	u.updateStatus.Message = "Extracting update..."
 	u.updateStatus.Progress = 40
@@ -525,6 +536,19 @@ func (u *Updater) DownloadAndUpdate() error {
 	if err != nil {
 		log.Error().Err(err).Str("output", string(output)).Msg("Build failed")
 		return u.setError(fmt.Errorf("build failed: %s", string(output)))
+	}
+
+	// Verify the produced binary against the release manifest if one is
+	// published for it. The manifest entry is expected to be named after the
+	// platform-specific binary (e.g. network-monitor-windows-amd64.exe). If
+	// no entry matches we fall back to the source-archive digest already
+	// verified above; we never silently accept an unverified binary unless
+	// UPDATER_ALLOW_UNVERIFIED was set.
+	binaryManifestName := fmt.Sprintf("network-monitor-%s-%s%s",
+		runtime.GOOS, runtime.GOARCH,
+		map[string]string{"windows": ".exe"}[runtime.GOOS])
+	if err := u.verifyBuiltBinary(newBinaryPath, binaryManifestName); err != nil {
+		return u.setError(err)
 	}
 
 	u.updateStatus.Message = "Installing update..."
@@ -679,18 +703,36 @@ func (u *Updater) ApplyUpdate() error {
 		cmd.Dir = u.installDir
 
 		if err := cmd.Start(); err != nil {
-			// Restore old exe
 			os.Remove(currentExe)
 			os.Rename(oldExePath, currentExe)
 			return fmt.Errorf("failed to start new version: %w", err)
 		}
 
-		log.Info().Int("newPID", cmd.Process.Pid).Msg("New version started, exiting old process...")
+		log.Info().Int("newPID", cmd.Process.Pid).Msg("New version started; waiting for ready marker...")
 
-		// Give the new process a moment to start
-		time.Sleep(500 * time.Millisecond)
+		// Wait until the new process signals it's healthy. If it never
+		// does (crash on init, port-bind failure, etc.) we roll back to
+		// the old binary and keep the existing process alive instead of
+		// exiting into a broken install.
+		if err := waitForReadyMarker(u.installDir, 30*time.Second); err != nil {
+			log.Error().Err(err).Msg("New version did not become ready; rolling back")
+			_ = cmd.Process.Kill()
+			// Windows doesn't release the image-file lock immediately on
+			// Kill — Remove can fail with "file in use" for a few hundred
+			// ms. Retry briefly so the rollback rename has a chance to
+			// succeed before we declare manual intervention required.
+			if err := removeWithRetry(currentExe, 5, 200*time.Millisecond); err != nil {
+				log.Error().Err(err).Msg("Could not remove failed-update binary; rollback may be inconsistent")
+			}
+			if rollbackErr := os.Rename(oldExePath, currentExe); rollbackErr != nil {
+				log.Error().Err(rollbackErr).Msg("Rollback rename failed; manual intervention required")
+			}
+			u.updateStatus.Status = "error"
+			u.updateStatus.Error = "new version failed to start; rolled back"
+			return err
+		}
 
-		// Exit the current process
+		log.Info().Msg("New version is ready; exiting old process")
 		os.Exit(0)
 	}
 
@@ -718,6 +760,63 @@ func (u *Updater) ApplyUpdate() error {
 	os.Exit(0)
 
 	return nil
+}
+
+// removeWithRetry tries os.Remove until it succeeds or attempts run out.
+// Used by the Windows rollback path because Process.Kill is asynchronous —
+// the OS may hold the .exe image lock for several hundred milliseconds
+// after the process actually exits, so a single Remove call frequently
+// fails with "file in use".
+func removeWithRetry(path string, attempts int, backoff time.Duration) error {
+	if attempts <= 0 {
+		attempts = 1
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		if err := os.Remove(path); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		// Already-gone is success.
+		if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+			return nil
+		}
+		time.Sleep(backoff)
+	}
+	return lastErr
+}
+
+// readyMarkerName is the file the freshly-started server writes once it has
+// successfully bound its listener. The old process polls for this file as
+// proof that the new binary is healthy, and rolls back if it never appears.
+const readyMarkerName = ".update-ready"
+
+// SignalReady drops a marker file so the parent updater knows the new
+// process started successfully. The server calls this after Listen()
+// succeeds. The marker contains the PID for forensic logging.
+func SignalReady(installDir string) error {
+	path := filepath.Join(installDir, readyMarkerName)
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d", os.Getpid())), 0644)
+}
+
+// waitForReadyMarker polls for the marker for up to timeout. Returns nil on
+// success, or an error if the marker never appears. Removes the marker
+// after a successful read so the next update cycle starts clean.
+func waitForReadyMarker(installDir string, timeout time.Duration) error {
+	path := filepath.Join(installDir, readyMarkerName)
+	// Clear any stale marker from a prior aborted update.
+	_ = os.Remove(path)
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			_ = os.Remove(path)
+			return nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("ready marker did not appear within %s", timeout)
 }
 
 // Helper functions
@@ -807,6 +906,148 @@ func (u *Updater) extractZip(src, dest string) error {
 	}
 
 	return nil
+}
+
+// verifyBuiltBinary verifies the freshly-built binary against the release
+// SHA256SUMS file. If the manifest does not list this binary (because the
+// release only ships source) the function logs a warning and returns nil —
+// the source archive itself was already verified by verifyArtifact, so there
+// is no additional risk surface beyond `go build` itself. If the manifest
+// lists it but the digest mismatches, that is a hard failure.
+func (u *Updater) verifyBuiltBinary(localPath, manifestName string) error {
+	if envcfg.Bool("UPDATER_ALLOW_UNVERIFIED") {
+		return nil
+	}
+	manifest, err := u.fetchSHA256Manifest()
+	if err != nil {
+		// We already verified the source archive; downgrade to a warning so
+		// releases that ship only source still apply.
+		log.Warn().Err(err).Msg("Skipping binary verification (no manifest)")
+		return nil
+	}
+	want, ok := manifest[manifestName]
+	if !ok {
+		log.Warn().
+			Str("binary", manifestName).
+			Msg("SHA256SUMS does not list this platform binary; relying on source-archive verification")
+		return nil
+	}
+	got, err := sha256File(localPath)
+	if err != nil {
+		return fmt.Errorf("hash %s: %w", localPath, err)
+	}
+	if !strings.EqualFold(want, got) {
+		return fmt.Errorf("built binary digest mismatch for %s: expected %s, got %s",
+			manifestName, want, got)
+	}
+	log.Info().
+		Str("binary", manifestName).
+		Str("sha256", got).
+		Msg("Built binary integrity verified")
+	return nil
+}
+
+// verifyArtifact checks the SHA-256 digest of localPath against the entry for
+// nameInManifest in the release's SHA256SUMS file. If no such file is
+// published (and no override is set), verification is treated as a hard
+// failure to prevent silently installing an unverified binary. Operators who
+// genuinely cannot publish checksums (e.g. local-only builds) must set
+// UPDATER_ALLOW_UNVERIFIED=true to opt in.
+func (u *Updater) verifyArtifact(localPath, nameInManifest string) error {
+	if envcfg.Bool("UPDATER_ALLOW_UNVERIFIED") {
+		log.Warn().Msg("UPDATER_ALLOW_UNVERIFIED=true: skipping integrity check (NOT recommended)")
+		return nil
+	}
+
+	gotDigest, err := sha256File(localPath)
+	if err != nil {
+		return fmt.Errorf("hash %s: %w", localPath, err)
+	}
+
+	manifest, err := u.fetchSHA256Manifest()
+	if err != nil {
+		return fmt.Errorf("fetch SHA256SUMS: %w (set UPDATER_ALLOW_UNVERIFIED=true to override)", err)
+	}
+
+	wantDigest, ok := manifest[nameInManifest]
+	if !ok {
+		return fmt.Errorf("SHA256SUMS does not list %q", nameInManifest)
+	}
+	if !strings.EqualFold(wantDigest, gotDigest) {
+		return fmt.Errorf("digest mismatch for %s: expected %s, got %s",
+			nameInManifest, wantDigest, gotDigest)
+	}
+	log.Info().
+		Str("artifact", nameInManifest).
+		Str("sha256", gotDigest).
+		Msg("Update artifact integrity verified")
+	return nil
+}
+
+// fetchSHA256Manifest downloads and parses the release's SHA256SUMS asset.
+// The expected format is one entry per line: "<hex-digest>  <filename>".
+func (u *Updater) fetchSHA256Manifest() (map[string]string, error) {
+	release, err := u.getLatestRelease()
+	if err != nil {
+		return nil, err
+	}
+	var url string
+	for _, asset := range release.Assets {
+		if strings.EqualFold(asset.Name, "SHA256SUMS") ||
+			strings.EqualFold(asset.Name, "checksums.txt") {
+			url = asset.BrowserDownloadURL
+			break
+		}
+	}
+	if url == "" {
+		return nil, fmt.Errorf("release has no SHA256SUMS asset")
+	}
+
+	resp, err := u.httpClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SHA256SUMS download returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]string)
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		// Drop optional "*" prefix that GNU coreutils emits for binary mode.
+		name := strings.TrimPrefix(fields[1], "*")
+		out[name] = fields[0]
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("SHA256SUMS contained no usable entries")
+	}
+	return out, nil
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func copyFile(src, dst string) error {

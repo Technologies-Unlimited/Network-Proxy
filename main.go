@@ -5,25 +5,38 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/collector"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/icmp"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/snmp"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/alerting"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/api"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/database"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/envcfg"
 	nodeGrpc "github.com/Technologies-Unlimited/Network-Proxy/internal/grpc"
 	pb "github.com/Technologies-Unlimited/Network-Proxy/internal/grpc/pb/node"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/metrics"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/netutil"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/safego"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/updater"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -135,8 +148,10 @@ func init() {
 }
 
 func main() {
-	// Initialize logger with both console and file output
-	logFile, err := os.OpenFile("network-monitor.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	// Initialize logger with both console and file output. The log file is
+	// owner-only (0600) — it can contain enough operational detail to be
+	// sensitive on shared hosts.
+	logFile, err := os.OpenFile("network-monitor.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		fmt.Printf("Failed to open log file: %v\n", err)
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
@@ -227,7 +242,7 @@ func runServer(cmd *cobra.Command, args []string) {
 
 			// Register this proxy with ThothOS
 			if callbackURL == "" {
-				localIP := getOutboundIP()
+				localIP := netutil.OutboundIP()
 				callbackURL = fmt.Sprintf("http://%s:%d", localIP, serverPort)
 			}
 
@@ -236,7 +251,7 @@ func runServer(cmd *cobra.Command, args []string) {
 				Description: fmt.Sprintf("Network Monitor Proxy v%s", version),
 				SupernetID:  "default",
 				SubnetID:    "default",
-				IPAddress:   getOutboundIP(),
+				IPAddress:   netutil.OutboundIP(),
 				Port:        serverPort,
 				CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
 				Version:     version,
@@ -266,13 +281,15 @@ func runServer(cmd *cobra.Command, args []string) {
 					api.SetWebhookSecret(webhookResult.Secret)
 				}
 
-				go func() {
+				safego.Go("thothos-initial-config", func() {
 					if err := pullInitialConfig(thothosClient); err != nil {
 						log.Error().Err(err).Msg("Failed to pull initial config from ThothOS")
 					}
-				}()
+				})
 
-				go startHeartbeat(thothosClient, serverPort, db)
+				safego.Go("thothos-heartbeat", func() {
+					startHeartbeat(thothosClient, serverPort, db)
+				})
 			}
 		}
 	} else {
@@ -281,8 +298,27 @@ func runServer(cmd *cobra.Command, args []string) {
 		middleware.SetStandaloneMode(true)
 	}
 
-	// Set up Gin router
+	// Set up Gin router. gin.Default() bundles Logger + Recovery; the
+	// Recovery middleware turns a panicked handler into a 500 instead of
+	// killing the whole process.
 	router := gin.Default()
+
+	// Request-ID first so every subsequent middleware/handler log line can
+	// include it. Body limit second so size validation runs before any
+	// handler reads the body. CORS last because it may short-circuit on
+	// preflight.
+	router.Use(middleware.RequestID())
+	router.Use(middleware.BodyLimit(middleware.MaxBodyBytes))
+	router.Use(middleware.SameOriginOnly())
+
+	// Log risky configuration loudly so an operator inspecting the boot
+	// log can see which posture they shipped with.
+	if envcfg.Bool("UPDATER_ALLOW_UNVERIFIED") {
+		log.Warn().Msg("UPDATER_ALLOW_UNVERIFIED=true: self-updates will skip checksum verification")
+	}
+	if v := os.Getenv("CORS_ALLOWED_ORIGINS"); v != "" {
+		log.Info().Str("allowed", v).Msg("CORS: cross-origin allowlist configured")
+	}
 
 	// Load HTML templates
 	router.LoadHTMLGlob("web/templates/*.html")
@@ -293,24 +329,85 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize updater
 	api.InitUpdater(version, commitSHA)
 
+	// Warn loudly if no encryption key is configured for at-rest secrets —
+	// the field-level cipher falls back to plaintext to keep first-run
+	// installs working, but operators should set NETWORK_MONITOR_SECRET_KEY.
+	if !models.CryptoKeyConfigured() {
+		log.Warn().Msgf(
+			"%s is not set; ProxyConfig API key and SNMP credentials will be stored UNENCRYPTED",
+			models.NETWORK_MONITOR_SECRET_KEY_ENV)
+	}
+
+	// Build the metrics registry, then the per-protocol collectors, then a
+	// supervisor that runs both. Without this, the alert engine has no real
+	// data to evaluate against and Prometheus /metrics is empty.
+	metricsRegistry := metrics.NewRegistry()
+	icmpCollector := icmp.NewCollector(metricsRegistry, db)
+	snmpCollector := snmp.NewCollector(metricsRegistry)
+	collectors := collector.New(icmpCollector, snmpCollector)
+
+	database.LoadDevicesIntoCollectors(db, icmpCollector, snmpCollector)
+
+	collectorCtx, cancelCollectors := context.WithCancel(context.Background())
+	collectorsDone := make(chan struct{})
+	safego.Go("collectors", func() {
+		defer close(collectorsDone)
+		collectors.Start(collectorCtx)
+	})
+
+	// Start alerting engine, backed by the in-process metrics registry.
+	alertEngine := alerting.NewEngine(db)
+	alertEngine.SetMetricSource(alerting.NewLocalMetricSource(metrics.NewLocalQuerier(metricsRegistry)))
+	api.SetAlertEngine(alertEngine)
+	alertCtx, cancelAlerts := context.WithCancel(context.Background())
+	alertsDone := make(chan struct{})
+	safego.Go("alert-engine", func() {
+		defer close(alertsDone)
+		alertEngine.Start(alertCtx)
+	})
+
+	// Healthz / readyz: split per the k8s convention. Liveness is always
+	// 200 once the process is up; readiness flips to 200 once collectors
+	// and the listener are running, and back to 503 during shutdown.
+	ready := &readinessGate{}
+	router.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	router.GET("/readyz", func(c *gin.Context) {
+		if ready.Ready() {
+			c.String(http.StatusOK, "ready")
+			return
+		}
+		c.String(http.StatusServiceUnavailable, "not ready")
+	})
+
+	// Prometheus scrape endpoint. By default it requires auth (so device
+	// inventory isn't world-readable); operators that front it with their
+	// own auth proxy can opt out via METRICS_PUBLIC=true.
+	if envcfg.Bool("METRICS_PUBLIC") {
+		log.Warn().Msg("METRICS_PUBLIC=true: /metrics is exposed without auth")
+		router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	} else {
+		// Mount under the auth-gated v1 group via the api package's hook.
+		api.SetMetricsHandler(promhttp.Handler())
+	}
+
 	// Register API routes
 	api.RegisterRoutes(router, srv)
 
 	// Start node status monitor goroutine
-	go startNodeStatusMonitor(db)
+	nodeMonCtx, cancelNodeMon := context.WithCancel(context.Background())
+	safego.Go("node-status-monitor", func() {
+		startNodeStatusMonitorCtx(nodeMonCtx, db)
+	})
 
-	// Try to bind to the port, killing any existing process if needed
+	// Try to bind to the port, killing any existing process if needed.
 	addr := fmt.Sprintf(":%d", serverPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		// Port is in use, try to kill the process using it
 		log.Warn().Msgf("Port %d is in use, attempting to kill existing process...", serverPort)
 		if killErr := killProcessOnPort(serverPort); killErr != nil {
 			log.Error().Err(killErr).Msgf("Failed to kill process on port %d", serverPort)
 		} else {
-			// Wait a moment for the port to be released
 			time.Sleep(2 * time.Second)
-			// Try again
 			listener, err = net.Listen("tcp", addr)
 			if err != nil {
 				log.Fatal().Err(err).Msgf("Failed to bind to port %d even after killing existing process", serverPort)
@@ -319,41 +416,139 @@ func runServer(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// HTTP server with explicit timeouts. The previous default-zero values
+	// left the server slowloris-vulnerable: a handful of slow-header
+	// connections could pin every goroutine indefinitely.
 	httpServer := &http.Server{
-		Handler: router,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MiB
 	}
 
-	// Start server using the listener we already have
-	go func() {
+	// Start serving. A non-EOF error from Serve is reported through the
+	// `serveErr` channel so the main goroutine can fold it into the
+	// shutdown sequence — log.Fatal here would have skipped every defer
+	// (collectors, DB close, log file) and corrupted state.
+	serveErr := make(chan error, 1)
+	safego.Go("http-serve", func() {
 		log.Info().Msgf("Server starting on port %d", serverPort)
 		log.Info().Msgf("Web UI available at http://localhost:%d", serverPort)
 		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("Failed to start server")
+			serveErr <- err
 		}
-	}()
+	})
 
-	// Auto-launch browser after a short delay to ensure server is ready
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		url := fmt.Sprintf("http://localhost:%d", serverPort)
-		openBrowser(url)
-	}()
-
-	// Wait for interrupt signal for graceful shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	log.Info().Msg("Shutting down server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatal().Err(err).Msg("Server forced to shutdown")
+	// Signal the parent updater (if any) that we're up and bound.
+	if execPath, err := os.Executable(); err == nil {
+		if signalErr := updater.SignalReady(filepath.Dir(execPath)); signalErr != nil {
+			log.Debug().Err(signalErr).Msg("Could not write update ready marker")
+		}
 	}
 
-	log.Info().Msg("Server exited")
+	// Mark ready *after* listener is bound, so /readyz returns 503 during
+	// the brief window between process start and listener-bound.
+	ready.SetReady(true)
+
+	// Auto-launch browser only once the listener actually accepts a TCP
+	// connection. A fixed 500ms sleep raced ports and produced
+	// "connection refused" on slow boxes.
+	safego.Go("browser-launcher", func() {
+		url := fmt.Sprintf("http://localhost:%d", serverPort)
+		if waitForListener(addr, 5*time.Second) {
+			openBrowser(url)
+		} else {
+			log.Debug().Str("url", url).Msg("Browser auto-launch skipped: listener never became ready")
+		}
+	})
+
+	// Wait for interrupt or for Serve to fail. Either way we run the same
+	// cleanup so the process exits with everything closed.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case sig := <-quit:
+		log.Info().Str("signal", sig.String()).Msg("Shutting down server...")
+	case err := <-serveErr:
+		log.Error().Err(err).Msg("HTTP serve failed; shutting down")
+	}
+
+	shutdownStart := time.Now()
+	ready.SetReady(false)
+
+	// Stop accepting new HTTP connections; allow in-flight requests up to
+	// 10s to finish. Do this BEFORE cancelling background workers so
+	// handlers in flight still have a working DB / alert engine.
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelShutdown()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("HTTP server shutdown reported error")
+	}
+
+	// Now stop background workers. Cancel their contexts and give them up
+	// to 5s each to drain.
+	cancelCollectors()
+	cancelAlerts()
+	cancelNodeMon()
+	for _, w := range []struct {
+		name string
+		done chan struct{}
+	}{
+		{"collectors", collectorsDone},
+		{"alert-engine", alertsDone},
+	} {
+		select {
+		case <-w.done:
+		case <-time.After(5 * time.Second):
+			log.Warn().Str("worker", w.name).Msg("worker did not finish within 5s")
+		}
+	}
+
+	// Close the DB last so any worker still running mid-cleanup can finish
+	// its in-flight statement before the connection pool tears down.
+	if sqlDB, err := db.DB(); err == nil {
+		if closeErr := sqlDB.Close(); closeErr != nil {
+			log.Error().Err(closeErr).Msg("DB close failed")
+		}
+	}
+
+	log.Info().Dur("elapsed", time.Since(shutdownStart)).Msg("Server exited cleanly")
+}
+
+// readinessGate is a tiny atomic boolean wrapped to satisfy /readyz.
+type readinessGate struct {
+	mu    sync.Mutex
+	ready bool
+}
+
+func (g *readinessGate) SetReady(v bool) {
+	g.mu.Lock()
+	g.ready = v
+	g.mu.Unlock()
+}
+
+func (g *readinessGate) Ready() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.ready
+}
+
+// waitForListener dials addr until it succeeds or timeout elapses. Used to
+// avoid the auto-browser race where the open beat the listener.
+func waitForListener(addr string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 250*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
 }
 
 func printBanner() {
@@ -485,17 +680,6 @@ func findSubstring(s, substr string) int {
 	return -1
 }
 
-func getOutboundIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		return "127.0.0.1"
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-	return localAddr.IP.String()
-}
-
 func pullInitialConfig(client *thothos.Client) error {
 	log.Info().Msg("Pulling initial configuration from ThothOS...")
 
@@ -555,7 +739,7 @@ func startHeartbeat(client *thothos.Client, port int, db *gorm.DB) {
 		}
 
 		_, err := client.SendHeartbeat(thothos.HeartbeatStatus{
-			IPAddress:   getOutboundIP(),
+			IPAddress:   netutil.OutboundIP(),
 			Port:        port,
 			Version:     version,
 			AgentCount:  int(nodeCount),
@@ -572,7 +756,17 @@ func startHeartbeat(client *thothos.Client, port int, db *gorm.DB) {
 	}
 }
 
+// startNodeStatusMonitor is the legacy entry point retained for callers
+// that don't have a context. New callers should use startNodeStatusMonitorCtx
+// so they can drain on shutdown.
 func startNodeStatusMonitor(db *gorm.DB) {
+	startNodeStatusMonitorCtx(context.Background(), db)
+}
+
+// startNodeStatusMonitorCtx runs the periodic stale-node sweep until ctx
+// is cancelled. The previous version had no exit condition, so on shutdown
+// it kept poking the DB after the connection pool was already closing.
+func startNodeStatusMonitorCtx(ctx context.Context, db *gorm.DB) {
 	ticker := time.NewTicker(nodeStatusCheckInterval)
 	defer ticker.Stop()
 
@@ -582,7 +776,14 @@ func startNodeStatusMonitor(db *gorm.DB) {
 		Dur("staleTimeout", nodeStaleTimeout).
 		Msg("Node status monitor started")
 
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("Node status monitor stopped")
+			return
+		case <-ticker.C:
+		}
+
 		now := time.Now()
 		offlineCutoff := now.Add(-nodeOfflineTimeout)
 		staleCutoff := now.Add(-nodeStaleTimeout)
@@ -687,7 +888,9 @@ func runNode(cmd *cobra.Command, args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go runNodeHeartbeat(ctx, config)
+	safego.Go("node-heartbeat", func() {
+		runNodeHeartbeat(ctx, config)
+	})
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -716,11 +919,19 @@ func registerWithServer(config *NodeConfig, hostname, ipAddress string) (string,
 	}
 
 	url := fmt.Sprintf("%s/api/v1/nodes", config.ServerAddr)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	// Bounded client. The previous http.Post used the default client (zero
+	// timeout), so a wedged central server hung node startup forever and
+	// blocked SIGTERM-based shutdown.
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to register: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain so the connection can be reused even on non-2xx.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return "", fmt.Errorf("registration failed with status %d", resp.StatusCode)
@@ -748,14 +959,22 @@ func runNodeHeartbeat(ctx context.Context, config *NodeConfig) {
 	}
 }
 
+// nodeHTTPClient is a single client reused across heartbeats so we don't
+// rebuild TLS state on every tick. 10s is comfortably above network RTT
+// but tight enough that a wedged server can't pile up goroutines.
+var nodeHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func sendNodeHeartbeat(config *NodeConfig) {
 	url := fmt.Sprintf("%s/api/v1/nodes/%s/heartbeat", config.ServerAddr, config.NodeID)
-	resp, err := http.Post(url, "application/json", nil)
+	resp, err := nodeHTTPClient.Post(url, "application/json", nil)
 	if err != nil {
 		fmt.Printf("Heartbeat failed: %v\n", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("Heartbeat returned status %d\n", resp.StatusCode)

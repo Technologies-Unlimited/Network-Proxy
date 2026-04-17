@@ -264,7 +264,15 @@ func (c *Collector) getSNMPValue(variable gosnmp.SnmpPDU) interface{} {
 	case gosnmp.IPAddress:
 		return variable.Value
 	default:
-		return variable.Value
+		// Coerce unknown SNMP types to a string; the previous "return raw
+		// interface{}" path produced values that callers (Prometheus gauge,
+		// JSON encoder, struct decoders) would silently drop or panic on.
+		// Stringifying gives a deterministic representation we can log,
+		// store, and surface in the UI.
+		if variable.Value == nil {
+			return ""
+		}
+		return fmt.Sprintf("%v", variable.Value)
 	}
 }
 

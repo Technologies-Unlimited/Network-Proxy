@@ -43,9 +43,13 @@ func NewScanner() *Scanner {
 	}
 }
 
+// MaxScanHosts is the largest CIDR we'll enumerate. Allocating a list of
+// every IP in /16 already burns ~64k strings; /8 used to OOM. 65536 hosts is
+// plenty for any sane LAN scan.
+const MaxScanHosts = 65536
+
 // ScanCIDR scans a CIDR range (e.g., "192.168.1.0/24")
 func (s *Scanner) ScanCIDR(ctx context.Context, cidr string) ([]*models.Device, error) {
-	// Mark scanning as started
 	s.scanMu.Lock()
 	if s.scanning {
 		s.scanMu.Unlock()
@@ -63,15 +67,33 @@ func (s *Scanner) ScanCIDR(ctx context.Context, cidr string) ([]*models.Device, 
 		s.scanMu.Unlock()
 	}()
 
-	// Parse CIDR range
-	ip, ipNet, err := net.ParseCIDR(cidr)
+	_, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid CIDR: %w", err)
 	}
 
-	// Generate list of IPs to scan
+	// Reject ranges large enough to OOM the process. The previous code
+	// allocated every IP in a CIDR up front; a /8 would attempt 16M strings.
+	hostCount := cidrHostCount(ipNet)
+	if hostCount > MaxScanHosts {
+		return nil, fmt.Errorf(
+			"CIDR %s contains %d hosts, exceeding scan cap of %d",
+			cidr, hostCount, MaxScanHosts)
+	}
+
+	// Generate list of IPs to scan, skipping the network and broadcast
+	// addresses *for this specific subnet* — the previous string-suffix check
+	// only worked for /24s and corrupted /23, /22, /16, etc. results.
+	network := ipNet.IP.Mask(ipNet.Mask)
+	broadcast := networkBroadcast(ipNet)
+
 	var ips []string
-	for ip := ip.Mask(ipNet.Mask); ipNet.Contains(ip); incIP(ip) {
+	for ip := append(net.IP(nil), network...); ipNet.Contains(ip); incIP(ip) {
+		if isIPv4(ip) {
+			if ip.Equal(network) || (broadcast != nil && ip.Equal(broadcast)) {
+				continue
+			}
+		}
 		ips = append(ips, ip.String())
 	}
 
@@ -133,13 +155,10 @@ func (s *Scanner) ScanCIDR(ctx context.Context, cidr string) ([]*models.Device, 
 	return discovered, nil
 }
 
-// scanHost checks if host is alive and gets hostname
+// scanHost checks if host is alive and gets hostname. Network/broadcast
+// filtering happens in ScanCIDR using the actual subnet mask, not a string
+// suffix; that lets non-/24 ranges (e.g. /23, /22, /30) work correctly.
 func (s *Scanner) scanHost(ctx context.Context, ip string) *models.Device {
-	// Skip network and broadcast addresses
-	if strings.HasSuffix(ip, ".0") || strings.HasSuffix(ip, ".255") {
-		return nil
-	}
-
 	// Perform ICMP ping
 	pinger, err := ping.NewPinger(ip)
 	if err != nil {
@@ -303,4 +322,43 @@ func incIP(ip net.IP) {
 			break
 		}
 	}
+}
+
+// cidrHostCount returns the number of addresses inside ipNet. Uses int math
+// and clamps at math.MaxInt to avoid overflowing on /0.
+func cidrHostCount(ipNet *net.IPNet) int {
+	ones, bits := ipNet.Mask.Size()
+	hostBits := bits - ones
+	if hostBits >= 31 {
+		// Larger than int can represent on 32-bit; treat as "too big".
+		return MaxScanHosts + 1
+	}
+	return 1 << hostBits
+}
+
+// networkBroadcast returns the IPv4 broadcast address for ipNet, or nil for
+// IPv6 networks (which don't have a broadcast address).
+func networkBroadcast(ipNet *net.IPNet) net.IP {
+	ip4 := ipNet.IP.To4()
+	if ip4 == nil {
+		return nil
+	}
+	mask := ipNet.Mask
+	if len(mask) != net.IPv4len {
+		// Mask was returned in IPv4-mapped IPv6 form; trim it.
+		if len(mask) == net.IPv6len {
+			mask = mask[12:]
+		} else {
+			return nil
+		}
+	}
+	bcast := make(net.IP, net.IPv4len)
+	for i := 0; i < net.IPv4len; i++ {
+		bcast[i] = ip4[i] | ^mask[i]
+	}
+	return bcast
+}
+
+func isIPv4(ip net.IP) bool {
+	return ip.To4() != nil
 }

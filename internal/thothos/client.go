@@ -35,6 +35,47 @@ func NewClient(baseURL, apiKey string) *Client {
 	}
 }
 
+// doWithRetry executes the request with bounded exponential backoff. Retries
+// only on transient failures (network errors, 502/503/504); 4xx and 401/403
+// are returned immediately so we don't hammer ThothOS with broken creds.
+//
+// Use only for idempotent calls — every Get*Templates / heartbeat /
+// validate path is safe; mutating GraphQL is not retried by callers.
+func (c *Client) doWithRetry(req *http.Request, body []byte) (*http.Response, error) {
+	const maxAttempts = 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Re-set the body each attempt because http.Client consumes it.
+		if body != nil {
+			req.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		resp, err := c.httpClient.Do(req)
+		if err == nil {
+			if resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusTooManyRequests {
+				return resp, nil
+			}
+			lastErr = fmt.Errorf("upstream returned %d", resp.StatusCode)
+			resp.Body.Close()
+		} else {
+			lastErr = err
+		}
+
+		if attempt == maxAttempts {
+			break
+		}
+		// 200ms, 500ms, 1.25s — total ≈ 2s of jitter-free backoff.
+		backoff := time.Duration(1<<(attempt-1)) * 200 * time.Millisecond
+		log.Debug().
+			Err(lastErr).
+			Int("attempt", attempt).
+			Dur("backoff", backoff).
+			Msg("ThothOS request failed; retrying")
+		time.Sleep(backoff)
+	}
+	return nil, fmt.Errorf("ThothOS request failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
 // ValidateAPIKey validates the API key and caches the response
 func (c *Client) ValidateAPIKey() (*ApiKeyValidationResponse, error) {
 	url := fmt.Sprintf("%s/api/auth/api-key/validate", c.baseURL)
@@ -47,7 +88,7 @@ func (c *Client) ValidateAPIKey() (*ApiKeyValidationResponse, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doWithRetry(req, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate API key: %w", err)
 	}
@@ -119,7 +160,9 @@ func (c *Client) doGraphQL(path string, query string, variables map[string]inter
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	// Read-only GraphQL traffic from this code path is the template/IPAM
+	// pull, which is idempotent — safe to retry on transient 5xx.
+	resp, err := c.doWithRetry(req, jsonBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}

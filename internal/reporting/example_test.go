@@ -50,8 +50,12 @@ func ExampleGenerator_GenerateDeviceReport() {
 	// db := database.Connect() // In real usage
 	// generator := reporting.NewGenerator(db)
 
-	startDate := time.Now().AddDate(0, -1, 0) // 1 month ago
-	endDate := time.Now()
+	// Use a frozen reference time so the doc-test stays deterministic.
+	// Previously this called time.Now(), which made the example fail
+	// every day after it was checked in.
+	now := time.Date(2025, 10, 20, 0, 0, 0, 0, time.UTC)
+	startDate := now.AddDate(0, -1, 0)
+	endDate := now
 
 	fmt.Printf("Generating device report from %s to %s\n",
 		startDate.Format("2006-01-02"),
@@ -116,13 +120,16 @@ func ExampleGenerator_GenerateAlertReport() {
 	// Alert report generated as JSON with summary statistics
 }
 
-// ExampleReportRequest shows how to create a report request
+// ExampleReportRequest shows how to create a report request.
+// Uses a frozen reference time so the example stays deterministic; in
+// real callers, replace `now` with time.Now().
 func ExampleReportRequest() {
+	now := time.Date(2025, 10, 20, 0, 0, 0, 0, time.UTC)
 	request := reporting.ReportRequest{
 		Type:      reporting.DeviceReport,
 		Format:    reporting.FormatCSV,
-		StartDate: time.Now().AddDate(0, -1, 0),
-		EndDate:   time.Now(),
+		StartDate: now.AddDate(0, -1, 0),
+		EndDate:   now,
 	}
 
 	fmt.Printf("Report Type: %s\n", request.Type)

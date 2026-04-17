@@ -54,14 +54,19 @@ func (c *Collector) SetInterval(interval time.Duration) {
 	c.interval = interval
 }
 
-// Start begins polling devices
+// Start begins polling devices.
+//
+// Probes the local raw-socket privilege once at startup. If the platform
+// can't open the right socket type, the collector logs loudly and continues
+// (every ping will still fail; the operator at least knows why).
 func (c *Collector) Start(ctx context.Context) {
+	checkPrivilegeOnce()
+
 	ticker := time.NewTicker(c.interval)
 	defer ticker.Stop()
 
 	log.Info().Dur("interval", c.interval).Msg("ICMP collector started")
 
-	// Initial poll
 	c.pollAllDevices(ctx)
 
 	for {
@@ -73,6 +78,32 @@ func (c *Collector) Start(ctx context.Context) {
 			return
 		}
 	}
+}
+
+var privilegeCheckOnce sync.Once
+
+// checkPrivilegeOnce verifies that pro-bing can construct a privileged
+// pinger against the loopback address. If the call to Run() fails with
+// "operation not permitted" or "permission denied", we log a single Warn —
+// otherwise this would spam every 60s for every device.
+func checkPrivilegeOnce() {
+	privilegeCheckOnce.Do(func() {
+		probe, err := probing.NewPinger("127.0.0.1")
+		if err != nil {
+			log.Warn().Err(err).Msg("ICMP privilege probe: pinger init failed")
+			return
+		}
+		probe.SetPrivileged(true)
+		probe.Count = 1
+		probe.Timeout = 500 * time.Millisecond
+		if err := probe.Run(); err != nil {
+			log.Warn().
+				Err(err).
+				Msg("ICMP raw socket appears unavailable; pings will fail until the process gets the right privilege (Linux: CAP_NET_RAW; Windows: admin OR set pinger.SetPrivileged(false))")
+		} else {
+			log.Info().Msg("ICMP privilege probe: raw socket OK")
+		}
+	})
 }
 
 // pollAllDevices polls all registered devices concurrently
@@ -118,8 +149,14 @@ func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
 	pinger.Timeout = 5 * time.Second
 
 	startTime := time.Now()
-	err = pinger.Run()
+	// RunWithContext returns when the ping completes OR ctx is cancelled,
+	// so a shutdown doesn't have to wait the full 5s timeout per device.
+	err = pinger.RunWithContext(ctx)
 	duration := time.Since(startTime)
+	if err != nil && ctx.Err() != nil {
+		// Cancelled mid-ping; don't spam metrics with a fake "down".
+		return
+	}
 
 	if err != nil {
 		log.Error().Err(err).Str("device", device.Hostname).Msg("Ping failed")

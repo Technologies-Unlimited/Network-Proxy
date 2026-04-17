@@ -7,6 +7,30 @@ import (
 	"time"
 )
 
+// csvSafe escapes a value so spreadsheet apps don't interpret it as a
+// formula. A leading '=', '+', '-', '@', tab, or CR is the trigger; we
+// prefix a single quote so the cell is rendered literally. This is the
+// standard mitigation for CSV injection (CWE-1236) and is cheap to apply
+// to every exported field.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
+func csvSafeRow(fields []string) []string {
+	out := make([]string, len(fields))
+	for i, f := range fields {
+		out[i] = csvSafe(f)
+	}
+	return out
+}
+
 // ExportDevicesCSV exports device data to CSV format
 func ExportDevicesCSV(data []DeviceReportData) ([]byte, error) {
 	var buf bytes.Buffer
@@ -43,7 +67,7 @@ func ExportDevicesCSV(data []DeviceReportData) ([]byte, error) {
 			device.CreatedAt.Format(time.RFC3339),
 			fmt.Sprintf("%.2f", device.UptimeHours),
 		}
-		if err := writer.Write(row); err != nil {
+		if err := writer.Write(csvSafeRow(row)); err != nil {
 			return nil, fmt.Errorf("failed to write CSV row: %w", err)
 		}
 	}
@@ -86,7 +110,7 @@ func ExportUptimeCSV(data []UptimeReportData) ([]byte, error) {
 			fmt.Sprintf("%.2f", uptime.MaxLatency),
 			uptime.Period,
 		}
-		if err := writer.Write(row); err != nil {
+		if err := writer.Write(csvSafeRow(row)); err != nil {
 			return nil, fmt.Errorf("failed to write CSV row: %w", err)
 		}
 	}
@@ -143,7 +167,7 @@ func ExportAlertsCSV(data []AlertReportData) ([]byte, error) {
 			resolvedAt,
 			alert.Duration,
 		}
-		if err := writer.Write(row); err != nil {
+		if err := writer.Write(csvSafeRow(row)); err != nil {
 			return nil, fmt.Errorf("failed to write CSV row: %w", err)
 		}
 	}
@@ -185,7 +209,7 @@ func ExportPerformanceCSV(data []PerformanceReportData) ([]byte, error) {
 			fmt.Sprintf("%.2f", perf.StdDeviation),
 			perf.Timestamp.Format(time.RFC3339),
 		}
-		if err := writer.Write(row); err != nil {
+		if err := writer.Write(csvSafeRow(row)); err != nil {
 			return nil, fmt.Errorf("failed to write CSV row: %w", err)
 		}
 	}

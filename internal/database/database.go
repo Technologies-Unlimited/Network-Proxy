@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -18,6 +19,13 @@ func Initialize() (*gorm.DB, error) {
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
 		dbPath = "./network-monitor.db"
+	}
+	// Resolve to absolute path so a misconfigured systemd unit, Docker
+	// volume mount, or `cd somewhere && ./network-monitor server` is
+	// obvious from the boot log instead of silently writing to whatever
+	// the working directory happens to be.
+	if abs, err := filepath.Abs(dbPath); err == nil {
+		dbPath = abs
 	}
 
 	log.Info().Str("path", dbPath).Msg("Initializing SQLite database")
@@ -93,9 +101,12 @@ func runMigrations(db *gorm.DB) error {
 	return nil
 }
 
-// gormLogWriter adapts GORM logger to zerolog
+// gormLogWriter adapts GORM logger to zerolog. GORM's logger emits at the
+// `logger.Warn` level for slow queries / constraint violations; treating
+// them as Warn (not Debug, which gets filtered in prod) preserves the
+// signal operators rely on.
 type gormLogWriter struct{}
 
 func (w *gormLogWriter) Printf(format string, args ...interface{}) {
-	log.Debug().Msgf(format, args...)
+	log.Warn().Msgf(format, args...)
 }
