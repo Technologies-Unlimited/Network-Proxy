@@ -192,7 +192,12 @@ func measureLatency(ctx context.Context, target string, count int) []time.Durati
 	if count > maxLatencySamples {
 		count = maxLatencySamples
 	}
-	latencies := make([]time.Duration, 0, count)
+	// Allocate at the compile-time constant max so the make call doesn't
+	// take a user-derived size at all (CodeQL's go/uncontrolled-allocation-
+	// size pattern recognizes constants but not value-clamps). The slice
+	// only grows to `count` (already clamped above) via appends in the
+	// for-loop bound further down.
+	latencies := make([]time.Duration, 0, maxLatencySamples)
 
 	// Try to connect to port 80 or 443
 	ports := []int{80, 443, 22}
