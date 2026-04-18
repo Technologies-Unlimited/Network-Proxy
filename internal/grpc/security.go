@@ -88,16 +88,26 @@ func (c SecurityConfig) ServerOptions() ([]grpc.ServerOption, error) {
 	//   1. SharedSecret set         -> bearer-token interceptors installed
 	//   2. SharedSecret empty + AllowInsecureNoAuth=true -> no auth, log Warn
 	//   3. anything else            -> refuse to start
+	//
+	// pathValidationUnary/Stream run FIRST in both cases. This is defense
+	// in depth against CVE-2026-33186 (gRPC-Go authz bypass via malformed
+	// :path) — the advisory recommends an outermost interceptor that
+	// rejects any method name that doesn't start with "/", because
+	// authorization logic downstream may key on the raw string.
 	switch {
 	case c.SharedSecret != "":
 		opts = append(opts,
-			grpc.UnaryInterceptor(unaryAuthInterceptor(c.SharedSecret)),
-			grpc.StreamInterceptor(streamAuthInterceptor(c.SharedSecret)),
+			grpc.ChainUnaryInterceptor(pathValidationUnary, unaryAuthInterceptor(c.SharedSecret)),
+			grpc.ChainStreamInterceptor(pathValidationStream, streamAuthInterceptor(c.SharedSecret)),
 		)
 	case c.AllowInsecureNoAuth:
 		log.Warn().Msg(
 			"NODE_GRPC_INSECURE_NO_AUTH_OK=true and no NODE_GRPC_SHARED_SECRET: " +
 				"gRPC peer surface is OPEN — anyone reachable can run bandwidth tests / peer ops")
+		opts = append(opts,
+			grpc.UnaryInterceptor(pathValidationUnary),
+			grpc.StreamInterceptor(pathValidationStream),
+		)
 	default:
 		return nil, errors.New(
 			"gRPC shared secret not configured: set NODE_GRPC_SHARED_SECRET, " +
@@ -105,6 +115,29 @@ func (c SecurityConfig) ServerOptions() ([]grpc.ServerOption, error) {
 	}
 
 	return opts, nil
+}
+
+// pathValidationUnary rejects any request whose FullMethod does not start
+// with a leading "/". The gRPC HTTP/2 spec requires the :path pseudo-header
+// to be canonical ("/Service/Method"). Before v1.79.3, the gRPC-Go server
+// accepted malformed paths and routed them correctly but passed the raw
+// non-canonical string to authorization interceptors, which could match
+// "deny" rules only against canonical paths — bypassing the policy.
+// This interceptor is the "outermost validating interceptor" the advisory
+// recommends as defense in depth, independent of the upstream patch.
+func pathValidationUnary(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	if info.FullMethod == "" || info.FullMethod[0] != '/' {
+		return nil, status.Error(codes.Unimplemented, "malformed method name")
+	}
+	return handler(ctx, req)
+}
+
+// pathValidationStream is the streaming counterpart to pathValidationUnary.
+func pathValidationStream(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if info.FullMethod == "" || info.FullMethod[0] != '/' {
+		return status.Error(codes.Unimplemented, "malformed method name")
+	}
+	return handler(srv, ss)
 }
 
 // DialOptions returns the client-side dial options consistent with this
