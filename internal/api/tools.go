@@ -1313,9 +1313,18 @@ func httpTest(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Validate URL
+		// Validate URL. The httpTest endpoint is a diagnostic tool — by
+		// design the operator picks the target, so we allow private IPs
+		// (testing on-prem services is the whole point). What we DO
+		// block is the cloud-instance-metadata address space, which has
+		// no diagnostic value and is the canonical SSRF pivot target.
+		// Set NETWORK_MONITOR_DIAG_ALLOW_METADATA=true to override.
 		if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "URL must start with http:// or https://"})
+			return
+		}
+		if err := guardDiagnosticURL(req.URL); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
