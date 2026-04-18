@@ -1374,8 +1374,21 @@
                         <td><span style="background: var(--bg-secondary); padding: 2px 8px; border-radius: 4px; font-size: 12px;">${escapedType}</span></td>
                         <td style="word-break: break-word; max-width: 350px;">${value}${hexNote}</td>
                         <td>
+                            <!--
+                              jsArg uses JSON.stringify so single quotes,
+                              backslashes, newlines, and unicode escape
+                              cleanly — the prior `.replace(/'/g, "\\'")`
+                              missed backslashes (CodeQL js/incomplete-
+                              sanitization), so a value of `\\'` would
+                              break out of the string literal and fire
+                              attacker JS via openSaveOIDModal's args.
+                              The slice(1, -1) strips the surrounding
+                              double-quotes JSON.stringify adds, and the
+                              outer wrap puts them back as the single
+                              quotes the inline handler expects.
+                            -->
                             <button type="button" class="btn-save-oid" id="save-btn-${index}"
-                                onclick="openSaveOIDModal('${escapedOid}', '${escapedType}', '${escapedValue.replace(/'/g, "\\'")}')">
+                                onclick="openSaveOIDModal('${escapedOid}', '${escapedType}', ${JSON.stringify(escapedValue)})">
                                 Save
                             </button>
                         </td>

@@ -410,15 +410,24 @@
             const endDate = document.getElementById('endDate').value;
             const deviceId = document.getElementById('deviceId').value;
 
-            let url = `/api/v1/reports/${selectedReportType}?format=${format}`;
-
-            if (startDate) url += `&start=${startDate}`;
-            if (endDate) url += `&end=${endDate}`;
-            if (deviceId && (selectedReportType === 'uptime' || selectedReportType === 'performance')) {
-                url += `&device_id=${deviceId}`;
+            // Whitelist the report type so the path segment can't carry
+            // arbitrary characters that would let a malformed value steer
+            // the navigation. encodeURIComponent on every query value
+            // prevents `&extra=x` smuggling and `javascript:` injection
+            // (CodeQL js/xss-through-dom).
+            const allowedTypes = ['devices', 'uptime', 'alerts', 'performance'];
+            if (!allowedTypes.includes(selectedReportType)) {
+                console.error('Invalid report type:', selectedReportType);
+                return;
             }
 
-            // Trigger download
+            let url = `/api/v1/reports/${encodeURIComponent(selectedReportType)}?format=${encodeURIComponent(format)}`;
+            if (startDate) url += `&start=${encodeURIComponent(startDate)}`;
+            if (endDate) url += `&end=${encodeURIComponent(endDate)}`;
+            if (deviceId && (selectedReportType === 'uptime' || selectedReportType === 'performance')) {
+                url += `&device_id=${encodeURIComponent(deviceId)}`;
+            }
+
             window.location.href = url;
         }
 
@@ -435,12 +444,18 @@
             const endDate = document.getElementById('endDate').value;
             const deviceId = document.getElementById('deviceId').value;
 
-            let url = `/api/v1/reports/${selectedReportType}?format=json`;
+            // Same whitelist + URL-encode policy as downloadReport().
+            const allowedTypes = ['devices', 'uptime', 'alerts', 'performance'];
+            if (!allowedTypes.includes(selectedReportType)) {
+                console.error('Invalid report type:', selectedReportType);
+                return;
+            }
 
-            if (startDate) url += `&start=${startDate}`;
-            if (endDate) url += `&end=${endDate}`;
+            let url = `/api/v1/reports/${encodeURIComponent(selectedReportType)}?format=json`;
+            if (startDate) url += `&start=${encodeURIComponent(startDate)}`;
+            if (endDate) url += `&end=${encodeURIComponent(endDate)}`;
             if (deviceId && (selectedReportType === 'uptime' || selectedReportType === 'performance')) {
-                url += `&device_id=${deviceId}`;
+                url += `&device_id=${encodeURIComponent(deviceId)}`;
             }
 
             fetch(url)
@@ -449,7 +464,14 @@
                     displayPreview(data);
                 })
                 .catch(error => {
-                    previewContent.innerHTML = `<p style="color: var(--danger);">Error loading preview: ${error.message}</p>`;
+                    // Build the error node with textContent so error.message
+                    // can't smuggle HTML — the previous template-literal
+                    // innerHTML assignment was the second sink CodeQL
+                    // flagged on this template.
+                    const p = document.createElement('p');
+                    p.style.color = 'var(--danger)';
+                    p.textContent = 'Error loading preview: ' + error.message;
+                    previewContent.replaceChildren(p);
                 });
         }
 
