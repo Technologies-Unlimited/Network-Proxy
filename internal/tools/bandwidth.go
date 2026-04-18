@@ -178,8 +178,20 @@ func calculateMbps(bytes int64, duration time.Duration) float64 {
 	return bits / seconds / 1000000 // Convert to Mbps
 }
 
-// measureLatency measures network latency using TCP connects
+// maxLatencySamples bounds the count parameter so a request can't
+// allocate-by-proxy: a malicious caller passing count=2_000_000_000
+// would otherwise commit ~16 GB to the slice header. CodeQL flagged
+// this with go/uncontrolled-allocation-size.
+const maxLatencySamples = 1024
+
+// measureLatency measures network latency using TCP connects.
 func measureLatency(ctx context.Context, target string, count int) []time.Duration {
+	if count < 0 {
+		count = 0
+	}
+	if count > maxLatencySamples {
+		count = maxLatencySamples
+	}
 	latencies := make([]time.Duration, 0, count)
 
 	// Try to connect to port 80 or 443
