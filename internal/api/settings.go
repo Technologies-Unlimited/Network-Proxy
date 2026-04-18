@@ -186,6 +186,12 @@ func testThothOSConnection(srv *server.Server) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "URL and API Key are required"})
 			return
 		}
+		// SSRF guard: pin to the configured ThothOS origin (or require
+		// loopback if none configured yet). See thothos_url.go.
+		if err := validateThothOSURL(c, srv.DB, req.URL); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			return
+		}
 		client := thothos.NewClient(req.URL, req.APIKey)
 		authResult, err := client.ValidateAPIKey()
 		if err != nil {
@@ -221,6 +227,11 @@ func connectToThothOS(srv *server.Server) gin.HandlerFunc {
 		if req.ProxyName == "" {
 			hostname, _ := os.Hostname()
 			req.ProxyName = fmt.Sprintf("Network-Monitor-%s", hostname)
+		}
+		// SSRF guard — same policy as testThothOSConnection.
+		if err := validateThothOSURL(c, srv.DB, req.URL); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			return
 		}
 		client := thothos.NewClient(req.URL, req.APIKey)
 		authResult, err := client.ValidateAPIKey()

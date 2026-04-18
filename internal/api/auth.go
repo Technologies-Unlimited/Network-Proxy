@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -215,19 +214,29 @@ func (s *AuthService) handleLogin(c *gin.Context) {
 		Str("thothosUrl", req.ThothOSURL).
 		Msg("Processing login request")
 
-	// Call ThothOS proxy login endpoint
+	// SSRF guard: refuse to POST to an arbitrary user-supplied URL.
+	// validateThothOSURL pins to the configured origin once set, or
+	// requires loopback for first-run bootstrap.
+	if err := validateThothOSURL(c, s.db, req.ThothOSURL); err != nil {
+		log.Warn().Err(err).Str("url", req.ThothOSURL).Msg("Rejected login thothosUrl")
+		c.JSON(http.StatusBadRequest, LoginResponse{Success: false, Error: err.Error()})
+		return
+	}
+
 	payload := map[string]string{
 		"email":       req.Email,
 		"phoneNumber": req.PhoneNumber,
 	}
-
 	payloadBytes, _ := json.Marshal(payload)
-	resp, err := http.Post(
-		fmt.Sprintf("%s/api/auth/proxy/login", req.ThothOSURL),
-		"application/json",
-		bytes.NewReader(payloadBytes),
-	)
 
+	client := thothosHTTPClient(30*time.Second, originOf(req.ThothOSURL))
+	resp, err := boundedPostJSON(
+		c.Request.Context(),
+		client,
+		fmt.Sprintf("%s/api/auth/proxy/login", req.ThothOSURL),
+		payloadBytes,
+		nil,
+	)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to connect to ThothOS")
 		c.JSON(http.StatusServiceUnavailable, LoginResponse{
@@ -301,7 +310,13 @@ func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 	// Get hostname for API key naming
 	hostname, _ := os.Hostname()
 
-	// Call ThothOS proxy verify-mfa endpoint
+	// SSRF guard — see handleLogin for the full rationale.
+	if err := validateThothOSURL(c, s.db, req.ThothOSURL); err != nil {
+		log.Warn().Err(err).Str("url", req.ThothOSURL).Msg("Rejected verify-mfa thothosUrl")
+		c.JSON(http.StatusBadRequest, VerifyMFAResponse{Success: false, Error: err.Error()})
+		return
+	}
+
 	payload := map[string]string{
 		"userId":                  req.UserID,
 		"userType":                req.UserType,
@@ -309,18 +324,16 @@ func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 		"companyId":               req.CompanyID,
 		"administrationCompanyId": req.AdministrationCompanyID,
 	}
-
 	payloadBytes, _ := json.Marshal(payload)
-	httpReq, _ := http.NewRequest(
-		"POST",
-		fmt.Sprintf("%s/api/auth/proxy/verify-mfa", req.ThothOSURL),
-		bytes.NewReader(payloadBytes),
-	)
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Proxy-Hostname", hostname)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
+	client := thothosHTTPClient(30*time.Second, originOf(req.ThothOSURL))
+	resp, err := boundedPostJSON(
+		c.Request.Context(),
+		client,
+		fmt.Sprintf("%s/api/auth/proxy/verify-mfa", req.ThothOSURL),
+		payloadBytes,
+		map[string]string{"X-Proxy-Hostname": hostname},
+	)
 
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to verify MFA with ThothOS")
