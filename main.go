@@ -326,6 +326,12 @@ func runServer(cmd *cobra.Command, args []string) {
 	api.SetCollectors(icmpCollector, snmpCollector)
 	database.LoadDevicesIntoCollectors(db, icmpCollector, snmpCollector)
 
+	// Publish a metrics querier so the ThothOS session's results reporter can
+	// read each device's latest status/latency/loss sample and report it UP to
+	// ThothOS (the results-up channel). Wired before any session starts so all
+	// three connect paths (boot, login, settings) report results.
+	api.SetSampleSource(metrics.NewLocalQuerier(metricsRegistry))
+
 	collectorCtx, cancelCollectors := context.WithCancel(context.Background())
 	collectorsDone := make(chan struct{})
 	safego.Go("collectors", func() {

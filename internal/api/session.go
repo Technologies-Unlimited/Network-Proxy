@@ -184,6 +184,11 @@ func StartThothOSSession(cfg ThothOSSessionConfig) (*thothos.ProxyConfig, error)
 		safego.Go("thothos-config-sync", func() {
 			runConfigSyncLoop(ctx, cfg)
 		})
+		// Report poller results (device up/down + latency + loss) UP to ThothOS
+		// on a fixed cadence. This is the results-up channel — without it a down
+		// router on the buyer's LAN is invisible in ThothOS; the only NM->ThothOS
+		// data was the 5-scalar heartbeat.
+		startResultsReporter(ctx, cfg)
 		runHeartbeatLoop(ctx, cfg, interval)
 	})
 
