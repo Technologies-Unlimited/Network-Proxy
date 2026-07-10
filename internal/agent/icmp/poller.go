@@ -278,7 +278,7 @@ func (c *Collector) Start(ctx context.Context) {
 // to a false "down". probePrivilege is the pure, testable core.
 func (c *Collector) checkPrivilege() {
 	c.privCheckOnce.Do(func() {
-		if err := probePrivilege(); err != nil {
+		if err := privilegeProbe(); err != nil {
 			if isPrivilegeError(err) {
 				c.setRawSocketErr(fmt.Errorf(
 					"ICMP raw socket unavailable (%w); devices report UNKNOWN, not down, until the process gets CAP_NET_RAW (Linux) or admin (Windows). Surfaced on /health.",
@@ -294,6 +294,13 @@ func (c *Collector) checkPrivilege() {
 		log.Info().Msg("ICMP privilege probe: raw socket OK")
 	})
 }
+
+// privilegeProbe is the seam checkPrivilege runs to detect a raw-socket
+// privilege denial. It is a package var so tests can simulate an unprivileged
+// Linux/container host — the real probe succeeds on the Windows dev/CI box
+// (raw ICMP sockets are permitted without elevation there), so the
+// permission-denied recording path is otherwise unreachable in a test.
+var privilegeProbe = probePrivilege
 
 // probePrivilege runs a single loopback ping with a privileged raw socket and
 // returns the resulting error (nil when the socket is usable).

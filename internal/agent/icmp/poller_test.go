@@ -236,6 +236,48 @@ func TestRawSocketHealthState(t *testing.T) {
 	}
 }
 
+// TestCheckPrivilegeRecordsHealthError proves the REAL detection path (not just
+// the direct setter): checkPrivilege records a PERSISTENT health error when the
+// raw-socket probe fails with a permission-class error, leaves the collector
+// healthy on a non-permission glitch, and healthy on success. This is fix 3's
+// "detect the privilege failure and surface it" — the old code warned once and
+// then flipped every device to a false "down".
+func TestCheckPrivilegeRecordsHealthError(t *testing.T) {
+	origProbe := privilegeProbe
+	t.Cleanup(func() { privilegeProbe = origProbe })
+
+	// Permission-class failure => persistent health error, raw socket unavailable.
+	privilegeProbe = func() error {
+		return errors.New("listen ip4:icmp 127.0.0.1: socket: operation not permitted")
+	}
+	c := NewCollector(nil, nil)
+	c.checkPrivilege()
+	if c.RawSocketAvailable() {
+		t.Errorf("RawSocketAvailable=true after a permission-class probe failure")
+	}
+	if err := c.HealthError(); err == nil {
+		t.Fatalf("HealthError=nil after a permission-class probe failure; want a persistent error")
+	}
+
+	// A non-permission probe glitch must NOT be recorded as unhealthy (it would
+	// otherwise suppress real down-recording for a genuine outage).
+	privilegeProbe = func() error { return errors.New("connect: network unreachable") }
+	c2 := NewCollector(nil, nil)
+	c2.checkPrivilege()
+	if !c2.RawSocketAvailable() || c2.HealthError() != nil {
+		t.Errorf("non-permission probe error wrongly recorded unhealthy: avail=%v err=%v",
+			c2.RawSocketAvailable(), c2.HealthError())
+	}
+
+	// A successful probe leaves the collector healthy.
+	privilegeProbe = func() error { return nil }
+	c3 := NewCollector(nil, nil)
+	c3.checkPrivilege()
+	if !c3.RawSocketAvailable() || c3.HealthError() != nil {
+		t.Errorf("healthy probe recorded an error: avail=%v err=%v", c3.RawSocketAvailable(), c3.HealthError())
+	}
+}
+
 // TestRecordLossAndStatusPersists proves packet loss is recorded to the device
 // row and up/down is threshold-derived. This is the DB-side of "packet loss is
 // real data".
