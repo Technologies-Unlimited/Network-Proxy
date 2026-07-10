@@ -65,6 +65,11 @@ type NodeConfig struct {
 	GRPCPort   int
 	ServerAddr string
 	CompanyID  string
+	// Hostname/IPAddress are captured at boot so a heartbeat that 404s (the
+	// server swept or lost the node) can re-register with the same identity
+	// instead of leaving the live node orphaned forever.
+	Hostname  string
+	IPAddress string
 }
 
 // NodeRegistration is the request body for registering with the server
@@ -683,38 +688,70 @@ func startNodeStatusMonitorCtx(ctx context.Context, db *gorm.DB) {
 		case <-ticker.C:
 		}
 
-		now := time.Now()
-		offlineCutoff := now.Add(-nodeOfflineTimeout)
-		staleCutoff := now.Add(-nodeStaleTimeout)
-
-		// Step 1: Delete stale nodes (not seen for 15+ minutes)
-		var staleNodes []models.Node
-		db.Where("last_seen < ?", staleCutoff).Find(&staleNodes)
-
-		if len(staleNodes) > 0 {
-			for _, node := range staleNodes {
-				db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.NodePeer{})
-				db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.BandwidthTestResult{})
-				db.Delete(&node)
-			}
-			log.Info().
-				Int("count", len(staleNodes)).
-				Msg("Removed stale nodes (no heartbeat for 15+ minutes)")
-		}
-
-		// Step 2: Mark nodes offline (not seen for 5+ minutes but less than 15)
-		result := db.Model(&models.Node{}).
-			Where("status = ? AND last_seen < ? AND last_seen >= ?", "online", offlineCutoff, staleCutoff).
-			Update("status", "offline")
-
-		if result.Error != nil {
-			log.Error().Err(result.Error).Msg("Failed to update node statuses")
-		} else if result.RowsAffected > 0 {
-			log.Info().
-				Int64("count", result.RowsAffected).
-				Msg("Marked nodes as offline (no heartbeat for 5+ minutes)")
-		}
+		sweepStaleNodes(db, time.Now())
 	}
+}
+
+// sweepStaleNodes runs one pass of the node status monitor and returns how many
+// nodes it deleted and how many it marked offline. It is split out of the tick
+// loop so it can be unit-tested.
+//
+// Race safety: the stale-node DELETE re-asserts `last_seen < staleCutoff` (the
+// same predicate the Find used) so a heartbeat that lands between the Find and
+// the Delete refreshes last_seen, the row no longer matches, and the live node
+// is SPARED (RowsAffected == 0) instead of being deleted out from under a fresh
+// heartbeat. Dependent rows (peers, bandwidth results, AND scheduled tests) are
+// cascaded ONLY when the node was actually deleted, so a spared node keeps its
+// history.
+func sweepStaleNodes(db *gorm.DB, now time.Time) (deleted int, markedOffline int64) {
+	offlineCutoff := now.Add(-nodeOfflineTimeout)
+	staleCutoff := now.Add(-nodeStaleTimeout)
+
+	// Step 1: Delete stale nodes (not seen for 15+ minutes).
+	var staleNodes []models.Node
+	db.Where("last_seen < ?", staleCutoff).Find(&staleNodes)
+
+	for _, node := range staleNodes {
+		// Re-check the staleness predicate INSIDE the delete: if a heartbeat
+		// refreshed last_seen after the Find above, this matches 0 rows and the
+		// node survives.
+		res := db.Where("last_seen < ?", staleCutoff).Delete(&models.Node{}, "id = ?", node.ID)
+		if res.Error != nil {
+			log.Error().Err(res.Error).Str("nodeId", node.ID).Msg("Failed to delete stale node")
+			continue
+		}
+		if res.RowsAffected == 0 {
+			// Saved by a fresh heartbeat in the race window — do NOT cascade
+			// its history.
+			continue
+		}
+		db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.NodePeer{})
+		db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.BandwidthTestResult{})
+		db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.ScheduledTest{})
+		deleted++
+	}
+
+	if deleted > 0 {
+		log.Info().
+			Int("count", deleted).
+			Msg("Removed stale nodes (no heartbeat for 15+ minutes)")
+	}
+
+	// Step 2: Mark nodes offline (not seen for 5+ minutes but less than 15).
+	result := db.Model(&models.Node{}).
+		Where("status = ? AND last_seen < ? AND last_seen >= ?", "online", offlineCutoff, staleCutoff).
+		Update("status", "offline")
+
+	if result.Error != nil {
+		log.Error().Err(result.Error).Msg("Failed to update node statuses")
+	} else if result.RowsAffected > 0 {
+		markedOffline = result.RowsAffected
+		log.Info().
+			Int64("count", result.RowsAffected).
+			Msg("Marked nodes as offline (no heartbeat for 5+ minutes)")
+	}
+
+	return deleted, markedOffline
 }
 
 // ============================================================================
@@ -735,6 +772,8 @@ func runNode(cmd *cobra.Command, args []string) {
 		GRPCPort:   nodePort,
 		ServerAddr: serverAddr,
 		CompanyID:  companyID,
+		Hostname:   hostname,
+		IPAddress:  ipAddress,
 	}
 
 	fmt.Printf("Starting node '%s' on gRPC port %d\n", config.NodeName, config.GRPCPort)
@@ -874,6 +913,22 @@ func sendNodeHeartbeat(config *NodeConfig) {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
+
+	if resp.StatusCode == http.StatusNotFound {
+		// The server no longer knows this node (swept after a >15-min
+		// partition, or the initial registration never succeeded). Re-register
+		// with the same identity instead of 404-ing forever — this is the
+		// self-heal the old warn-and-continue loop lacked.
+		fmt.Printf("Heartbeat 404: node %s no longer registered — re-registering\n", config.NodeID)
+		newID, err := registerWithServer(config, config.Hostname, config.IPAddress)
+		if err != nil {
+			fmt.Printf("Re-registration failed: %v\n", err)
+			return
+		}
+		config.NodeID = newID
+		fmt.Printf("Re-registered successfully with ID: %s\n", newID)
+		return
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		fmt.Printf("Heartbeat returned status %d\n", resp.StatusCode)

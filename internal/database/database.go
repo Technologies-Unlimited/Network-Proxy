@@ -97,7 +97,80 @@ func runMigrations(db *gorm.DB) error {
 		}
 	}
 
+	// Enforce (company_id, name) node identity now that the columns exist.
+	if err := migrateNodeIdentity(db); err != nil {
+		return fmt.Errorf("failed to migrate node identity: %w", err)
+	}
+
 	log.Info().Msg("Database migrations completed")
+	return nil
+}
+
+// migrateNodeIdentity enforces that a LIVE node is uniquely identified by
+// (company_id, name).
+//
+// Registration keys on (company_id, name), so two companies may each own a
+// "Node-Alpha" while a single company's name stays unique. Legacy databases
+// predate company stamping and the name-only lookup and can hold several live
+// rows sharing a (company_id, name); those are collapsed first (keeping the
+// most-recently-seen) or the unique index can't be built.
+//
+// The index is PARTIAL (`WHERE deleted_at IS NULL`) on purpose: the stale
+// sweep soft-deletes nodes, and a node re-registers under the same name. A
+// plain unique index counts soft-deleted rows and would reject that
+// re-registration; restricting the constraint to live rows lets re-registration
+// work while still forbidding two live rows for the same identity. The pure-Go
+// SQLite driver (glebarez/modernc) supports partial indexes.
+func migrateNodeIdentity(db *gorm.DB) error {
+	if err := dedupeLiveNodes(db); err != nil {
+		return fmt.Errorf("dedupe live nodes: %w", err)
+	}
+	if err := db.Exec(
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_company_name_live ` +
+			`ON nodes(company_id, name) WHERE deleted_at IS NULL`,
+	).Error; err != nil {
+		return fmt.Errorf("create partial unique index nodes(company_id,name): %w", err)
+	}
+	return nil
+}
+
+// dedupeLiveNodes soft-deletes all but the most-recently-seen LIVE node in each
+// (company_id, name) group, cascading each removed node's peers, bandwidth
+// results, and scheduled tests — the same cascade the runtime delete paths use.
+// GORM's default scope restricts every query here to live rows (deleted_at IS
+// NULL), matching the partial unique index built afterward.
+func dedupeLiveNodes(db *gorm.DB) error {
+	type group struct {
+		CompanyID string
+		Name      string
+	}
+	var groups []group
+	if err := db.Model(&models.Node{}).
+		Select("company_id, name").
+		Group("company_id, name").
+		Having("COUNT(*) > 1").
+		Scan(&groups).Error; err != nil {
+		return err
+	}
+
+	for _, g := range groups {
+		var nodes []models.Node
+		if err := db.Where("company_id = ? AND name = ?", g.CompanyID, g.Name).
+			Order("last_seen DESC NULLS LAST").
+			Find(&nodes).Error; err != nil {
+			return err
+		}
+		// Keep nodes[0] (most recently seen); remove the rest with their history.
+		for i := 1; i < len(nodes); i++ {
+			id := nodes[i].ID
+			db.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.NodePeer{})
+			db.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.BandwidthTestResult{})
+			db.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.ScheduledTest{})
+			if err := db.Delete(&models.Node{}, "id = ?", id).Error; err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"gorm.io/gorm"
 )
 
 // pingPeerNode opens a one-shot gRPC connection to the target node, sends 3
@@ -338,10 +339,21 @@ func listNodesJSON(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// registerNode registers a new node or updates an existing one with the same name.
-// Node names must be unique - if a node with the same name exists, it will be updated
-// instead of creating a duplicate. This allows nodes to reconnect after restarts
-// without creating duplicate entries.
+// registerNode registers a new node or updates an existing one with the same
+// (company, name) identity.
+//
+// Node identity is (company_id, name), NOT name alone: in integrated mode the
+// company is the authenticated tenant, so two different companies may each own
+// a "Node-Alpha" without merging into one row. The company stamped on the row
+// is ALWAYS the authenticated company (companyIDForWrite) — a client-asserted
+// company_id in the body is ignored — so registered nodes are visible to the
+// same tenant-scoped reads the dashboard/API run. Re-registration also repairs
+// a legacy row that was created before company stamping (empty company_id).
+//
+// The find-then-upsert runs in a single transaction and is backstopped by a
+// partial unique index on live (company_id, name) rows (see the database
+// package migration), so a concurrent duplicate registration can never fork
+// two live rows for the same identity.
 func registerNode(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input models.Node
@@ -362,55 +374,102 @@ func registerNode(srv *server.Server) gin.HandlerFunc {
 			input.GRPCPort = 50051
 		}
 
+		// Stamp the authenticated tenant — never trust the body's company_id.
+		companyID := companyIDForWrite(c, input.CompanyID)
 		now := time.Now()
 
-		// Try to find existing node by name (node names must be unique)
-		var existingNode models.Node
-		result := srv.DB.Where("name = ?", input.Name).First(&existingNode)
-
-		if result.Error == nil {
-			// Node exists - update it with new connection info
-			existingNode.Status = "online"
-			existingNode.LastSeen = &now
-			existingNode.Hostname = input.Hostname
-			existingNode.IPAddress = input.IPAddress
-			existingNode.Version = input.Version
-			existingNode.GRPCPort = input.GRPCPort
-			existingNode.GRPCEnabled = true
-
-			if err := srv.DB.Save(&existingNode).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
+		var out models.Node
+		created := false
+		txErr := srv.DB.Transaction(func(tx *gorm.DB) error {
+			node, wasCreated, err := upsertNodeRegistration(tx, &input, companyID, now)
+			if err != nil {
+				return err
 			}
-
-			log.Info().
-				Str("nodeId", existingNode.ID).
-				Str("name", existingNode.Name).
-				Int("grpcPort", existingNode.GRPCPort).
-				Msg("Node reconnected - updated existing record")
-
-			c.JSON(http.StatusOK, gin.H{"node": existingNode})
+			out = *node
+			created = wasCreated
+			return nil
+		})
+		if txErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": txErr.Error()})
 			return
 		}
 
-		// Node doesn't exist - create new one
-		input.Status = "online"
-		input.LastSeen = &now
-		input.GRPCEnabled = true
-
-		if err := srv.DB.Create(&input).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if created {
+			log.Info().
+				Str("nodeId", out.ID).
+				Str("name", out.Name).
+				Str("companyId", out.CompanyID).
+				Int("grpcPort", out.GRPCPort).
+				Msg("New node registered")
+			c.JSON(http.StatusCreated, gin.H{"node": out})
 			return
 		}
 
 		log.Info().
-			Str("nodeId", input.ID).
-			Str("name", input.Name).
-			Int("grpcPort", input.GRPCPort).
-			Msg("New node registered")
-
-		c.JSON(http.StatusCreated, gin.H{"node": input})
+			Str("nodeId", out.ID).
+			Str("name", out.Name).
+			Str("companyId", out.CompanyID).
+			Int("grpcPort", out.GRPCPort).
+			Msg("Node reconnected - updated existing record")
+		c.JSON(http.StatusOK, gin.H{"node": out})
 	}
+}
+
+// upsertNodeRegistration finds the node owned by companyID with the given name
+// (adopting a legacy empty-company row so its company_id gets repaired) and
+// updates it, or creates a fresh row stamped with companyID. It returns the
+// resulting node and whether it was newly created. Must run inside a
+// transaction so the find-then-write is atomic; the partial unique index is
+// the final backstop if two registrations still race past the find.
+func upsertNodeRegistration(tx *gorm.DB, input *models.Node, companyID string, now time.Time) (*models.Node, bool, error) {
+	applyConnInfo := func(n *models.Node) {
+		n.Status = "online"
+		n.LastSeen = &now
+		n.Hostname = input.Hostname
+		n.IPAddress = input.IPAddress
+		n.Version = input.Version
+		n.GRPCPort = input.GRPCPort
+		n.GRPCEnabled = true
+		// Re-assert ownership: this repairs a legacy empty company_id and
+		// keeps an exact-company match unchanged.
+		n.CompanyID = companyID
+	}
+
+	// Prefer an exact (company, name) match; fall back to adopting a legacy
+	// row with an empty company_id. Order company_id DESC so a non-empty
+	// exact match wins over the empty-company repair candidate.
+	var existing models.Node
+	findErr := tx.Where("name = ? AND (company_id = ? OR company_id = ?)", input.Name, companyID, "").
+		Order("company_id DESC").
+		First(&existing).Error
+	if findErr == nil {
+		applyConnInfo(&existing)
+		if err := tx.Save(&existing).Error; err != nil {
+			return nil, false, err
+		}
+		return &existing, false, nil
+	}
+	if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return nil, false, findErr
+	}
+
+	// No existing row — create one stamped with the authed company.
+	applyConnInfo(input)
+	if err := tx.Create(input).Error; err != nil {
+		// A concurrent registration for the same (company, name) may have won
+		// between our find and this create, tripping the partial unique index.
+		// Re-find that row and update it instead of failing the reconnect.
+		var raced models.Node
+		if reErr := tx.Where("name = ? AND company_id = ?", input.Name, companyID).First(&raced).Error; reErr == nil {
+			applyConnInfo(&raced)
+			if err2 := tx.Save(&raced).Error; err2 != nil {
+				return nil, false, err2
+			}
+			return &raced, false, nil
+		}
+		return nil, false, err
+	}
+	return input, true, nil
 }
 
 // getNode returns a single node
@@ -497,6 +556,11 @@ func deleteNode(srv *server.Server) gin.HandlerFunc {
 		// Delete associated bandwidth tests
 		srv.DB.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.BandwidthTestResult{})
 
+		// Delete associated scheduled tests so they don't orphan against a
+		// node ID that no longer exists (a run-now on an orphan would either
+		// fail or, worse, fabricate a result for a deleted endpoint).
+		srv.DB.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.ScheduledTest{})
+
 		if err := srv.DB.Delete(&node).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -548,6 +612,10 @@ func cleanupDuplicateNodes(srv *server.Server) gin.HandlerFunc {
 				srv.DB.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.NodePeer{})
 				// Delete associated bandwidth tests
 				srv.DB.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.BandwidthTestResult{})
+				// Delete associated scheduled tests (same cascade as the sweep
+				// and manual delete — otherwise schedules orphan against the
+				// removed duplicate's ID).
+				srv.DB.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.ScheduledTest{})
 				// Delete the node
 				srv.DB.Delete(&nodes[i])
 				totalDeleted++
@@ -1236,7 +1304,11 @@ func deleteScheduledTest(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// runScheduledTestNow runs a scheduled test immediately
+// runScheduledTestNow runs a scheduled test immediately by executing a REAL
+// gRPC bandwidth test between the scheduled endpoints — never fabricated
+// numbers. If either endpoint no longer exists or can't run a gRPC test, it
+// records an honest failed result and returns an error instead of inventing
+// throughput figures indistinguishable from a real measurement.
 func runScheduledTestNow(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
@@ -1247,7 +1319,28 @@ func runScheduledTestNow(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Create a new bandwidth test from the schedule
+		// Both endpoints must still exist and support gRPC bandwidth testing.
+		// An orphaned schedule (its node was swept/deleted) must fail honestly.
+		var sourceNode, targetNode models.Node
+		if err := srv.DB.First(&sourceNode, "id = ?", scheduledTest.SourceNodeID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Source node no longer exists"})
+			return
+		}
+		if err := srv.DB.First(&targetNode, "id = ?", scheduledTest.TargetNodeID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Target node no longer exists"})
+			return
+		}
+		if !sourceNode.GRPCEnabled || sourceNode.GRPCPort == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Source node does not have gRPC enabled"})
+			return
+		}
+		if !targetNode.GRPCEnabled || targetNode.GRPCPort == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Target node does not have gRPC enabled"})
+			return
+		}
+
+		// Create the test record in the running state; the real test fills in
+		// the measured numbers (or marks it failed on error).
 		test := models.BandwidthTestResult{
 			SourceNodeID: scheduledTest.SourceNodeID,
 			TargetNodeID: scheduledTest.TargetNodeID,
@@ -1255,6 +1348,7 @@ func runScheduledTestNow(srv *server.Server) gin.HandlerFunc {
 			StartTime:    time.Now(),
 			Duration:     int64(scheduledTest.Duration * 1000),
 			Status:       "running",
+			TestMode:     "direct",
 		}
 
 		if err := srv.DB.Create(&test).Error; err != nil {
@@ -1267,24 +1361,16 @@ func runScheduledTestNow(srv *server.Server) gin.HandlerFunc {
 		scheduledTest.LastRun = &now
 		srv.DB.Save(&scheduledTest)
 
-		// Simulate test completion
-		go func() {
-			time.Sleep(time.Duration(scheduledTest.Duration) * time.Second)
-
-			endTime := time.Now()
-			test.EndTime = &endTime
-			test.Status = "completed"
-			test.BytesSent = int64(scheduledTest.Duration) * 10 * 1024 * 1024
-			test.BytesReceived = int64(scheduledTest.Duration) * 10 * 1024 * 1024
-			test.UploadSpeed = 80.0 + float64(time.Now().UnixNano()%40)
-			test.DownloadSpeed = 80.0 + float64(time.Now().UnixNano()%40)
-			test.AvgLatency = 1500 + time.Now().UnixNano()%1000
-			test.MinLatency = 1000
-			test.MaxLatency = 3000
-			test.PacketLoss = 0.1
-
-			srv.DB.Save(&test)
-		}()
+		// Execute the REAL bandwidth test in a panic-recovered goroutine, the
+		// same path startBandwidthTest uses. On success it writes measured
+		// throughput/latency; on failure it sets status=failed with the error.
+		testCopy := test
+		srcCopy := sourceNode
+		dstCopy := targetNode
+		dur := scheduledTest.Duration
+		safego.Go("scheduled-bandwidth-test:"+test.ID, func() {
+			runRealBandwidthTest(srv, &testCopy, &srcCopy, &dstCopy, dur)
+		})
 
 		// Return updated scheduled tests HTML
 		listScheduledTestsHTML(srv)(c)
