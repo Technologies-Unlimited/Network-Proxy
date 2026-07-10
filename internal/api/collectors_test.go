@@ -34,6 +34,36 @@ func withLiveCollectors(t *testing.T) (*icmp.Collector, *snmp.Collector) {
 	return icmpC, snmpC
 }
 
+// TestCollectorHealthSurface proves the operator-facing /health monitoring block
+// reports the ICMP raw-socket health honestly: healthy defaults when no collector
+// is wired (pre-boot / unit context) and available with no error for a wired,
+// healthy collector. This is the API side of fix 3 — an unprivileged install must
+// surface a VISIBLE error here, and a healthy one must not false-alarm. (The
+// unhealthy recording path is proven in the icmp package's
+// TestCheckPrivilegeRecordsHealthError, whose HealthError() this block copies.)
+func TestCollectorHealthSurface(t *testing.T) {
+	// No collectors wired: healthy defaults (don't claim an ICMP fault).
+	collectorsMu.Lock()
+	prev := liveCollectors
+	liveCollectors = nil
+	collectorsMu.Unlock()
+	t.Cleanup(func() {
+		collectorsMu.Lock()
+		liveCollectors = prev
+		collectorsMu.Unlock()
+	})
+
+	if h := collectorHealth(); !h.ICMPRawSocketAvailable || h.ICMPHealthError != "" {
+		t.Errorf("nil collectors health=%+v want available/no-error", h)
+	}
+
+	// A wired, healthy collector (no privilege fault recorded) reports available.
+	SetCollectors(icmp.NewCollector(nil, nil), snmp.NewCollector(nil))
+	if h := collectorHealth(); !h.ICMPRawSocketAvailable || h.ICMPHealthError != "" {
+		t.Errorf("healthy collector health=%+v want available/no-error", h)
+	}
+}
+
 // TestCreateDeviceWiresCollector proves a device created via the API is polled
 // immediately — it lands in the live ICMP collector without a process restart.
 // This is the regression test for audit P1 #3 ("first-run path polls nothing").

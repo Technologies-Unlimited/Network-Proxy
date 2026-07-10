@@ -118,6 +118,55 @@ func TestApplyConfigPersistsTemplateAndRetunesCollector(t *testing.T) {
 	}
 }
 
+// TestApplyConfigAppliesLossThreshold proves the ThothOS ICMP monitoring
+// template's icmpLossThreshold reaches the LIVE ICMP collector via the apply
+// step — the enforcement point that made "packet loss is real data" possible.
+// The most sensitive (smallest positive, in (0,100]) threshold across templates
+// wins (earliest degradation detection); out-of-range values are ignored.
+// Regression for the audit's "icmpLossThreshold field has no possible
+// enforcement point even if templates were applied".
+func TestApplyConfigAppliesLossThreshold(t *testing.T) {
+	icmpC, _ := withLiveCollectors(t)
+	db := newTestDB(t)
+
+	// Precondition: collector keeps its default (100 = only total loss is down).
+	if got := icmpC.LossThreshold(); got != 100 {
+		t.Fatalf("precondition: loss threshold=%v want 100 default", got)
+	}
+
+	fake := newFakeConfigThothOS(t, map[string]string{
+		// Two valid thresholds (40, 25) plus out-of-range noise (0, 150) that must
+		// be ignored — the most sensitive valid one (25) wins.
+		"getICMPMonitoringTemplatesForCompany": `[` +
+			`{"_id":"m1","companyId":"c1","templateName":"lax","icmpLossThreshold":40},` +
+			`{"_id":"m2","companyId":"c1","templateName":"strict","icmpLossThreshold":25},` +
+			`{"_id":"m3","companyId":"c1","templateName":"zero","icmpLossThreshold":0},` +
+			`{"_id":"m4","companyId":"c1","templateName":"over","icmpLossThreshold":150}]`,
+	})
+	client := fake.client(t)
+
+	res := applyConfigFromClient(db, client)
+
+	if got := icmpC.LossThreshold(); got != 25 {
+		t.Errorf("live collector loss threshold=%v want 25 (most sensitive valid template)", got)
+	}
+	if res.ICMPLossThreshold != 25 {
+		t.Errorf("ApplyResult.ICMPLossThreshold=%v want 25", res.ICMPLossThreshold)
+	}
+
+	// No templates / no valid threshold => collector default is left untouched
+	// (a config blip must not silently loosen loss detection).
+	icmpC2, _ := withLiveCollectors(t)
+	fakeEmpty := newFakeConfigThothOS(t, nil) // every op defaults to "[]"
+	resEmpty := applyConfigFromClient(newTestDB(t), fakeEmpty.client(t))
+	if got := icmpC2.LossThreshold(); got != 100 {
+		t.Errorf("empty templates changed loss threshold to %v want 100 default", got)
+	}
+	if resEmpty.ICMPLossThreshold != 0 {
+		t.Errorf("ApplyResult.ICMPLossThreshold=%v want 0 (no template threshold found)", resEmpty.ICMPLossThreshold)
+	}
+}
+
 // TestReconcileOIDsAdoptsInsteadOfDuplicating proves a local OID created with an
 // empty ThothOSID is ADOPTED (its ThothOSID backfilled) when an upstream OID
 // with the same oid-string arrives, instead of being duplicated. Regression for
