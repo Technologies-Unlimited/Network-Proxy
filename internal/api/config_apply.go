@@ -1,6 +1,7 @@
 package api
 
 import (
+	"sync"
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -13,6 +14,12 @@ import (
 // (or zero-fractional) ThothOS polling template can never turn a collector into
 // a busy-loop.
 const minPollInterval = 5 * time.Second
+
+// applyMu serializes the whole apply step so the periodic config-sync loop and
+// a manual /monitor/sync (or /ipam/sync) can't run reconciliation concurrently
+// and, e.g., both create the same OID because each read the local set before the
+// other's write landed.
+var applyMu sync.Mutex
 
 // IPAMCounts is the number of IPAM records fetched from ThothOS. IPAM is served
 // live (there is no local IPAM model in this stage), so these are "fetched",
@@ -53,6 +60,9 @@ type ApplyResult struct {
 // to wipe live monitoring config out from under an on-prem proxy during a
 // control-plane blip. Down-sync adds and updates; it never removes.
 func applyConfigFromClient(db *gorm.DB, client *thothos.Client) ApplyResult {
+	applyMu.Lock()
+	defer applyMu.Unlock()
+
 	res := ApplyResult{}
 
 	companyID := client.GetCompanyID()
