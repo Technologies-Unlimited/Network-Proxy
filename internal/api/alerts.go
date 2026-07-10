@@ -249,6 +249,11 @@ func createAlertRule(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
+		// Stamp the authenticated tenant so the rule is owned by the caller's
+		// company (and visible to company-scoped reads); never trust a
+		// client-asserted CompanyID in the body.
+		rule.CompanyID = companyIDForWrite(c, rule.CompanyID)
+
 		if err := srv.DB.Create(&rule).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

@@ -229,6 +229,11 @@ func (e *Engine) TriggerAlert(rule *models.AlertRule, device *models.Device, val
 	}
 
 	alert := &models.Alert{
+		// The alert belongs to the same tenant as the device it fired for —
+		// this is the honest source of the company (the engine runs in a
+		// background loop with no request/auth context). Without it, alerts
+		// persist company_id='' and are invisible to company-scoped reads.
+		CompanyID:   device.CompanyID,
 		DeviceID:    device.ID,
 		Severity:    rule.Severity,
 		Status:      "active",

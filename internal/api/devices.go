@@ -117,6 +117,11 @@ func createDevice(srv *server.Server) gin.HandlerFunc {
 		// Set initial status
 		device.Status = "unknown"
 
+		// Stamp the authenticated tenant so the device is visible to the same
+		// company-scoped reads (listDevices/scopeByCompany); never trust a
+		// client-asserted CompanyID in the body.
+		device.CompanyID = companyIDForWrite(c, device.CompanyID)
+
 		if err := srv.DB.Create(&device).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

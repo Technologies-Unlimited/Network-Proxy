@@ -79,6 +79,13 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 		defer cancel()
 
+		// Resolve the authenticated tenant BEFORE spawning the goroutine — the
+		// gin.Context must not be touched off-request. Discovered devices are
+		// stamped with (and scoped to) this company so they're visible to the
+		// same company-scoped reads and can't clobber another tenant's device
+		// that happens to share an IP.
+		companyID := companyIDForWrite(c, "")
+
 		// Start scan in background
 		go func() {
 			devices, err := globalScanner.ScanCIDR(ctx, req.CIDR)
@@ -91,23 +98,29 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 			// Save discovered devices to database
 			if srv.DB != nil {
 				for _, device := range devices {
-					// Check if device already exists
+					device.CompanyID = companyID
+					// Check if a device with this IP already exists FOR THIS
+					// company (IP is not unique across tenants).
 					var existingDevice struct {
 						ID string
 					}
-					result := srv.DB.Model(device).Where("ip_address = ?", device.IPAddress).First(&existingDevice)
+					result := srv.DB.Model(device).
+						Where("ip_address = ? AND company_id = ?", device.IPAddress, companyID).
+						First(&existingDevice)
 
 					if result.Error != nil {
 						// Device doesn't exist, create it
 						srv.DB.Create(device)
 					} else {
 						// Device exists, update it
-						srv.DB.Model(device).Where("ip_address = ?", device.IPAddress).Updates(map[string]interface{}{
-							"hostname":    device.Hostname,
-							"status":      device.Status,
-							"last_seen":   device.LastSeen,
-							"device_type": device.DeviceType,
-						})
+						srv.DB.Model(device).
+							Where("ip_address = ? AND company_id = ?", device.IPAddress, companyID).
+							Updates(map[string]interface{}{
+								"hostname":    device.Hostname,
+								"status":      device.Status,
+								"last_seen":   device.LastSeen,
+								"device_type": device.DeviceType,
+							})
 					}
 				}
 			}
