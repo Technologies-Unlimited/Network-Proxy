@@ -122,6 +122,10 @@ func createDevice(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
+		// Start polling immediately (fixes the "first-run path polls nothing"
+		// gap where a device was only monitored after a process restart).
+		wireDeviceIntoCollectors(srv.DB, &device)
+
 		c.JSON(http.StatusCreated, gin.H{"device": device})
 	}
 }
@@ -167,6 +171,13 @@ func updateDevice(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
+		// Re-wire the live collectors to reflect the edit: drop the old
+		// registration and re-add per the (possibly changed) enabled protocols,
+		// interval, or SNMP template. Without this a UI edit only took effect
+		// after a restart.
+		unwireDeviceFromCollectors(device.ID)
+		wireDeviceIntoCollectors(srv.DB, &device)
+
 		c.JSON(http.StatusOK, gin.H{"device": device})
 	}
 }
@@ -188,6 +199,9 @@ func deleteDevice(srv *server.Server) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Stop polling the deleted device on the live collectors immediately.
+		unwireDeviceFromCollectors(id)
 
 		c.JSON(http.StatusOK, gin.H{"message": "Device deleted successfully"})
 	}

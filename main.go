@@ -350,6 +350,10 @@ func runServer(cmd *cobra.Command, args []string) {
 	snmpCollector := snmp.NewCollector(metricsRegistry)
 	collectors := collector.New(icmpCollector, snmpCollector)
 
+	// Publish the collectors to the API package so device create/update/delete
+	// and the ThothOS config-apply step act on the LIVE pollers, and load the
+	// existing rows so a boot with no restart already polls everything.
+	api.SetCollectors(icmpCollector, snmpCollector)
 	database.LoadDevicesIntoCollectors(db, icmpCollector, snmpCollector)
 
 	collectorCtx, cancelCollectors := context.WithCancel(context.Background())
