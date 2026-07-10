@@ -162,8 +162,28 @@ func (c *Client) GetProxyID() string {
 	return c.proxyID
 }
 
-// doGraphQL executes a GraphQL request
+// doGraphQL executes a read/idempotent GraphQL request WITH transient-failure
+// retries. Use for queries (template/IPAM pull), heartbeat, and the idempotent
+// upsert registrations — all safe to replay.
 func (c *Client) doGraphQL(path string, query string, variables map[string]interface{}) (*GraphQLResponse, error) {
+	return c.doGraphQLRequest(path, query, variables, true)
+}
+
+// doGraphQLOnce executes a GraphQL request WITHOUT retry — a single shot. Use
+// for non-idempotent mutations (createOID) where a retry after a
+// committed-but-unacknowledged first attempt would double-fire the mutation and
+// create duplicates (ThothOS has no server-side uniqueness on OID to absorb it;
+// see the doWithRetry doc + the OID-double-create audit finding). updateOID /
+// deleteOID are idempotent but are routed here too so ALL OID mutations share
+// one single-shot policy.
+func (c *Client) doGraphQLOnce(path string, query string, variables map[string]interface{}) (*GraphQLResponse, error) {
+	return c.doGraphQLRequest(path, query, variables, false)
+}
+
+// doGraphQLRequest is the shared GraphQL executor. When retry is true it routes
+// through doWithRetry (bounded exponential backoff on transient 5xx/network
+// errors); when false it does exactly one request.
+func (c *Client) doGraphQLRequest(path string, query string, variables map[string]interface{}, retry bool) (*GraphQLResponse, error) {
 	url := fmt.Sprintf("%s/api/graphql/%s", c.baseURL, path)
 
 	reqBody := GraphQLRequest{
@@ -184,9 +204,13 @@ func (c *Client) doGraphQL(path string, query string, variables map[string]inter
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Read-only GraphQL traffic from this code path is the template/IPAM
-	// pull, which is idempotent — safe to retry on transient 5xx.
-	resp, err := c.doWithRetry(req, jsonBody)
+	var resp *http.Response
+	if retry {
+		resp, err = c.doWithRetry(req, jsonBody)
+	} else {
+		// Single shot: a mutation must never be replayed by the transport.
+		resp, err = c.httpClient.Do(req)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
@@ -514,7 +538,9 @@ func (c *Client) CreateOID(input OIDInput) (*OID, error) {
 		"input":     input,
 	}
 
-	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	// Single-shot: createOID is NOT idempotent (no server-side uniqueness),
+	// so it must never be replayed by the retry transport.
+	resp, err := c.doGraphQLOnce("network-administration/snmp", query, variables)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +581,8 @@ func (c *Client) UpdateOID(id string, input OIDInput) (*OID, error) {
 		"input":     input,
 	}
 
-	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	// Single-shot: OID mutations share one no-retry policy (see doGraphQLOnce).
+	resp, err := c.doGraphQLOnce("network-administration/snmp", query, variables)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +613,8 @@ func (c *Client) DeleteOID(id string) (bool, error) {
 		"_id":       id,
 	}
 
-	resp, err := c.doGraphQL("network-administration/snmp", query, variables)
+	// Single-shot: OID mutations share one no-retry policy (see doGraphQLOnce).
+	resp, err := c.doGraphQLOnce("network-administration/snmp", query, variables)
 	if err != nil {
 		return false, err
 	}

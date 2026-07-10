@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -18,6 +19,15 @@ import (
 // ThothOS. It is a package var (not a const) purely so tests can shrink it to
 // exercise the loop deterministically; production never overrides it.
 var defaultHeartbeatInterval = 60 * time.Second
+
+// configSyncMinInterval/configSyncMaxInterval bound the jittered cadence of the
+// config re-pull loop. Jitter spreads load when many proxies reconnect at once.
+// They are package vars only so tests can shrink them; production leaves the
+// 60-120s window.
+var (
+	configSyncMinInterval = 60 * time.Second
+	configSyncMaxInterval = 120 * time.Second
+)
 
 // ThothOSSessionConfig carries everything the session lifecycle needs to
 // register the proxy and then run the heartbeat + config-pull loop. It is the
@@ -165,18 +175,53 @@ func StartThothOSSession(cfg ThothOSSessionConfig) (*thothos.ProxyConfig, error)
 	}
 
 	sessionManager.start(func(ctx context.Context) {
-		// Pull the initial config concurrently so a slow ThothOS cannot delay
-		// the first heartbeat. The pull is read-only and best-effort; each
-		// failed fetch is logged and skipped inside pullInitialConfigFromClient.
+		// Apply the initial config concurrently so a slow ThothOS cannot delay
+		// the first heartbeat. Unlike the old write-only ConfigCache pull, this
+		// PERSISTS templates/OIDs into SQLite and retunes the live collectors.
 		safego.Go("thothos-initial-config", func() {
-			if pullErr := pullInitialConfigFromClient(cfg.Client); pullErr != nil {
-				log.Error().Err(pullErr).Msg("Failed to pull initial config from ThothOS")
-			}
+			res := applyConfigFromClient(cfg.DB, cfg.Client)
+			logApplyResult("initial", res)
+		})
+		// Re-pull + re-apply the config on a jittered 60-120s cadence. This is
+		// the pull-based replacement for the removed webhook push channel: any
+		// ThothOS-side template/OID change reaches the proxy within one cycle,
+		// and the proxy keeps a persisted local copy for offline capability.
+		safego.Go("thothos-config-sync", func() {
+			runConfigSyncLoop(ctx, cfg)
 		})
 		runHeartbeatLoop(ctx, cfg, interval)
 	})
 
 	return proxyConfig, nil
+}
+
+// runConfigSyncLoop re-pulls and re-applies the ThothOS config on a jittered
+// cadence until ctx is cancelled (disconnect/logout/shutdown stops it cleanly).
+func runConfigSyncLoop(ctx context.Context, cfg ThothOSSessionConfig) {
+	log.Info().
+		Dur("min", configSyncMinInterval).
+		Dur("max", configSyncMaxInterval).
+		Msg("ThothOS config-sync loop started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("ThothOS config-sync loop stopped")
+			return
+		case <-time.After(nextConfigSyncDelay()):
+			res := applyConfigFromClient(cfg.DB, cfg.Client)
+			logApplyResult("periodic", res)
+		}
+	}
+}
+
+// nextConfigSyncDelay returns a jittered delay in [min, max).
+func nextConfigSyncDelay() time.Duration {
+	span := configSyncMaxInterval - configSyncMinInterval
+	if span <= 0 {
+		return configSyncMinInterval
+	}
+	return configSyncMinInterval + time.Duration(rand.Int63n(int64(span)))
 }
 
 // StopThothOSSession cancels the live heartbeat + config-pull loop. Used by the

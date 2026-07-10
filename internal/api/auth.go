@@ -687,54 +687,6 @@ func getOutboundIP() string {
 	return netutil.OutboundIP()
 }
 
-// pullInitialConfigFromClient pulls configuration using an existing client
-func pullInitialConfigFromClient(client *thothos.Client) error {
-	log.Info().Msg("Pulling initial configuration from ThothOS...")
-
-	// Pull ICMP monitoring templates
-	icmpMonitoring, err := client.GetICMPMonitoringTemplates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull ICMP monitoring templates")
-	} else {
-		GetConfigCache().UpdateICMPMonitoringTemplates(icmpMonitoring)
-	}
-
-	// Pull ICMP polling templates
-	icmpPolling, err := client.GetICMPPollingTemplates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull ICMP polling templates")
-	} else {
-		GetConfigCache().UpdateICMPPollingTemplates(icmpPolling)
-	}
-
-	// Pull SNMPv2 templates
-	snmpv2, err := client.GetSNMPv2Templates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull SNMPv2 templates")
-	} else {
-		GetConfigCache().UpdateSNMPv2Templates(snmpv2)
-	}
-
-	// Pull SNMPv3 templates
-	snmpv3, err := client.GetSNMPv3Templates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull SNMPv3 templates")
-	} else {
-		GetConfigCache().UpdateSNMPv3Templates(snmpv3)
-	}
-
-	// Pull IPAM configuration
-	ipamConfig, err := client.GetIPAMConfig()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull IPAM configuration")
-	} else {
-		GetConfigCache().UpdateIPAMConfig(ipamConfig)
-	}
-
-	log.Info().Msg("Initial configuration pull complete")
-	return nil
-}
-
 // loginPage renders the login page
 func loginPage(c *gin.Context) {
 	// Check if already authenticated
