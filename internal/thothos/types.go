@@ -228,6 +228,40 @@ type HeartbeatStatus struct {
 }
 
 // ================================
+// Monitoring results (NM -> ThothOS results-up channel)
+// ================================
+
+// MonitoringResult is one device's latest monitoring sample as reported to
+// ThothOS's reportMonitoringResults mutation. It is the results-up half of the
+// integration: the proxy's ICMP/SNMP pollers observe up/down + latency + loss
+// on the buyer's LAN and batch them here so a down router is visible in ThothOS.
+//
+// Wire contract (ThothOS DeviceStatus entity, results.entity.ts):
+//   - deviceName/ipAddress are REQUIRED and must be non-empty (server trims and
+//     throws on empty) — the reporter never enqueues a device missing either.
+//   - status MUST be "up" or "down" (any other value throws server-side, failing
+//     the whole batch) — never-polled/unknown devices are excluded upstream.
+//   - latencyMs/packetLossPct are optional; a nil pointer omits the field (so a
+//     genuine 0 is still sent, distinct from "not measured").
+//   - checkedAt is an optional ISO-8601 string (server defaults to now()).
+type MonitoringResult struct {
+	DeviceName    string   `json:"deviceName"`
+	IPAddress     string   `json:"ipAddress"`
+	DeviceType    string   `json:"deviceType,omitempty"`
+	Status        string   `json:"status"`
+	LatencyMs     *float64 `json:"latencyMs,omitempty"`
+	PacketLossPct *float64 `json:"packetLossPct,omitempty"`
+	CheckedAt     string   `json:"checkedAt,omitempty"`
+}
+
+// MonitoringReportResult is ThothOS's response to reportMonitoringResults: how
+// many device-status rows it upserted this call.
+type MonitoringReportResult struct {
+	Success  bool `json:"success"`
+	Upserted int  `json:"upserted"`
+}
+
+// ================================
 // IPAM Types from ThothOS
 // ================================
 

@@ -3,6 +3,7 @@ package thothos
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -358,6 +359,67 @@ func (c *Client) SendHeartbeat(status HeartbeatStatus) (*ProxyConfig, error) {
 	}
 
 	return proxy, nil
+}
+
+// ReportMonitoringResults reports a batch of device monitoring results (up/down
+// status + latency + packet loss) to ThothOS's reportMonitoringResults mutation
+// — the NM→ThothOS results-up channel.
+//
+// SINGLE-SHOT by design: it routes through doGraphQLOnce (no retry wrapper). The
+// caller (the session's results reporter) tolerates a failure by carrying the
+// batch forward to the next tick rather than replaying at the transport layer.
+//
+// The `input` variable is sent as a NESTED JSON OBJECT (exactly like registerProxy
+// sends its registrationInput map) — NOT a stringified JSON — so the resolver reads
+// vars.input as the object. companyId is NOT sent: ThothOS injects it server-side
+// from the tk_ key's tenant, so a key can only ever write its own company's rows.
+func (c *Client) ReportMonitoringResults(proxyName string, results []MonitoringResult) (*MonitoringReportResult, error) {
+	query := `mutation reportMonitoringResults($input: MonitoringResultsInput!) {
+		reportMonitoringResults(input: $input) {
+			success
+			upserted
+		}
+	}`
+
+	// results may be an empty (non-nil) slice; ThothOS returns {success:true,
+	// upserted:0} for an empty results array. Keep it non-nil so it marshals to
+	// [] rather than null.
+	if results == nil {
+		results = []MonitoringResult{}
+	}
+	input := map[string]interface{}{
+		"results": results,
+	}
+	if proxyName != "" {
+		input["proxyName"] = proxyName
+	}
+
+	variables := map[string]interface{}{
+		"input": input,
+	}
+
+	resp, err := c.doGraphQLOnce("network-administration/results", query, variables)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["reportMonitoringResults"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected response format")
+	}
+
+	report := &MonitoringReportResult{}
+	jsonData, _ := json.Marshal(data)
+	if err := json.Unmarshal(jsonData, report); err != nil {
+		return nil, fmt.Errorf("failed to parse monitoring report result: %w", err)
+	}
+
+	log.Info().
+		Int("sent", len(results)).
+		Int("upserted", report.Upserted).
+		Bool("success", report.Success).
+		Msg("Reported monitoring results to ThothOS")
+	return report, nil
 }
 
 // GetICMPMonitoringTemplates fetches ICMP monitoring templates (threshold configs)
@@ -933,10 +995,82 @@ func (c *Client) GetSNMPv3PollingTemplates() ([]SNMPv3PollingTemplate, error) {
 // IPAM Methods
 // ================================
 
-// GetSupernets fetches all supernets for the company
+// ipamPageSize is the offset-pagination page size the IPAM getAll walkers
+// request per page. ThothOS clamps a requested limit to [1, KERNEL_MAX_CAP=1000]
+// server-side, so 1000 is the largest useful page (fewest round-trips). It is a
+// package var only so tests can shrink it to exercise the multi-page walk without
+// seeding 1000+ rows; production leaves it at 1000.
+var ipamPageSize = 1000
+
+// maxIPAMPages bounds the page walk so a misbehaving server that returns a full
+// page forever (e.g. ignoring skip) can never hang the proxy in an unbounded
+// loop. At the default page size this ceiling is 10,000,000 rows — far above any
+// realistic IPAM inventory, so it never truncates real data; it only breaks a
+// pathological non-terminating response.
+const maxIPAMPages = 10000
+
+// fetchIPAMPages walks the offset-paginated getAll op named responseKey until a
+// short page (a page with fewer than ipamPageSize raw rows) signals end-of-data,
+// per the shipped IPAM pagination contract:
+//
+//   - each request sends {companyId, limit: ipamPageSize, skip}
+//   - the flat array under responseKey is the page (offset pagination does NOT
+//     wrap in a connection envelope)
+//   - stop when a page returns fewer than ipamPageSize rows
+//
+// A query error on ANY page fails the whole walk (returns the error) rather than
+// silently returning a partial result — a truncated IPAM inventory is worse than
+// a surfaced failure (an operator would allocate already-used addresses). The
+// short-page test uses the RAW page length (len(data)), not the parsed count, so
+// an unparseable row can't be mistaken for end-of-data.
+func fetchIPAMPages[T any](c *Client, path, query, responseKey, label string) ([]T, error) {
+	all := make([]T, 0)
+	skip := 0
+
+	for page := 0; page < maxIPAMPages; page++ {
+		variables := map[string]interface{}{
+			"companyId": c.companyID,
+			"limit":     ipamPageSize,
+			"skip":      skip,
+		}
+
+		resp, err := c.doGraphQL(path, query, variables)
+		if err != nil {
+			return nil, err
+		}
+
+		data, ok := resp.Data[responseKey].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unexpected response format for %s", responseKey)
+		}
+
+		for _, item := range data {
+			jsonData, _ := json.Marshal(item)
+			var elem T
+			if err := json.Unmarshal(jsonData, &elem); err != nil {
+				log.Warn().Err(err).Msgf("Failed to parse %s", label)
+				continue
+			}
+			all = append(all, elem)
+		}
+
+		// End of data: a page shorter than the requested size means there are no
+		// more rows. Uses the raw page length so a skipped-unparseable row does
+		// not prematurely terminate the walk.
+		if len(data) < ipamPageSize {
+			break
+		}
+		skip += ipamPageSize
+	}
+
+	log.Info().Int("count", len(all)).Msgf("Fetched %s", label)
+	return all, nil
+}
+
+// GetSupernets fetches all supernets for the company (paged until a short page).
 func (c *Client) GetSupernets() ([]Supernet, error) {
-	query := `query getSupernetsForCompany($companyId: String!) {
-		getSupernetsForCompany(companyId: $companyId) {
+	query := `query getSupernetsForCompany($companyId: String!, $limit: Int, $skip: Int) {
+		getSupernetsForCompany(companyId: $companyId, limit: $limit, skip: $skip) {
 			_id
 			companyId
 			name
@@ -950,39 +1084,13 @@ func (c *Client) GetSupernets() ([]Supernet, error) {
 		}
 	}`
 
-	variables := map[string]interface{}{
-		"companyId": c.companyID,
-	}
-
-	resp, err := c.doGraphQL("network-administration/ipam/supernet", query, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	data, ok := resp.Data["getSupernetsForCompany"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-
-	supernets := make([]Supernet, 0, len(data))
-	for _, item := range data {
-		jsonData, _ := json.Marshal(item)
-		var supernet Supernet
-		if err := json.Unmarshal(jsonData, &supernet); err != nil {
-			log.Warn().Err(err).Msg("Failed to parse supernet")
-			continue
-		}
-		supernets = append(supernets, supernet)
-	}
-
-	log.Info().Int("count", len(supernets)).Msg("Fetched supernets")
-	return supernets, nil
+	return fetchIPAMPages[Supernet](c, "network-administration/ipam/supernet", query, "getSupernetsForCompany", "supernet")
 }
 
-// GetSubnets fetches all subnets for the company
+// GetSubnets fetches all subnets for the company (paged until a short page).
 func (c *Client) GetSubnets() ([]Subnet, error) {
-	query := `query getSubnetsForCompany($companyId: String!) {
-		getSubnetsForCompany(companyId: $companyId) {
+	query := `query getSubnetsForCompany($companyId: String!, $limit: Int, $skip: Int) {
+		getSubnetsForCompany(companyId: $companyId, limit: $limit, skip: $skip) {
 			_id
 			companyId
 			supernetId
@@ -998,39 +1106,13 @@ func (c *Client) GetSubnets() ([]Subnet, error) {
 		}
 	}`
 
-	variables := map[string]interface{}{
-		"companyId": c.companyID,
-	}
-
-	resp, err := c.doGraphQL("network-administration/ipam/subnet", query, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	data, ok := resp.Data["getSubnetsForCompany"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-
-	subnets := make([]Subnet, 0, len(data))
-	for _, item := range data {
-		jsonData, _ := json.Marshal(item)
-		var subnet Subnet
-		if err := json.Unmarshal(jsonData, &subnet); err != nil {
-			log.Warn().Err(err).Msg("Failed to parse subnet")
-			continue
-		}
-		subnets = append(subnets, subnet)
-	}
-
-	log.Info().Int("count", len(subnets)).Msg("Fetched subnets")
-	return subnets, nil
+	return fetchIPAMPages[Subnet](c, "network-administration/ipam/subnet", query, "getSubnetsForCompany", "subnet")
 }
 
-// GetPools fetches all pools for the company
+// GetPools fetches all pools for the company (paged until a short page).
 func (c *Client) GetPools() ([]Pool, error) {
-	query := `query getPoolsForCompany($companyId: String!) {
-		getPoolsForCompany(companyId: $companyId) {
+	query := `query getPoolsForCompany($companyId: String!, $limit: Int, $skip: Int) {
+		getPoolsForCompany(companyId: $companyId, limit: $limit, skip: $skip) {
 			_id
 			companyId
 			supernetId
@@ -1044,39 +1126,16 @@ func (c *Client) GetPools() ([]Pool, error) {
 		}
 	}`
 
-	variables := map[string]interface{}{
-		"companyId": c.companyID,
-	}
-
-	resp, err := c.doGraphQL("network-administration/ipam/pool", query, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	data, ok := resp.Data["getPoolsForCompany"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-
-	pools := make([]Pool, 0, len(data))
-	for _, item := range data {
-		jsonData, _ := json.Marshal(item)
-		var pool Pool
-		if err := json.Unmarshal(jsonData, &pool); err != nil {
-			log.Warn().Err(err).Msg("Failed to parse pool")
-			continue
-		}
-		pools = append(pools, pool)
-	}
-
-	log.Info().Int("count", len(pools)).Msg("Fetched pools")
-	return pools, nil
+	return fetchIPAMPages[Pool](c, "network-administration/ipam/pool", query, "getPoolsForCompany", "pool")
 }
 
-// GetIPAddresses fetches all IP addresses for the company
+// GetIPAddresses fetches all IP addresses for the company (paged until a short
+// page). This is the realistic multi-page case: one fully-enumerated /22 is 1024
+// hosts, past the 1000-row default cap, so without paging the address inventory
+// and the used/available counters silently truncated.
 func (c *Client) GetIPAddresses() ([]IPAddress, error) {
-	query := `query getIPAddressesForCompany($companyId: String!) {
-		getIPAddressesForCompany(companyId: $companyId) {
+	query := `query getIPAddressesForCompany($companyId: String!, $limit: Int, $skip: Int) {
+		getIPAddressesForCompany(companyId: $companyId, limit: $limit, skip: $skip) {
 			_id
 			companyId
 			supernetId
@@ -1090,39 +1149,13 @@ func (c *Client) GetIPAddresses() ([]IPAddress, error) {
 		}
 	}`
 
-	variables := map[string]interface{}{
-		"companyId": c.companyID,
-	}
-
-	resp, err := c.doGraphQL("network-administration/ipam/ip-address", query, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	data, ok := resp.Data["getIPAddressesForCompany"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-
-	ipAddresses := make([]IPAddress, 0, len(data))
-	for _, item := range data {
-		jsonData, _ := json.Marshal(item)
-		var ip IPAddress
-		if err := json.Unmarshal(jsonData, &ip); err != nil {
-			log.Warn().Err(err).Msg("Failed to parse IP address")
-			continue
-		}
-		ipAddresses = append(ipAddresses, ip)
-	}
-
-	log.Info().Int("count", len(ipAddresses)).Msg("Fetched IP addresses")
-	return ipAddresses, nil
+	return fetchIPAMPages[IPAddress](c, "network-administration/ipam/ip-address", query, "getIPAddressesForCompany", "IP address")
 }
 
-// GetVLANs fetches all VLANs for the company
+// GetVLANs fetches all VLANs for the company (paged until a short page).
 func (c *Client) GetVLANs() ([]VLAN, error) {
-	query := `query getVLANsForCompany($companyId: String!) {
-		getVLANsForCompany(companyId: $companyId) {
+	query := `query getVLANsForCompany($companyId: String!, $limit: Int, $skip: Int) {
+		getVLANsForCompany(companyId: $companyId, limit: $limit, skip: $skip) {
 			_id
 			companyId
 			supernetId
@@ -1135,75 +1168,60 @@ func (c *Client) GetVLANs() ([]VLAN, error) {
 		}
 	}`
 
-	variables := map[string]interface{}{
-		"companyId": c.companyID,
-	}
-
-	resp, err := c.doGraphQL("network-administration/ipam/vlan", query, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	data, ok := resp.Data["getVLANsForCompany"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-
-	vlans := make([]VLAN, 0, len(data))
-	for _, item := range data {
-		jsonData, _ := json.Marshal(item)
-		var vlan VLAN
-		if err := json.Unmarshal(jsonData, &vlan); err != nil {
-			log.Warn().Err(err).Msg("Failed to parse VLAN")
-			continue
-		}
-		vlans = append(vlans, vlan)
-	}
-
-	log.Info().Int("count", len(vlans)).Msg("Fetched VLANs")
-	return vlans, nil
+	return fetchIPAMPages[VLAN](c, "network-administration/ipam/vlan", query, "getVLANsForCompany", "VLAN")
 }
 
-// GetIPAMConfig fetches the complete IPAM configuration
+// GetIPAMConfig fetches the complete IPAM configuration.
+//
+// Partial failure is SURFACED, not masked: if any of the five collection queries
+// fails, this returns a non-nil error that NAMES the failed collection(s) (joined
+// when several fail), alongside whatever partial config it did fetch. Previously
+// it swallowed every failure and always returned (config, nil), so a failed
+// ip-address query looked identical to "no IP addresses exist" — the IPAM page
+// then rendered a torn tree with zero addresses and no warning, and an operator
+// doing address planning could allocate already-used addresses. Callers gate on
+// the returned error (the handler returns 500; the config-apply step records a
+// warning) instead of trusting a silently-incomplete snapshot.
 func (c *Client) GetIPAMConfig() (*IPAMConfig, error) {
 	config := &IPAMConfig{}
+	var fetchErrs []error
 
 	// Fetch supernets
-	supernets, err := c.GetSupernets()
-	if err != nil {
+	if supernets, err := c.GetSupernets(); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch supernets")
+		fetchErrs = append(fetchErrs, fmt.Errorf("supernets: %w", err))
 	} else {
 		config.Supernets = supernets
 	}
 
 	// Fetch subnets
-	subnets, err := c.GetSubnets()
-	if err != nil {
+	if subnets, err := c.GetSubnets(); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch subnets")
+		fetchErrs = append(fetchErrs, fmt.Errorf("subnets: %w", err))
 	} else {
 		config.Subnets = subnets
 	}
 
 	// Fetch pools
-	pools, err := c.GetPools()
-	if err != nil {
+	if pools, err := c.GetPools(); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch pools")
+		fetchErrs = append(fetchErrs, fmt.Errorf("pools: %w", err))
 	} else {
 		config.Pools = pools
 	}
 
 	// Fetch IP addresses
-	ipAddresses, err := c.GetIPAddresses()
-	if err != nil {
+	if ipAddresses, err := c.GetIPAddresses(); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch IP addresses")
+		fetchErrs = append(fetchErrs, fmt.Errorf("ipAddresses: %w", err))
 	} else {
 		config.IPAddresses = ipAddresses
 	}
 
 	// Fetch VLANs
-	vlans, err := c.GetVLANs()
-	if err != nil {
+	if vlans, err := c.GetVLANs(); err != nil {
 		log.Warn().Err(err).Msg("Failed to fetch VLANs")
+		fetchErrs = append(fetchErrs, fmt.Errorf("vlans: %w", err))
 	} else {
 		config.VLANs = vlans
 	}
@@ -1214,7 +1232,15 @@ func (c *Client) GetIPAMConfig() (*IPAMConfig, error) {
 		Int("pools", len(config.Pools)).
 		Int("ipAddresses", len(config.IPAddresses)).
 		Int("vlans", len(config.VLANs)).
-		Msg("Fetched complete IPAM configuration")
+		Int("failedCollections", len(fetchErrs)).
+		Msg("Fetched IPAM configuration")
+
+	if len(fetchErrs) > 0 {
+		// errors.Join names every failed collection so the caller (and the
+		// operator) can see exactly which data is missing rather than trusting a
+		// silently-torn snapshot.
+		return config, fmt.Errorf("IPAM config incomplete: %w", errors.Join(fetchErrs...))
+	}
 
 	return config, nil
 }
