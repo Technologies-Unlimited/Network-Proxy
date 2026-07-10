@@ -480,7 +480,11 @@ func getSNMPv3PollingTemplates(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// syncMonitoringData forces a sync of monitoring data from ThothOS
+// syncMonitoringData forces a pull AND apply of monitoring config from ThothOS.
+// Unlike the old handler — which fetched, logged "synced successfully", and
+// discarded everything — this runs the same apply step the background loop uses
+// (persist OIDs/templates into SQLite, retune the live collectors) and reports
+// HONEST counts of what was actually persisted/applied.
 func syncMonitoringData(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authCtx := middleware.GetGlobalAuthContext()
@@ -499,122 +503,26 @@ func syncMonitoringData(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Fetch all monitoring configuration
-		config := MonitoringConfig{}
-		var fetchErrors []string
-
-		// Load Zabbix template OIDs from local templates directory
-		templatesDir := filepath.Join(".", "templates", "snmp")
-		templateList, err := templates.ScanTemplatesDirectory(templatesDir)
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to scan Zabbix templates directory")
-			fetchErrors = append(fetchErrors, "Zabbix templates: "+err.Error())
-		} else {
-			config.ZabbixTemplates = templateList
-			var allOIDs []templates.ParsedOID
-			for _, t := range templateList {
-				allOIDs = append(allOIDs, t.OIDs...)
-			}
-			config.ZabbixTemplateOIDs = templates.DeduplicateOIDs(allOIDs)
-		}
-
-		icmpMonitoring, err := client.GetICMPMonitoringTemplates()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "ICMP monitoring: "+err.Error())
-		} else {
-			config.ICMPMonitoringTemplates = icmpMonitoring
-		}
-
-		icmpPolling, err := client.GetICMPPollingTemplates()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "ICMP polling: "+err.Error())
-		} else {
-			config.ICMPPollingTemplates = icmpPolling
-		}
-
-		oids, err := client.GetOIDs()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "OIDs: "+err.Error())
-		} else {
-			config.OIDs = oids
-		}
-
-		snmpv2Communities, err := client.GetSNMPv2Communities()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "SNMPv2 Communities: "+err.Error())
-		} else {
-			config.SNMPv2Communities = snmpv2Communities
-		}
-
-		snmpv3Communities, err := client.GetSNMPv3Communities()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "SNMPv3 Communities: "+err.Error())
-		} else {
-			config.SNMPv3Communities = snmpv3Communities
-		}
-
-		snmpv2, err := client.GetSNMPv2Templates()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "SNMPv2: "+err.Error())
-		} else {
-			config.SNMPv2Templates = snmpv2
-		}
-
-		snmpv3, err := client.GetSNMPv3Templates()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "SNMPv3: "+err.Error())
-		} else {
-			config.SNMPv3Templates = snmpv3
-		}
-
-		snmpv2Polling, err := client.GetSNMPv2PollingTemplates()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "SNMPv2 Polling: "+err.Error())
-		} else {
-			config.SNMPv2PollingTemplates = snmpv2Polling
-		}
-
-		snmpv3Polling, err := client.GetSNMPv3PollingTemplates()
-		if err != nil {
-			fetchErrors = append(fetchErrors, "SNMPv3 Polling: "+err.Error())
-		} else {
-			config.SNMPv3PollingTemplates = snmpv3Polling
-		}
-
-		log.Info().
-			Int("icmpMonitoring", len(config.ICMPMonitoringTemplates)).
-			Int("icmpPolling", len(config.ICMPPollingTemplates)).
-			Int("oids", len(config.OIDs)).
-			Int("zabbixTemplates", len(config.ZabbixTemplates)).
-			Int("zabbixOids", len(config.ZabbixTemplateOIDs)).
-			Int("snmpv2Communities", len(config.SNMPv2Communities)).
-			Int("snmpv3Communities", len(config.SNMPv3Communities)).
-			Int("snmpv2Templates", len(config.SNMPv2Templates)).
-			Int("snmpv3Templates", len(config.SNMPv3Templates)).
-			Int("snmpv2Polling", len(config.SNMPv2PollingTemplates)).
-			Int("snmpv3Polling", len(config.SNMPv3PollingTemplates)).
-			Msg("Monitoring data synced from ThothOS")
+		result := applyConfigFromClient(srv.DB, client)
+		logApplyResult("monitor-sync", result)
 
 		response := gin.H{
 			"success": true,
-			"message": "Monitoring data synced successfully",
-			"counts": gin.H{
-				"icmpMonitoring":    len(config.ICMPMonitoringTemplates),
-				"icmpPolling":       len(config.ICMPPollingTemplates),
-				"oids":              len(config.OIDs),
-				"zabbixTemplates":   len(config.ZabbixTemplates),
-				"zabbixTemplateOids": len(config.ZabbixTemplateOIDs),
-				"snmpv2Communities": len(config.SNMPv2Communities),
-				"snmpv3Communities": len(config.SNMPv3Communities),
-				"snmpv2Templates":  len(config.SNMPv2Templates),
-				"snmpv3Templates":  len(config.SNMPv3Templates),
-				"snmpv2Polling":    len(config.SNMPv2PollingTemplates),
-				"snmpv3Polling":    len(config.SNMPv3PollingTemplates),
+			"message": "Monitoring configuration pulled and applied",
+			"applied": gin.H{
+				"oidsAdopted":            result.OIDsAdopted,
+				"oidsCreated":            result.OIDsCreated,
+				"oidsUpdated":            result.OIDsUpdated,
+				"snmpTemplatesPersisted": result.SNMPTemplatesPersisted,
+				"icmpIntervalSeconds":    result.ICMPIntervalSeconds,
+				"snmpIntervalSeconds":    result.SNMPIntervalSeconds,
+				"pingTimeoutSeconds":     result.PingTimeoutSeconds,
 			},
+			// IPAM is fetched from ThothOS but served live, not persisted locally.
+			"ipamFetched": result.IPAMFetched,
 		}
-
-		if len(fetchErrors) > 0 {
-			response["warnings"] = fetchErrors
+		if len(result.Warnings) > 0 {
+			response["warnings"] = result.Warnings
 		}
 
 		c.JSON(http.StatusOK, response)

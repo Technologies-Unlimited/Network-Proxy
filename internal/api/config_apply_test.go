@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
+	"github.com/gin-gonic/gin"
 )
 
 var gqlOpRE = regexp.MustCompile(`(?:query|mutation)\s+(\w+)`)
@@ -177,5 +180,62 @@ func TestReconcileOIDsAdoptsInsteadOfDuplicating(t *testing.T) {
 	db.Model(&models.OID{}).Where(&models.OID{CompanyID: "c1"}).Count(&count)
 	if count != 2 {
 		t.Fatalf("down-sync count=%d want 2", count)
+	}
+}
+
+// TestMonitorSyncHandlerReportsHonestAppliedCounts proves POST /monitor/sync no
+// longer fetches-and-discards while claiming "synced successfully": it runs the
+// apply step and its response reflects what was actually persisted (a template
+// row that also lands in SQLite), plus IPAM reported as fetched-not-persisted.
+func TestMonitorSyncHandlerReportsHonestAppliedCounts(t *testing.T) {
+	withLiveCollectors(t)
+	db := newTestDB(t)
+
+	fake := newFakeConfigThothOS(t, map[string]string{
+		"getSNMPv2TemplatesForCompany": `[{"_id":"tpl-9","companyId":"c1","templateName":"edge","description":""}]`,
+		"getSupernetsForCompany":       `[{"_id":"sn-1","companyId":"c1","name":"corp"}]`,
+	})
+
+	// getThothOSClient reads the persisted Settings config and re-validates it.
+	if err := models.SetThothOSConfig(db, &models.ThothOSConfig{URL: fake.server.URL, APIKey: "tk_test"}); err != nil {
+		t.Fatalf("seed settings config: %v", err)
+	}
+
+	// syncMonitoringData requires a live auth context (integrated mode).
+	middleware.SetGlobalAuthContext(&middleware.AuthContext{CompanyID: "c1", APIKeyID: "k1"})
+	t.Cleanup(func() { middleware.SetGlobalAuthContext(nil) })
+
+	r := gin.New()
+	srv := &server.Server{DB: db}
+	r.POST("/api/v1/monitor/sync", syncMonitoringData(srv))
+
+	w, body := doJSON(t, r, "POST", "/api/v1/monitor/sync", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sync status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	if msg, _ := body["message"].(string); strings.Contains(msg, "synced successfully") {
+		t.Errorf("response still claims the old fetch-and-discard lie: %q", msg)
+	}
+	applied, ok := body["applied"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("response has no 'applied' block: %v", body)
+	}
+	if got, _ := applied["snmpTemplatesPersisted"].(float64); got != 1 {
+		t.Errorf("applied.snmpTemplatesPersisted=%v want 1", applied["snmpTemplatesPersisted"])
+	}
+	ipam, ok := body["ipamFetched"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("response has no 'ipamFetched' block: %v", body)
+	}
+	if got, _ := ipam["supernets"].(float64); got != 1 {
+		t.Errorf("ipamFetched.supernets=%v want 1", ipam["supernets"])
+	}
+
+	// The template really landed in SQLite (not just counted).
+	var count int64
+	db.Model(&models.SNMPTemplate{}).Where(&models.SNMPTemplate{ThothOSID: "tpl-9"}).Count(&count)
+	if count != 1 {
+		t.Fatalf("template not persisted to SQLite by the sync handler: count=%d", count)
 	}
 }

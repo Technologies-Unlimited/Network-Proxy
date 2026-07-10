@@ -258,7 +258,11 @@ func getVLANs(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// syncIPAMData forces a sync of IPAM data from ThothOS
+// syncIPAMData runs the same pull+apply step as /monitor/sync and reports
+// honest counts. IPAM itself is fetched from ThothOS but served live (there is
+// no local IPAM model in this stage), so its counts are reported as "fetched",
+// NOT "synced successfully" — the previous handler fetched and discarded the
+// data yet claimed success.
 func syncIPAMData(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authCtx := middleware.GetGlobalAuthContext()
@@ -277,34 +281,29 @@ func syncIPAMData(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Fetch complete IPAM config
-		ipamConfig, err := client.GetIPAMConfig()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to sync IPAM data: " + err.Error(),
-			})
-			return
+		result := applyConfigFromClient(srv.DB, client)
+		logApplyResult("ipam-sync", result)
+
+		response := gin.H{
+			"success": true,
+			"message": "IPAM fetched (served live, not persisted locally); monitoring config applied",
+			// Honest: IPAM is fetched from ThothOS and served live per-request.
+			"ipamFetched": result.IPAMFetched,
+			// The shared apply step also persisted these and retuned collectors.
+			"applied": gin.H{
+				"oidsAdopted":            result.OIDsAdopted,
+				"oidsCreated":            result.OIDsCreated,
+				"oidsUpdated":            result.OIDsUpdated,
+				"snmpTemplatesPersisted": result.SNMPTemplatesPersisted,
+				"icmpIntervalSeconds":    result.ICMPIntervalSeconds,
+				"snmpIntervalSeconds":    result.SNMPIntervalSeconds,
+			},
+		}
+		if len(result.Warnings) > 0 {
+			response["warnings"] = result.Warnings
 		}
 
-		log.Info().
-			Int("supernets", len(ipamConfig.Supernets)).
-			Int("subnets", len(ipamConfig.Subnets)).
-			Int("pools", len(ipamConfig.Pools)).
-			Int("addresses", len(ipamConfig.IPAddresses)).
-			Int("vlans", len(ipamConfig.VLANs)).
-			Msg("IPAM data synced from ThothOS")
-
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "IPAM data synced successfully",
-			"counts": gin.H{
-				"supernets": len(ipamConfig.Supernets),
-				"subnets":   len(ipamConfig.Subnets),
-				"pools":     len(ipamConfig.Pools),
-				"addresses": len(ipamConfig.IPAddresses),
-				"vlans":     len(ipamConfig.VLANs),
-			},
-		})
+		c.JSON(http.StatusOK, response)
 	}
 }
 
