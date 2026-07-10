@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -14,6 +16,20 @@ type Registry struct {
 	PingLatency *prometheus.GaugeVec
 	PingSuccess *prometheus.CounterVec
 	PingFailure *prometheus.CounterVec
+	// PacketLoss is the per-poll ICMP packet-loss percentage (0-100). Before
+	// this series existed the poller discarded stats.PacketLoss entirely and a
+	// 75%-loss device read as fully "up" — this makes loss a first-class,
+	// alertable metric.
+	PacketLoss *prometheus.GaugeVec
+
+	// sampledMu guards sampledStatus, the set of device IDs that have had a
+	// real device-status sample recorded. It exists to make ErrNoSample
+	// reachable: prometheus GaugeVec.WithLabelValues auto-creates a child at
+	// value 0 on first access, so a never-polled device otherwise reads as a
+	// legitimate "0" (down) and fires false Device Down alerts. Callers ask
+	// HasStatusSample first and treat "not sampled" as UNKNOWN, not down.
+	sampledMu     sync.RWMutex
+	sampledStatus map[string]struct{}
 
 	// SNMP metrics
 	SNMPValue   *prometheus.GaugeVec
@@ -29,6 +45,8 @@ type Registry struct {
 // NewRegistry creates and registers all Prometheus metrics
 func NewRegistry() *Registry {
 	return &Registry{
+		sampledStatus: make(map[string]struct{}),
+
 		DeviceStatus: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "network_device_status",
@@ -57,6 +75,14 @@ func NewRegistry() *Registry {
 			prometheus.CounterOpts{
 				Name: "network_ping_failure_total",
 				Help: "Total number of failed pings",
+			},
+			[]string{"device_id", "ip_address"},
+		),
+
+		PacketLoss: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "network_packet_loss_percent",
+				Help: "ICMP packet loss percentage (0-100) from the most recent poll",
 			},
 			[]string{"device_id", "ip_address"},
 		),
@@ -112,9 +138,29 @@ func NewRegistry() *Registry {
 	}
 }
 
-// RecordDeviceStatus records device up/down status
+// RecordDeviceStatus records device up/down status. It also marks the device
+// as having a real sample so HasStatusSample can distinguish "polled and down"
+// (a genuine 0) from "never polled" (no sample → treated as unknown).
 func (r *Registry) RecordDeviceStatus(deviceID, ipAddress string, status float64) {
 	r.DeviceStatus.WithLabelValues(deviceID, ipAddress, "").Set(status)
+	r.sampledMu.Lock()
+	r.sampledStatus[deviceID] = struct{}{}
+	r.sampledMu.Unlock()
+}
+
+// HasStatusSample reports whether a real device-status sample has ever been
+// recorded for the device. Used by the local querier to return ErrNoSample for
+// never-polled devices instead of the auto-created gauge's phantom 0.
+func (r *Registry) HasStatusSample(deviceID string) bool {
+	r.sampledMu.RLock()
+	defer r.sampledMu.RUnlock()
+	_, ok := r.sampledStatus[deviceID]
+	return ok
+}
+
+// RecordPacketLoss records the ICMP packet-loss percentage (0-100) for a device.
+func (r *Registry) RecordPacketLoss(deviceID, ipAddress string, loss float64) {
+	r.PacketLoss.WithLabelValues(deviceID, ipAddress).Set(loss)
 }
 
 // RecordPingSuccess records a successful ping

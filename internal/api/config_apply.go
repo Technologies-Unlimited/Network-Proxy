@@ -43,6 +43,7 @@ type ApplyResult struct {
 	ICMPIntervalSeconds    int        `json:"icmpIntervalSeconds"`
 	SNMPIntervalSeconds    int        `json:"snmpIntervalSeconds"`
 	PingTimeoutSeconds     int        `json:"pingTimeoutSeconds"`
+	ICMPLossThreshold      float64    `json:"icmpLossThreshold"`
 	IPAMFetched            IPAMCounts `json:"ipamFetched"`
 	Warnings               []string   `json:"warnings,omitempty"`
 }
@@ -85,6 +86,10 @@ func applyConfigFromClient(db *gorm.DB, client *thothos.Client) ApplyResult {
 	res.SNMPIntervalSeconds = snmpSecs
 	res.PingTimeoutSeconds = pingSecs
 	res.Warnings = append(res.Warnings, intervalWarns...)
+
+	lossThreshold, lossWarns := applyLossThreshold(client)
+	res.ICMPLossThreshold = lossThreshold
+	res.Warnings = append(res.Warnings, lossWarns...)
 
 	// IPAM: fetched but served live; no local IPAM model in this stage.
 	if ipam, err := client.GetIPAMConfig(); err != nil {
@@ -342,6 +347,38 @@ func applyPollingIntervals(client *thothos.Client) (icmpSecs, snmpSecs, pingTime
 	return icmpSecs, snmpSecs, pingTimeoutSecs, warnings
 }
 
+// applyLossThreshold pushes the packet-loss down-threshold from the ThothOS ICMP
+// monitoring templates into the LIVE ICMP collector. The MOST sensitive (smallest
+// positive, in (0,100]) threshold across templates wins — earliest degradation
+// detection — mirroring the "most aggressive interval wins" policy. Returns the
+// applied percentage (0 = no template threshold found, collector default kept).
+//
+// Before this, the ThothOS icmpLossThreshold field had no enforcement point at
+// all: the poller only knew binary up/down and discarded packet loss entirely.
+func applyLossThreshold(client *thothos.Client) (threshold float64, warnings []string) {
+	tmpls, err := client.GetICMPMonitoringTemplates()
+	if err != nil {
+		return 0, []string{"ICMP monitoring templates: " + err.Error()}
+	}
+	var best float64
+	for _, t := range tmpls {
+		v := t.ICMPLossThreshold
+		if v <= 0 || v > 100 {
+			continue
+		}
+		if best == 0 || v < best {
+			best = v
+		}
+	}
+	if best <= 0 {
+		return 0, warnings
+	}
+	if lc := GetCollectors(); lc != nil && lc.ICMP != nil {
+		lc.ICMP.SetLossThreshold(best)
+	}
+	return best, warnings
+}
+
 // icmpTemplateInterval derives the poll interval from an ICMP polling template,
 // preferring the structured pollingFrequency, then the flat frequency seconds.
 func icmpTemplateInterval(t thothos.ICMPPollingTemplate) time.Duration {
@@ -395,6 +432,7 @@ func logApplyResult(phase string, res ApplyResult) {
 		Int("snmpTemplatesPersisted", res.SNMPTemplatesPersisted).
 		Int("icmpIntervalSeconds", res.ICMPIntervalSeconds).
 		Int("snmpIntervalSeconds", res.SNMPIntervalSeconds).
+		Float64("icmpLossThreshold", res.ICMPLossThreshold).
 		Int("warnings", len(res.Warnings)).
 		Msg("ThothOS config applied")
 }

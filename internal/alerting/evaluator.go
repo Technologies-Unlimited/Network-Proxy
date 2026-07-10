@@ -267,10 +267,18 @@ func NewDBMetricSource(db *gorm.DB) *DBMetricSource {
 func (s *DBMetricSource) Get(metric string, device *models.Device) (string, error) {
 	switch metric {
 	case "device_status":
-		if device.Status == "up" {
+		switch device.Status {
+		case "up":
 			return "1", nil
+		case "down":
+			return "0", nil
+		default:
+			// "unknown"/"" means the device has never been polled. Returning a
+			// concrete "0" here made the engine fire false Device Down alerts
+			// for never-polled devices; surface it as no-sample so the engine
+			// skips the rule (treats it as unknown, not down).
+			return "", fmt.Errorf("device_status: no sample yet for %q (status=%q)", device.Hostname, device.Status)
 		}
-		return "0", nil
 
 	case "last_seen":
 		if device.LastSeen == nil {
@@ -279,13 +287,14 @@ func (s *DBMetricSource) Get(metric string, device *models.Device) (string, erro
 		return strconv.FormatInt(int64(time.Since(*device.LastSeen).Seconds()), 10), nil
 
 	case "packet_loss":
-		if device.Status == "down" {
-			return "100", nil
+		// Report the real measured loss for a polled device; refuse to invent a
+		// value for a never-polled ("unknown") device.
+		switch device.Status {
+		case "up", "down":
+			return strconv.FormatFloat(device.PacketLoss, 'f', -1, 64), nil
+		default:
+			return "", fmt.Errorf("packet_loss: no sample yet (status=%q)", device.Status)
 		}
-		if device.Status == "up" {
-			return "0", nil
-		}
-		return "", fmt.Errorf("packet_loss unavailable for status %q", device.Status)
 
 	case "ping_latency":
 		// Without a Prometheus binding, we can only report the device's
@@ -300,6 +309,7 @@ func (s *DBMetricSource) Get(metric string, device *models.Device) (string, erro
 type LocalRegistryQuerier interface {
 	PingLatency(deviceID, ipAddress string) (float64, error)
 	DeviceStatus(deviceID, ipAddress string) (float64, error)
+	PacketLoss(deviceID, ipAddress string) (float64, error)
 }
 
 // LocalMetricSource serves metric values straight off the in-process
@@ -330,6 +340,12 @@ func (s *LocalMetricSource) Get(metric string, device *models.Device) (string, e
 		return strconv.FormatFloat(v, 'f', -1, 64), nil
 	case "ping_latency":
 		v, err := s.q.PingLatency(device.ID, device.IPAddress)
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatFloat(v, 'f', -1, 64), nil
+	case "packet_loss":
+		v, err := s.q.PacketLoss(device.ID, device.IPAddress)
 		if err != nil {
 			return "", err
 		}

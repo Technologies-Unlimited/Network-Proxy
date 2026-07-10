@@ -42,6 +42,32 @@ func GetCollectors() *LiveCollectors {
 	return liveCollectors
 }
 
+// CollectorHealth is the operator-facing health of the live collectors, surfaced
+// on /health. It exists so an unprivileged raw-socket ICMP install (every ping
+// failing) is a VISIBLE, persistent error instead of a silent all-devices-down
+// dataset that looks like a real outage.
+type CollectorHealth struct {
+	// ICMPRawSocketAvailable is false when the ICMP collector could not open a
+	// privileged raw socket; while false, devices are reported UNKNOWN (not
+	// down) and ICMPHealthError explains why.
+	ICMPRawSocketAvailable bool   `json:"icmpRawSocketAvailable"`
+	ICMPHealthError        string `json:"icmpHealthError,omitempty"`
+}
+
+// collectorHealth reads the current live-collector health. When no collectors
+// are wired (unit tests / pre-boot) it reports healthy defaults.
+func collectorHealth() CollectorHealth {
+	health := CollectorHealth{ICMPRawSocketAvailable: true}
+	lc := GetCollectors()
+	if lc != nil && lc.ICMP != nil {
+		if err := lc.ICMP.HealthError(); err != nil {
+			health.ICMPRawSocketAvailable = false
+			health.ICMPHealthError = err.Error()
+		}
+	}
+	return health
+}
+
 // wireDeviceIntoCollectors adds a device to the live collectors according to
 // its enabled protocols, mirroring database.LoadDevicesIntoCollectors so a
 // runtime-created device is polled immediately. Safe (no-op) when no collectors

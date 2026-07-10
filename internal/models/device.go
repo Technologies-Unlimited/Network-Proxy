@@ -20,7 +20,12 @@ type Device struct {
 	Description string
 	// Status is read every dashboard refresh ("devices up" / "devices down"
 	// counters), so it gets its own index.
-	Status      string `gorm:"default:'unknown';index"`
+	Status string `gorm:"default:'unknown';index"`
+	// PacketLoss is the packet-loss percentage (0-100) from the most recent
+	// ICMP poll. A status of "up" with a non-zero PacketLoss is a degraded
+	// link — previously loss was discarded and any received packet read as a
+	// clean "up".
+	PacketLoss  float64 `gorm:"default:0"`
 	LastSeen    *time.Time `gorm:"index"`
 	NodeID      string         `gorm:"index"`
 	CreatedAt   time.Time      `gorm:"autoCreateTime"`

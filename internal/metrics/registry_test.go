@@ -43,3 +43,44 @@ func TestRecordSNMPValue(t *testing.T) {
 		t.Errorf("snmp value=%v want 4242", v)
 	}
 }
+
+func TestRecordPacketLoss(t *testing.T) {
+	reg.RecordPacketLoss("dev-loss", "10.0.0.5", 42.5)
+	if v := testutil.ToFloat64(reg.PacketLoss.WithLabelValues("dev-loss", "10.0.0.5")); v != 42.5 {
+		t.Errorf("packet loss gauge=%v want 42.5", v)
+	}
+}
+
+// TestHasStatusSampleAndErrNoSample is the never-polled fix: a device with no
+// recorded status must report HasStatusSample=false, and the LocalQuerier must
+// return ErrNoSample for it — NOT the phantom 0 that GaugeVec.WithLabelValues
+// auto-creates (which read as "down" and fired false Device Down alerts). Once a
+// real status is recorded, the querier returns the true value.
+func TestHasStatusSampleAndErrNoSample(t *testing.T) {
+	q := NewLocalQuerier(reg)
+
+	const neverID = "dev-never-polled"
+	if reg.HasStatusSample(neverID) {
+		t.Fatalf("HasStatusSample=true for a never-recorded device")
+	}
+	if _, err := q.DeviceStatus(neverID, "10.0.0.99"); err != ErrNoSample {
+		t.Errorf("DeviceStatus(never-polled) err=%v want ErrNoSample", err)
+	}
+	if _, err := q.PingLatency(neverID, "10.0.0.99"); err != ErrNoSample {
+		t.Errorf("PingLatency(never-polled) err=%v want ErrNoSample", err)
+	}
+	if _, err := q.PacketLoss(neverID, "10.0.0.99"); err != ErrNoSample {
+		t.Errorf("PacketLoss(never-polled) err=%v want ErrNoSample", err)
+	}
+
+	// A real down sample (value 0) must be distinguishable from "no sample": it
+	// resolves to a genuine 0 with no error.
+	reg.RecordDeviceStatus(neverID, "10.0.0.99", 0)
+	if !reg.HasStatusSample(neverID) {
+		t.Fatalf("HasStatusSample=false after RecordDeviceStatus")
+	}
+	v, err := q.DeviceStatus(neverID, "10.0.0.99")
+	if err != nil || v != 0 {
+		t.Errorf("DeviceStatus(polled-down)=%v,%v want 0,nil", v, err)
+	}
+}

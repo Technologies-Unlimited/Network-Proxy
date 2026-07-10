@@ -245,5 +245,8 @@ func healthCheck(c *gin.Context) {
 		"thothosConnected": thothosConnected,
 		"companyId":        companyID,
 		"proxyId":          proxyID,
+		// monitoring surfaces live-collector health so an unprivileged
+		// raw-socket ICMP install is a visible error, not silent all-down data.
+		"monitoring": collectorHealth(),
 	})
 }
