@@ -63,11 +63,17 @@ func IsStandaloneMode() bool {
 	return standaloneMode
 }
 
-// SetGlobalAuthContext sets the global auth context (called after API key validation)
+// SetGlobalAuthContext sets the global auth context (called after API key
+// validation). A nil ctx clears it (logout/disconnect); the log line must not
+// dereference ctx in that case.
 func SetGlobalAuthContext(ctx *AuthContext) {
 	authMu.Lock()
 	defer authMu.Unlock()
 	globalAuthContext = ctx
+	if ctx == nil {
+		log.Info().Msg("Global auth context cleared")
+		return
+	}
 	log.Info().
 		Str("companyId", ctx.CompanyID).
 		Str("apiKeyId", ctx.APIKeyID).
