@@ -57,6 +57,12 @@ func TestEngineDoesNotAlertNeverPolledDevice(t *testing.T) {
 	if err := db.Create(&rule).Error; err != nil {
 		t.Fatalf("create rule: %v", err)
 	}
+	// AlertRule.Duration has a GORM default of 300, which overrides an explicit
+	// zero on struct insert. Force it to 0 so a matching rule fires on the first
+	// evaluation pass (this test is about which devices alert, not the debounce).
+	if err := db.Model(&models.AlertRule{}).Where("id = ?", rule.ID).UpdateColumn("duration", 0).Error; err != nil {
+		t.Fatalf("force rule duration 0: %v", err)
+	}
 
 	// A perfectly healthy-so-far, never-polled device (default status "unknown").
 	never := models.Device{ID: "d-never", CompanyID: "c1", Hostname: "fresh", IPAddress: "10.0.0.1", Status: "unknown"}
