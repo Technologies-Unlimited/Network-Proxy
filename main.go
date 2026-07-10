@@ -204,6 +204,12 @@ func runServer(cmd *cobra.Command, args []string) {
 			if savedConfig.ProxyName != "" {
 				proxyName = savedConfig.ProxyName
 			}
+			// Restore the persisted webhook secret immediately so inbound
+			// webhooks verify even if the re-registration below fails or is
+			// still in flight. A successful re-registration replaces it.
+			if savedConfig.WebhookSecret != "" {
+				api.SetWebhookSecret(savedConfig.WebhookSecret)
+			}
 		}
 	}
 
@@ -279,6 +285,7 @@ func runServer(cmd *cobra.Command, args []string) {
 						Str("webhookId", webhookResult.ID).
 						Msg("Webhook registered with ThothOS")
 					api.SetWebhookSecret(webhookResult.Secret)
+					api.PersistWebhookCredentials(db, webhookResult.ID, webhookResult.Secret)
 				}
 
 				safego.Go("thothos-initial-config", func() {

@@ -4,10 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -133,8 +135,9 @@ func dnsLookup(srv *server.Server) gin.HandlerFunc {
 			opts.Timeout = time.Duration(req.Timeout) * time.Second
 		}
 
-		// Perform DNS lookup
-		result, err := tools.DNSLookup(c.Request.Context(), req.Domain, tools.DNSRecordType(req.Type), opts)
+		// Perform DNS lookup (record type matching is case-sensitive in the
+		// tools package, so normalize "a"/"mx"/... to uppercase here)
+		result, err := tools.DNSLookup(c.Request.Context(), req.Domain, tools.DNSRecordType(strings.ToUpper(req.Type)), opts)
 		if err != nil {
 			// Return result even with error for partial results
 			c.JSON(http.StatusOK, result)
@@ -408,6 +411,10 @@ func snmpQuery(srv *server.Server) gin.HandlerFunc {
 		}
 		if req.Port == 0 {
 			req.Port = 161
+		}
+		if req.Port < 1 || req.Port > 65535 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid port"})
+			return
 		}
 		if req.Timeout == 0 {
 			req.Timeout = 5
@@ -1115,6 +1122,37 @@ func macLookup(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
+// canonicalizeMAC normalizes a colon- or hyphen-separated MAC into the
+// uppercase, zero-padded "AA:BB:CC:DD:EE:FF" form. macOS `arp -a` prints
+// octets WITHOUT leading zeros (e.g. "a:b:c:1:2:3"), which would otherwise
+// render malformed and break the OUI vendor lookup. Returns "" when the
+// input isn't six valid hex octets.
+func canonicalizeMAC(raw string) string {
+	raw = strings.ReplaceAll(raw, "-", ":")
+	parts := strings.Split(raw, ":")
+	if len(parts) != 6 {
+		return ""
+	}
+	for i, p := range parts {
+		if len(p) == 0 || len(p) > 2 {
+			return ""
+		}
+		for _, ch := range p {
+			isHex := (ch >= '0' && ch <= '9') ||
+				(ch >= 'a' && ch <= 'f') ||
+				(ch >= 'A' && ch <= 'F')
+			if !isHex {
+				return ""
+			}
+		}
+		if len(p) == 1 {
+			p = "0" + p
+		}
+		parts[i] = strings.ToUpper(p)
+	}
+	return strings.Join(parts, ":")
+}
+
 // normalizeMACAddress removes separators and converts to uppercase
 func normalizeMACAddress(mac string) string {
 	// Remove common separators
@@ -1429,9 +1467,12 @@ func httpTest(srv *server.Server) gin.HandlerFunc {
 			}
 		}
 
-		// Read body (limit to 100KB)
-		body := make([]byte, 102400)
-		n, _ := resp.Body.Read(body)
+		// Read body (capped at 100KB). io.ReadAll on a LimitReader drains
+		// the stream up to the cap; a single resp.Body.Read previously
+		// returned only the first TCP segment, so BodySize/Body were
+		// truncated arbitrarily even for small responses.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 102400))
+		n := len(body)
 		response.BodySize = n
 
 		// Try to determine actual content length from header
@@ -1611,9 +1652,17 @@ func sslCheck(srv *server.Server) gin.HandlerFunc {
 			// Check validity
 			response.IsValid = now.After(cert.NotBefore) && now.Before(cert.NotAfter)
 
-			// Verify certificate against system roots
+			// Verify certificate against system roots. The server-supplied
+			// intermediates MUST be added to the pool — without them
+			// Verify() fails for nearly every real-world site (servers send
+			// leaf + intermediate, and the system store only holds roots),
+			// which made is_valid report false for perfectly valid certs.
 			opts := x509.VerifyOptions{
-				DNSName: req.Target,
+				DNSName:       req.Target,
+				Intermediates: x509.NewCertPool(),
+			}
+			for _, intermediate := range state.PeerCertificates[1:] {
+				opts.Intermediates.AddCert(intermediate)
 			}
 			if _, err := cert.Verify(opts); err != nil {
 				response.IsValid = false
@@ -1659,6 +1708,55 @@ type ARPScanResponse struct {
 	Error    string     `json:"error,omitempty"`
 }
 
+// parseUnixARPLine parses a Linux/macOS `arp -a` line of the form
+// "host (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0" and returns the
+// entry, or nil when the line doesn't match (Windows output, headers,
+// "<incomplete>" entries, multicast/broadcast MACs).
+func parseUnixARPLine(line string) *ARPEntry {
+	open := strings.Index(line, "(")
+	closeParen := strings.Index(line, ")")
+	atIdx := strings.Index(line, " at ")
+	if open == -1 || closeParen <= open || atIdx <= closeParen {
+		return nil
+	}
+
+	ipStr := line[open+1 : closeParen]
+	if net.ParseIP(ipStr) == nil {
+		return nil
+	}
+
+	rest := strings.Fields(line[atIdx+4:])
+	if len(rest) == 0 {
+		return nil
+	}
+	mac := canonicalizeMAC(rest[0])
+	if mac == "" || mac == "FF:FF:FF:FF:FF:FF" ||
+		strings.HasPrefix(mac, "01:00:5E") || strings.HasPrefix(mac, "33:33") {
+		return nil
+	}
+
+	iface := ""
+	if onIdx := strings.Index(line, " on "); onIdx != -1 {
+		ifaceFields := strings.Fields(line[onIdx+4:])
+		if len(ifaceFields) > 0 {
+			iface = ifaceFields[0]
+		}
+	}
+
+	entry := &ARPEntry{
+		IP:        ipStr,
+		MAC:       mac,
+		Interface: iface,
+	}
+	normalizedMAC := normalizeMACAddress(mac)
+	if len(normalizedMAC) >= 6 {
+		if vendor, ok := ouiDatabase[normalizedMAC[:6]]; ok {
+			entry.Vendor = vendor
+		}
+	}
+	return entry
+}
+
 // arpScan handles the ARP table scan endpoint
 func arpScan(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -1679,12 +1777,15 @@ func arpScan(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Parse ARP output (Windows format)
-		// Example Windows output:
-		// Interface: 192.168.1.100 --- 0x5
-		//   Internet Address      Physical Address      Type
-		//   192.168.1.1           aa-bb-cc-dd-ee-ff     dynamic
-		//   192.168.1.254         11-22-33-44-55-66     static
+		// Parse ARP output. Two formats exist in the wild:
+		//
+		// Windows:
+		//   Interface: 192.168.1.100 --- 0x5
+		//     Internet Address      Physical Address      Type
+		//     192.168.1.1           aa-bb-cc-dd-ee-ff     dynamic
+		//
+		// Linux / macOS:
+		//   gateway (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0
 
 		lines := strings.Split(string(output), "\n")
 		currentInterface := ""
@@ -1694,6 +1795,12 @@ func arpScan(srv *server.Server) gin.HandlerFunc {
 
 			// Skip empty lines
 			if line == "" {
+				continue
+			}
+
+			// Unix-format line ("host (ip) at mac ... on iface")?
+			if entry := parseUnixARPLine(line); entry != nil {
+				response.Entries = append(response.Entries, *entry)
 				continue
 			}
 
@@ -1779,6 +1886,39 @@ type MTUDiscoveryResponse struct {
 	Error       string `json:"error,omitempty"`
 }
 
+// pingReachabilityCmd builds a single-probe ping for the host OS. The flag
+// sets diverge: Windows uses -n/-w(ms), Linux -c/-W(s), macOS -c/-t(s).
+func pingReachabilityCmd(target string, timeoutSec int) *exec.Cmd {
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command("ping", "-n", "1", "-w", strconv.Itoa(timeoutSec*1000), target)
+	case "darwin":
+		return exec.Command("ping", "-c", "1", "-t", strconv.Itoa(timeoutSec), target)
+	default: // linux and other unix
+		return exec.Command("ping", "-c", "1", "-W", strconv.Itoa(timeoutSec), target)
+	}
+}
+
+// pingDontFragmentCmd builds a single don't-fragment probe of the given
+// payload size for the host OS. The previous implementation always used the
+// Windows flags (-f -l), which on Linux mean flood-ping with preload — the
+// probe failed for unrelated reasons and the binary search reported a bogus
+// minimum MTU.
+func pingDontFragmentCmd(target string, payloadSize, timeoutSec int) *exec.Cmd {
+	size := strconv.Itoa(payloadSize)
+	switch runtime.GOOS {
+	case "windows":
+		// -f = don't fragment, -l = payload size, -w = timeout ms
+		return exec.Command("ping", "-f", "-l", size, "-n", "1", "-w", strconv.Itoa(timeoutSec*1000), target)
+	case "darwin":
+		// -D = set DF bit, -s = payload size, -t = timeout seconds
+		return exec.Command("ping", "-D", "-s", size, "-c", "1", "-t", strconv.Itoa(timeoutSec), target)
+	default: // linux
+		// -M do = prohibit fragmentation, -s = payload size, -W = timeout s
+		return exec.Command("ping", "-M", "do", "-s", size, "-c", "1", "-W", strconv.Itoa(timeoutSec), target)
+	}
+}
+
 // mtuDiscovery handles the MTU discovery endpoint
 func mtuDiscovery(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -1835,9 +1975,7 @@ func mtuDiscovery(srv *server.Server) gin.HandlerFunc {
 		// All numeric arguments to ping are validated above (Timeout 1..10,
 		// MTU 28..9000) so they're safe to format. The target is screened by
 		// validateTarget(); we never pass it through a shell.
-		timeoutMs := strconv.Itoa(req.Timeout * 1000)
-
-		testCmd := exec.Command("ping", "-n", "1", "-w", timeoutMs, req.Target)
+		testCmd := pingReachabilityCmd(req.Target, req.Timeout)
 		if err := testCmd.Run(); err != nil {
 			response.Duration = time.Since(startTime).Nanoseconds()
 			response.Error = "Target is not reachable"
@@ -1849,12 +1987,7 @@ func mtuDiscovery(srv *server.Server) gin.HandlerFunc {
 		for low <= high {
 			mid := (low + high) / 2
 
-			// Windows ping: -f = don't fragment, -l = size, -n = count, -w = timeout in ms
-			cmd := exec.Command("ping", "-f",
-				"-l", strconv.Itoa(mid),
-				"-n", "1",
-				"-w", timeoutMs,
-				req.Target)
+			cmd := pingDontFragmentCmd(req.Target, mid, req.Timeout)
 			err := cmd.Run()
 
 			if err == nil {

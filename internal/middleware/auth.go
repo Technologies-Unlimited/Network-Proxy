@@ -91,6 +91,18 @@ func UpdateProxyID(proxyID string) {
 	}
 }
 
+// UpdatePermissions updates the permission scopes in the global auth context.
+// Needed after the MFA login flow: handleVerifyMFA sets the context before the
+// background registration validates the API key, so the key's scopes arrive
+// later than the rest of the identity.
+func UpdatePermissions(permissions []string) {
+	authMu.Lock()
+	defer authMu.Unlock()
+	if globalAuthContext != nil {
+		globalAuthContext.Permissions = permissions
+	}
+}
+
 // RequireAuth is middleware that ensures the global auth context is set
 // In standalone mode, authentication is bypassed
 func RequireAuth() gin.HandlerFunc {

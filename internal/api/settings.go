@@ -322,6 +322,7 @@ func registerProxyWithThothOS(client *thothos.Client, config *models.ThothOSConf
 	} else {
 		log.Info().Str("webhookId", webhookResult.ID).Msg("Webhook registered with ThothOS")
 		SetWebhookSecret(webhookResult.Secret)
+		PersistWebhookCredentials(srv.DB, webhookResult.ID, webhookResult.Secret)
 	}
 	if err := pullInitialConfigFromClient(client); err != nil {
 		log.Error().Err(err).Msg("Failed to pull initial config from ThothOS")

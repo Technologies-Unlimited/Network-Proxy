@@ -70,11 +70,18 @@ func DNSLookup(ctx context.Context, domain string, recordType DNSRecordType, opt
 	}
 
 	if opts.Nameserver != "" {
+		// Default to port 53 unless the caller already supplied one.
+		// net.JoinHostPort brackets IPv6 literals correctly, which the old
+		// `ns + ":53"` concatenation did not.
+		nsAddr := opts.Nameserver
+		if _, _, err := net.SplitHostPort(nsAddr); err != nil {
+			nsAddr = net.JoinHostPort(nsAddr, "53")
+		}
 		resolver.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
 			d := net.Dialer{
 				Timeout: opts.Timeout,
 			}
-			return d.DialContext(ctx, network, opts.Nameserver+":53")
+			return d.DialContext(ctx, network, nsAddr)
 		}
 	}
 

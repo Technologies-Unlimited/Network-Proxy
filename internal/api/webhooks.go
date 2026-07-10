@@ -14,10 +14,12 @@ import (
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/envcfg"
+	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/thothos"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // WebhookConfig holds the webhook configuration
@@ -41,6 +43,26 @@ func GetWebhookSecret() string {
 	webhookConfig.mu.RLock()
 	defer webhookConfig.mu.RUnlock()
 	return webhookConfig.Secret
+}
+
+// PersistWebhookCredentials stores the webhook ID + secret on the ProxyConfig
+// row (when one exists) so a process restart can verify webhook signatures
+// before — or without — a successful re-registration with ThothOS. The
+// in-memory secret alone is lost on restart, which left a window where every
+// inbound webhook 401'd until re-registration completed. Settings-flow
+// installs without a ProxyConfig row are a no-op; their secret is refreshed
+// by the registration that runs on every boot. Encryption at rest is handled
+// by the model's BeforeSave hook.
+func PersistWebhookCredentials(db *gorm.DB, webhookID, secret string) {
+	var config models.ProxyConfig
+	if err := db.First(&config).Error; err != nil {
+		return
+	}
+	config.WebhookID = webhookID
+	config.WebhookSecret = secret
+	if err := db.Save(&config).Error; err != nil {
+		log.Error().Err(err).Msg("Failed to persist webhook credentials")
+	}
 }
 
 // ConfigCache stores the latest configuration from ThothOS

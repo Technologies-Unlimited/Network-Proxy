@@ -45,8 +45,9 @@ type mfaLimiter struct {
 }
 
 type mfaAttempt struct {
-	failures int
-	notUntil time.Time
+	failures    int
+	notUntil    time.Time
+	lastAttempt time.Time
 }
 
 func newMFALimiter() *mfaLimiter {
@@ -94,6 +95,7 @@ func (l *mfaLimiter) recordFailure(key string) {
 		a = &mfaAttempt{}
 		l.entries[key] = a
 	}
+	a.lastAttempt = time.Now()
 	a.failures++
 	switch {
 	case a.failures >= mfaHardFailures:
@@ -115,10 +117,20 @@ func (l *mfaLimiter) recordSuccess(key string) {
 }
 
 // gcLocked removes entries idle past mfaEntryTTL. Caller must hold l.mu.
+//
+// Expiry keys off the LATEST of (lastAttempt, notUntil). The previous
+// implementation checked only notUntil — which is the zero time until the
+// soft-failure threshold is reached, so every sub-threshold entry was
+// garbage-collected by the very next allow() call and the failure counter
+// could never climb to the throttle threshold at all.
 func (l *mfaLimiter) gcLocked() {
 	now := time.Now()
 	for k, a := range l.entries {
-		if a.notUntil.Before(now.Add(-mfaEntryTTL)) {
+		mostRecent := a.lastAttempt
+		if a.notUntil.After(mostRecent) {
+			mostRecent = a.notUntil
+		}
+		if mostRecent.Before(now.Add(-mfaEntryTTL)) {
 			delete(l.entries, k)
 		}
 	}
@@ -586,6 +598,12 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		Str("apiKeyId", authResult.ApiKeyID).
 		Msg("API key validated for registration")
 
+	// handleVerifyMFA set the global auth context before this background
+	// validation ran, so the key's permission scopes weren't known yet.
+	// Without this, HasPermission()/RequirePermission() deny everything
+	// until the next process restart re-validates the key in main.go.
+	middleware.UpdatePermissions(authResult.Permissions)
+
 	// Get port from environment
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -651,8 +669,10 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 			Str("webhookId", webhookResult.ID).
 			Msg("Webhook registered with ThothOS")
 
-		// Store webhook secret for signature verification
+		// Store webhook secret for signature verification (in memory for
+		// the hot path, on the ProxyConfig row to survive restarts).
 		SetWebhookSecret(webhookResult.Secret)
+		PersistWebhookCredentials(s.db, webhookResult.ID, webhookResult.Secret)
 	}
 
 	// Pull initial configuration

@@ -43,9 +43,11 @@ func guardDiagnosticURL(rawURL string) error {
 		if v4 := ip.To4(); v4 != nil && v4[0] == 169 && v4[1] == 254 {
 			return fmt.Errorf("blocked: %s is in cloud-instance-metadata range 169.254.0.0/16", ip)
 		}
-		// IPv6 cloud metadata (fd00:ec2::254 on AWS).
+		// IPv6 cloud metadata (fd00:ec2::254 on AWS). fd00:ec2::/32 in
+		// bytes is fd 00 0e c2 — the second hextet 0ec2 splits into 0x0e
+		// and 0xc2.
 		if len(ip) == net.IPv6len && ip[0] == 0xfd && ip[1] == 0x00 &&
-			ip[2] == 0xec && ip[3] == 0x2f {
+			ip[2] == 0x0e && ip[3] == 0xc2 {
 			return fmt.Errorf("blocked: %s matches IPv6 metadata fd00:ec2::/32", ip)
 		}
 		return nil

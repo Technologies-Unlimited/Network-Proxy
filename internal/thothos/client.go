@@ -5,11 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+// thothosAcceptsCallbackURL mirrors the validation ThothOS's registerProxy
+// resolver applies to callback URLs: HTTPS only, and the host must not be
+// localhost, a private RFC-1918 range, or link-local. ThothOS throws when
+// the URL fails that check — which would fail the entire proxy
+// registration — so we pre-screen client-side and omit unacceptable URLs.
+func thothosAcceptsCallbackURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" || host == "localhost" || host == "0.0.0.0" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return false
+		}
+	}
+	return true
+}
 
 // Client is the ThothOS API client
 type Client struct {
@@ -207,19 +231,35 @@ func (c *Client) RegisterProxy(input ProxyRegistrationInput) (*ProxyConfig, erro
 		}
 	}`
 
+	registrationInput := map[string]interface{}{
+		"proxyName":   input.ProxyName,
+		"description": input.Description,
+		"supernetId":  input.SupernetID,
+		"subnetId":    input.SubnetID,
+		"ipAddress":   input.IPAddress,
+		"port":        input.Port,
+		"version":     input.Version,
+	}
+	// ThothOS's registerProxy resolver hard-rejects (throws, failing the
+	// whole registration) any callbackUrl that isn't HTTPS on a public,
+	// non-link-local host. The default auto-detected callback is
+	// http://<LAN-IP>:<port>, which can never pass that check — so only
+	// send the callback when it's acceptable, and register without push
+	// webhooks otherwise (config is still pulled on startup).
+	if input.CallbackURL != "" {
+		if thothosAcceptsCallbackURL(input.CallbackURL) {
+			registrationInput["callbackUrl"] = input.CallbackURL
+		} else {
+			log.Warn().
+				Str("callbackUrl", input.CallbackURL).
+				Msg("Callback URL is not public HTTPS; registering proxy without it (ThothOS would reject the registration outright)")
+		}
+	}
+
 	variables := map[string]interface{}{
 		"companyId": c.companyID,
 		"apiKeyId":  c.apiKeyID,
-		"input": map[string]interface{}{
-			"proxyName":   input.ProxyName,
-			"description": input.Description,
-			"supernetId":  input.SupernetID,
-			"subnetId":    input.SubnetID,
-			"ipAddress":   input.IPAddress,
-			"port":        input.Port,
-			"callbackUrl": input.CallbackURL,
-			"version":     input.Version,
-		},
+		"input":     registrationInput,
 	}
 
 	resp, err := c.doGraphQL("network-administration/proxy", query, variables)
@@ -1074,7 +1114,7 @@ func (c *Client) GetIPAddresses() ([]IPAddress, error) {
 		"companyId": c.companyID,
 	}
 
-	resp, err := c.doGraphQL("network-administration/ipam/ipaddress", query, variables)
+	resp, err := c.doGraphQL("network-administration/ipam/ip-address", query, variables)
 	if err != nil {
 		return nil, err
 	}
