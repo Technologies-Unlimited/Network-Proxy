@@ -43,10 +43,6 @@ type ThothOSSessionConfig struct {
 	Description string
 	IPAddress   string
 	Port        int
-	// CallbackURL is the full webhook callback URL registered with the proxy.
-	// RegisterProxy pre-screens it (public-HTTPS only) and drops it otherwise,
-	// so an unreachable LAN callback does not fail registration.
-	CallbackURL string
 	Version     string
 
 	// HeartbeatInterval overrides defaultHeartbeatInterval when > 0. Only tests
@@ -143,11 +139,8 @@ func (s *thothosSession) isActive() bool {
 // on success, launches the initial config pull and the heartbeat loop under a
 // single cancelable context owned by the session manager. Any previously
 // running session is cancelled first, so exactly one heartbeat loop is ever
-// live. It returns the registered proxy config so the caller can perform any
-// follow-on registration that needs the proxy ID (today: webhook registration,
-// which is being removed by a later stage and is therefore intentionally left
-// in the individual call sites). On registration failure it returns the error
-// and starts nothing.
+// live. It returns the registered proxy config so the caller can log/inspect
+// the proxy ID. On registration failure it returns the error and starts nothing.
 func StartThothOSSession(cfg ThothOSSessionConfig) (*thothos.ProxyConfig, error) {
 	proxyConfig, err := cfg.Client.RegisterProxy(thothos.ProxyRegistrationInput{
 		ProxyName:   cfg.ProxyName,
@@ -156,7 +149,9 @@ func StartThothOSSession(cfg ThothOSSessionConfig) (*thothos.ProxyConfig, error)
 		SubnetID:    "default",
 		IPAddress:   cfg.IPAddress,
 		Port:        cfg.Port,
-		CallbackURL: cfg.CallbackURL,
+		// No callback URL: the webhook push channel is removed; config reaches
+		// the proxy via the pull-apply loop instead.
+		CallbackURL: "",
 		Version:     cfg.Version,
 	})
 	if err != nil {

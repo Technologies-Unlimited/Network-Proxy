@@ -17,9 +17,6 @@ func RegisterRoutes(router *gin.Engine, srv *server.Server) {
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 
-	// Register webhook routes BEFORE auth middleware (webhooks verify via HMAC signature)
-	RegisterWebhookRoutes(v1, srv)
-
 	// Public settings: theme bootstrap + redacted connection status only.
 	// Sensitive ThothOS configuration is gated below, under RequireAuth.
 	RegisterPublicSettingsRoutes(v1, srv)

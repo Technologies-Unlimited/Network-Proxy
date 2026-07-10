@@ -929,54 +929,6 @@ func (c *Client) GetSNMPv3PollingTemplates() ([]SNMPv3PollingTemplate, error) {
 	return templates, nil
 }
 
-// RegisterWebhook registers a webhook to receive config updates
-func (c *Client) RegisterWebhook(input WebhookRegistrationInput) (*WebhookRegistrationResponse, error) {
-	query := `mutation registerWebhook($companyId: String!, $input: WebhookInput!) {
-		registerWebhook(companyId: $companyId, input: $input) {
-			_id
-			name
-			callbackUrl
-			events
-			secret
-			isActive
-		}
-	}`
-
-	variables := map[string]interface{}{
-		"companyId": c.companyID,
-		"input": map[string]interface{}{
-			"name":        input.Name,
-			"callbackUrl": input.CallbackURL,
-			"events":      input.Events,
-			"proxyId":     input.ProxyID,
-		},
-	}
-
-	resp, err := c.doGraphQL("network-administration/webhook", query, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	data, ok := resp.Data["registerWebhook"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-
-	webhook := &WebhookRegistrationResponse{}
-	jsonData, _ := json.Marshal(data)
-	if err := json.Unmarshal(jsonData, webhook); err != nil {
-		return nil, fmt.Errorf("failed to parse webhook response: %w", err)
-	}
-
-	log.Info().
-		Str("webhookId", webhook.ID).
-		Str("callbackUrl", webhook.CallbackURL).
-		Strs("events", webhook.Events).
-		Msg("Webhook registered successfully")
-
-	return webhook, nil
-}
-
 // ================================
 // IPAM Methods
 // ================================

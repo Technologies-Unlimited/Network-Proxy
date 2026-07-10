@@ -184,15 +184,6 @@ type SNMPv3PollingTemplate struct {
 	DowntimeTrigger  TimeInterval `json:"downtimeTrigger"`
 }
 
-// WebhookPayload is the payload received from ThothOS webhooks
-type WebhookPayload struct {
-	Event     string                 `json:"event"`
-	Timestamp string                 `json:"timestamp"`
-	CompanyID string                 `json:"companyId"`
-	ProxyID   string                 `json:"proxyId,omitempty"`
-	Data      map[string]interface{} `json:"data"`
-}
-
 // GraphQLRequest is a generic GraphQL request
 type GraphQLRequest struct {
 	Query     string                 `json:"query"`
@@ -234,24 +225,6 @@ type HeartbeatStatus struct {
 	Version     string `json:"version,omitempty"`
 	AgentCount  int    `json:"agentCount,omitempty"`
 	DeviceCount int    `json:"deviceCount,omitempty"`
-}
-
-// WebhookRegistrationInput is the input for registering a webhook
-type WebhookRegistrationInput struct {
-	Name        string   `json:"name"`
-	CallbackURL string   `json:"callbackUrl"`
-	Events      []string `json:"events"`
-	ProxyID     string   `json:"proxyId,omitempty"`
-}
-
-// WebhookRegistrationResponse is the response from registering a webhook
-type WebhookRegistrationResponse struct {
-	ID          string   `json:"_id"`
-	Name        string   `json:"name"`
-	CallbackURL string   `json:"callbackUrl"`
-	Events      []string `json:"events"`
-	Secret      string   `json:"secret"` // Only returned on creation
-	IsActive    bool     `json:"isActive"`
 }
 
 // ================================

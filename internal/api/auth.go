@@ -623,18 +623,11 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		portNum = 8080
 	}
 
-	// Get callback URL
-	callbackURL := os.Getenv("PROXY_CALLBACK_URL")
-	if callbackURL == "" {
-		localIP := getOutboundIP()
-		callbackURL = fmt.Sprintf("http://%s:%s", localIP, port)
-	}
-	webhookCallbackURL := fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL)
-
-	// Register the proxy AND start the heartbeat + config-pull session. Before
-	// this shared routine existed, the login flow registered but never started
-	// the heartbeat, so a proxy connected via the wizard showed "online" with
-	// frozen counts until a process restart.
+	// Register the proxy AND start the heartbeat + config-pull/apply session.
+	// Before this shared routine existed, the login flow registered but never
+	// started the heartbeat, so a proxy connected via the wizard showed "online"
+	// with frozen counts until a process restart. Config reaches the proxy via
+	// the session's pull-apply loop, not a webhook push (that channel is removed).
 	proxyConfig, err := StartThothOSSession(ThothOSSessionConfig{
 		Client:      client,
 		DB:          s.db,
@@ -642,7 +635,6 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		Description: "Network Monitor Proxy registered via login",
 		IPAddress:   getOutboundIP(),
 		Port:        portNum,
-		CallbackURL: webhookCallbackURL,
 		Version:     "1.0.0",
 	})
 	if err != nil {
@@ -654,28 +646,6 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		Str("proxyId", proxyConfig.ID).
 		Str("proxyName", proxyConfig.ProxyName).
 		Msg("Proxy registered with ThothOS")
-
-	// Register webhook for config updates (unchanged; a later stage removes the
-	// push channel). Runs after the session is live so it never blocks liveness.
-	webhookResult, err := client.RegisterWebhook(thothos.WebhookRegistrationInput{
-		Name:        fmt.Sprintf("config-sync-%s", proxyConfig.ID),
-		CallbackURL: webhookCallbackURL,
-		Events:      []string{"config.sync", "snmp.template.updated", "icmp.template.updated"},
-		ProxyID:     proxyConfig.ID,
-	})
-
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to register webhook with ThothOS")
-	} else {
-		log.Info().
-			Str("webhookId", webhookResult.ID).
-			Msg("Webhook registered with ThothOS")
-
-		// Store webhook secret for signature verification (in memory for
-		// the hot path, on the ProxyConfig row to survive restarts).
-		SetWebhookSecret(webhookResult.Secret)
-		PersistWebhookCredentials(s.db, webhookResult.ID, webhookResult.Secret)
-	}
 
 	log.Info().Msg("ThothOS registration complete")
 }

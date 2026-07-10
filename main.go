@@ -204,12 +204,6 @@ func runServer(cmd *cobra.Command, args []string) {
 			if savedConfig.ProxyName != "" {
 				proxyName = savedConfig.ProxyName
 			}
-			// Restore the persisted webhook secret immediately so inbound
-			// webhooks verify even if the re-registration below fails or is
-			// still in flight. A successful re-registration replaces it.
-			if savedConfig.WebhookSecret != "" {
-				api.SetWebhookSecret(savedConfig.WebhookSecret)
-			}
 		}
 	}
 
@@ -218,9 +212,6 @@ func runServer(cmd *cobra.Command, args []string) {
 		hostname, _ := os.Hostname()
 		proxyName = fmt.Sprintf("Network-Monitor-%s", hostname)
 	}
-
-	// Auto-detect callback URL
-	callbackURL := ""
 
 	// Initialize ThothOS connection if configured
 	var thothosClient *thothos.Client
@@ -247,17 +238,11 @@ func runServer(cmd *cobra.Command, args []string) {
 			})
 
 			// Register this proxy with ThothOS and start the heartbeat +
-			// config-pull session under a cancelable context. This is the same
-			// routine the login and settings-connect flows call, so all three
-			// entry points bring the proxy fully online (register -> pull ->
-			// heartbeat) rather than only the boot path.
-			if callbackURL == "" {
-				localIP := netutil.OutboundIP()
-				callbackURL = fmt.Sprintf("http://%s:%d", localIP, serverPort)
-			}
-
-			webhookCallbackURL := fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL)
-
+			// config-pull/apply session under a cancelable context. This is the
+			// same routine the login and settings-connect flows call, so all
+			// three entry points bring the proxy fully online (register -> apply
+			// config -> heartbeat + periodic re-apply) rather than only the boot
+			// path. Config now flows via the pull-apply loop, not a webhook push.
 			proxyConfig, err := api.StartThothOSSession(api.ThothOSSessionConfig{
 				Client:      thothosClient,
 				DB:          db,
@@ -265,7 +250,6 @@ func runServer(cmd *cobra.Command, args []string) {
 				Description: fmt.Sprintf("Network Monitor Proxy v%s", version),
 				IPAddress:   netutil.OutboundIP(),
 				Port:        serverPort,
-				CallbackURL: webhookCallbackURL,
 				Version:     version,
 			})
 			if err != nil {
@@ -275,25 +259,6 @@ func runServer(cmd *cobra.Command, args []string) {
 					Str("proxyId", proxyConfig.ID).
 					Str("proxyName", proxyConfig.ProxyName).
 					Msg("Proxy registered with ThothOS")
-
-				// Webhook registration is left as-is (a later stage removes the
-				// push channel entirely); it runs after the session is live so
-				// a webhook failure never blocks the heartbeat.
-				webhookResult, err := thothosClient.RegisterWebhook(thothos.WebhookRegistrationInput{
-					Name:        fmt.Sprintf("config-sync-%s", proxyConfig.ID),
-					CallbackURL: webhookCallbackURL,
-					Events:      []string{"config.sync", "snmp.template.updated", "icmp.template.updated"},
-					ProxyID:     proxyConfig.ID,
-				})
-				if err != nil {
-					log.Error().Err(err).Msg("Failed to register webhook with ThothOS")
-				} else {
-					log.Info().
-						Str("webhookId", webhookResult.ID).
-						Msg("Webhook registered with ThothOS")
-					api.SetWebhookSecret(webhookResult.Secret)
-					api.PersistWebhookCredentials(db, webhookResult.ID, webhookResult.Secret)
-				}
 			}
 		}
 	} else {
