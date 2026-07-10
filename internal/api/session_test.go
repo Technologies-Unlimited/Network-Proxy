@@ -102,10 +102,13 @@ func stopSessionOnCleanup(t *testing.T) {
 func TestSettingsConnectStartsHeartbeat(t *testing.T) {
 	fake := newFakeThothOS(t)
 	shrinkHeartbeatInterval(t, 25*time.Millisecond)
-	stopSessionOnCleanup(t)
 
 	db := newTestDB(t)
 	srv := &server.Server{DB: db}
+	// Register the session-stop cleanup AFTER newTestDB so it runs BEFORE the
+	// DB is closed (t.Cleanup is LIFO): the loop is drained before its DB goes
+	// away, so no straggler heartbeat races a closed handle.
+	stopSessionOnCleanup(t)
 
 	client := thothos.NewClient(fake.server.URL, "tk_test")
 	if _, err := client.ValidateAPIKey(); err != nil {
@@ -139,10 +142,12 @@ func TestSettingsConnectStartsHeartbeat(t *testing.T) {
 func TestDisconnectCancelsHeartbeatAndClearsFallback(t *testing.T) {
 	fake := newFakeThothOS(t)
 	shrinkHeartbeatInterval(t, 25*time.Millisecond)
-	stopSessionOnCleanup(t)
 
 	db := newTestDB(t)
 	srv := &server.Server{DB: db}
+	// Register session-stop AFTER newTestDB (LIFO) so the loop drains before
+	// the DB closes.
+	stopSessionOnCleanup(t)
 
 	// Seed BOTH persisted fallbacks a restart's boot would use to auto-connect:
 	// the MFA-login ProxyConfig row AND the settings-connect Settings config.
