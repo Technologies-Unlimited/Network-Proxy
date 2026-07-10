@@ -63,26 +63,42 @@ func (c *Collector) RemoveDevice(deviceID string) {
 	}
 }
 
-// SetInterval sets the polling interval
+// SetInterval sets the polling interval. Guarded by mu because Start's run
+// loop re-reads it every cycle, so a ThothOS polling-template frequency can
+// retune a LIVE collector (previously the ticker was fixed at Start and
+// SetInterval was inert).
 func (c *Collector) SetInterval(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	c.mu.Lock()
 	c.interval = interval
+	c.mu.Unlock()
 }
 
-// Start begins polling devices
-func (c *Collector) Start(ctx context.Context) {
-	ticker := time.NewTicker(c.interval)
-	defer ticker.Stop()
+// GetInterval returns the current polling interval.
+func (c *Collector) GetInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.interval
+}
 
-	log.Info().Dur("interval", c.interval).Msg("SNMP collector started")
+// Start begins polling devices. The loop re-reads the interval each cycle so a
+// SetInterval call from the config-apply step retunes the cadence on the next
+// cycle instead of being ignored.
+func (c *Collector) Start(ctx context.Context) {
+	log.Info().Dur("interval", c.GetInterval()).Msg("SNMP collector started")
 
 	// Initial poll
 	c.pollAllDevices(ctx)
 
 	for {
+		timer := time.NewTimer(c.GetInterval())
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			c.pollAllDevices(ctx)
 		case <-ctx.Done():
+			timer.Stop()
 			log.Info().Msg("SNMP collector stopped")
 			return
 		}

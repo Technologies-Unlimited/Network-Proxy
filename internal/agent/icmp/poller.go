@@ -12,22 +12,37 @@ import (
 	"gorm.io/gorm"
 )
 
+// Default poll parameters. These are the fallbacks used until a ThothOS
+// polling template overrides them via SetInterval / SetPingParams — the
+// hardcoded values are now DEFAULTS, not the only truth.
+const (
+	defaultICMPInterval = 60 * time.Second
+	defaultPingCount    = 4
+	defaultPingTimeout  = 5 * time.Second
+)
+
 // Collector handles ICMP ping polling for devices
 type Collector struct {
-	metrics  *metrics.Registry
-	db       *gorm.DB
-	devices  map[string]*models.Device
-	mu       sync.RWMutex
-	interval time.Duration
+	metrics *metrics.Registry
+	db      *gorm.DB
+	devices map[string]*models.Device
+	mu      sync.RWMutex
+	// interval, pingCount and pingTimeout are read under mu so the config-apply
+	// step can retune the LIVE poller (the run loop re-reads them every cycle).
+	interval    time.Duration
+	pingCount   int
+	pingTimeout time.Duration
 }
 
 // NewCollector creates a new ICMP collector
 func NewCollector(registry *metrics.Registry, db *gorm.DB) *Collector {
 	return &Collector{
-		metrics:  registry,
-		db:       db,
-		devices:  make(map[string]*models.Device),
-		interval: 60 * time.Second, // Default 60 second interval
+		metrics:     registry,
+		db:          db,
+		devices:     make(map[string]*models.Device),
+		interval:    defaultICMPInterval,
+		pingCount:   defaultPingCount,
+		pingTimeout: defaultPingTimeout,
 	}
 }
 
@@ -49,9 +64,44 @@ func (c *Collector) RemoveDevice(deviceID string) {
 	}
 }
 
-// SetInterval sets the polling interval
+// SetInterval sets the polling interval. Guarded by mu because Start's run
+// loop re-reads the interval every cycle — this is what makes a ThothOS
+// polling-template frequency actually retune a LIVE collector (previously the
+// ticker was created once at Start and SetInterval had no effect on it).
 func (c *Collector) SetInterval(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	c.mu.Lock()
 	c.interval = interval
+	c.mu.Unlock()
+}
+
+// GetInterval returns the current polling interval.
+func (c *Collector) GetInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.interval
+}
+
+// SetPingParams overrides the per-ping count and timeout (from a ThothOS
+// polling template). Zero/negative values leave the current value unchanged.
+func (c *Collector) SetPingParams(count int, timeout time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if count > 0 {
+		c.pingCount = count
+	}
+	if timeout > 0 {
+		c.pingTimeout = timeout
+	}
+}
+
+// pingParams returns the current per-ping count and timeout under the lock.
+func (c *Collector) pingParams() (int, time.Duration) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.pingCount, c.pingTimeout
 }
 
 // Start begins polling devices.
@@ -59,21 +109,24 @@ func (c *Collector) SetInterval(interval time.Duration) {
 // Probes the local raw-socket privilege once at startup. If the platform
 // can't open the right socket type, the collector logs loudly and continues
 // (every ping will still fail; the operator at least knows why).
+//
+// The loop re-reads the interval each cycle (via a per-cycle timer rather than
+// a fixed ticker) so a SetInterval call from the config-apply step retunes the
+// cadence on the NEXT cycle instead of being silently ignored.
 func (c *Collector) Start(ctx context.Context) {
 	checkPrivilegeOnce()
 
-	ticker := time.NewTicker(c.interval)
-	defer ticker.Stop()
-
-	log.Info().Dur("interval", c.interval).Msg("ICMP collector started")
+	log.Info().Dur("interval", c.GetInterval()).Msg("ICMP collector started")
 
 	c.pollAllDevices(ctx)
 
 	for {
+		timer := time.NewTimer(c.GetInterval())
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			c.pollAllDevices(ctx)
 		case <-ctx.Done():
+			timer.Stop()
 			log.Info().Msg("ICMP collector stopped")
 			return
 		}
@@ -145,8 +198,11 @@ func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
 	// Windows requires SetPrivileged(true) to avoid socket errors
 	// Despite the name, this works on Windows 10 without admin privileges
 	pinger.SetPrivileged(true)
-	pinger.Count = 4
-	pinger.Timeout = 5 * time.Second
+	// Count/timeout come from the collector's current config (a ThothOS
+	// polling template can override the 4-ping / 5s defaults).
+	count, timeout := c.pingParams()
+	pinger.Count = count
+	pinger.Timeout = timeout
 
 	startTime := time.Now()
 	// RunWithContext returns when the ping completes OR ctx is cancelled,
