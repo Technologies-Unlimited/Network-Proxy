@@ -21,9 +21,10 @@ Network Monitor supports two operating modes:
 When connected to ThothOS (technologiesunlimited.net), Network Monitor operates as a distributed proxy:
 
 - **Multi-tenant support** - Each company has isolated data and configuration
-- **Centralized management** - SNMP templates, ICMP templates, and IPAM data synced from ThothOS
-- **Bidirectional OID sync** - OIDs created locally sync to ThothOS and vice versa
-- **Webhook notifications** - Real-time configuration updates pushed from ThothOS
+- **Centralized management** - SNMP templates, ICMP templates, and IPAM data pulled from ThothOS
+- **Pull-based config sync** - The proxy re-pulls templates, OIDs, and IPAM data on a jittered 60-120s ticker and **applies** them to the live SQLite store and the running collectors (no webhook receiver; the proxy keeps a persisted local copy so it keeps polling during a ThothOS outage)
+- **Results reported up to ThothOS** - The proxy batches each device's latest status (up/down), latency, and packet loss and posts them to ThothOS every 30s, so a down device on the buyer's LAN is visible in the dashboard
+- **OID sync (push-up)** - OIDs created/edited locally are pushed to ThothOS; a ThothOS→proxy down-sync channel is not yet wired
 - **User authentication** - Login through ThothOS with MFA support
 
 ```
@@ -35,14 +36,16 @@ When connected to ThothOS (technologiesunlimited.net), Network Monitor operates 
 │  ├── IPAM (Supernets, Subnets, Pools, VLANs)               │
 │  └── User & API key management                              │
 └────────────────────────┬────────────────────────────────────┘
-                         │ GraphQL API + Webhooks
-                         ▼
+              GraphQL API │ ▲ results (reportMonitoringResults)
+   config pull + heartbeat│ │ every 30s
+                         ▼ │
 ┌─────────────────────────────────────────────────────────────┐
 │           Network Monitor Proxy                             │
-│  ├── Local SQLite cache                                     │
+│  ├── Local SQLite store (applied config, persisted)         │
 │  ├── Real-time polling (SNMP/ICMP)                         │
 │  ├── Distributed nodes via gRPC                            │
-│  └── Results reported back to ThothOS                       │
+│  ├── 60-120s config pull + apply ticker                     │
+│  └── 30s results reporter (status/latency/loss up)          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +66,7 @@ To enable standalone mode, either:
 
 - **Distributed Node Architecture** - Central server with multiple monitoring nodes connected via gRPC
 - **High-Speed Bandwidth Testing** - 10+ Gbps throughput with 6 parallel gRPC streams
-- **Real-time ICMP Monitoring** - Raw socket ping monitoring for 100,000+ devices
+- **ICMP Monitoring** - Raw socket ping monitoring (~1,200-2,000 devices per 60s cycle per proxy; scale horizontally by adding proxies/nodes)
 - **SNMP Polling** - SNMPv2c and SNMPv3 support with template-based polling
 - **MIB Browser** - Interactive SNMP browser with GET, GETNEXT, and WALK operations
 - **OID Template Library** - Import 4,400+ pre-defined OIDs from Zabbix templates
@@ -100,7 +103,7 @@ Network Monitor includes a comprehensive OID template library based on Zabbix's 
 2. Click **Load Template Library** to browse vendors
 3. Select a vendor to see available templates
 4. Import individual OIDs or bulk import by vendor
-5. Imported OIDs sync to ThothOS (in integrated mode)
+5. Imported OIDs are pushed up to ThothOS (in integrated mode)
 
 ## Architecture
 
@@ -139,7 +142,7 @@ Download and install Go 1.21+ from [https://go.dev/dl/](https://go.dev/dl/)
 Open PowerShell and run:
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/Technologies-Unlimited/Network-Monitor/archive/refs/heads/production.zip" -OutFile "Network-Monitor.zip"
+Invoke-WebRequest -Uri "https://github.com/Technologies-Unlimited/Network-Monitor/archive/refs/tags/v1.1.0.zip" -OutFile "Network-Monitor.zip"
 ```
 
 ### Step III: Extract the Archive
@@ -151,7 +154,7 @@ Expand-Archive -Path Network-Monitor.zip -DestinationPath .
 ### Step IV: Build the Application
 
 ```powershell
-cd Network-Monitor-production
+cd Network-Monitor-1.1.0
 go build -o network-monitor.exe .
 ```
 
@@ -253,13 +256,16 @@ The Tools page provides 14 network diagnostic utilities:
 
 When connected to ThothOS, the following data is synchronized:
 
-| Data Type | Direction | Description |
-|-----------|-----------|-------------|
-| **SNMP Templates** | ThothOS → Local | SNMPv2/v3 polling templates |
-| **ICMP Templates** | ThothOS → Local | Ping monitoring templates |
-| **OIDs** | Bidirectional | SNMP object identifiers |
-| **IPAM Data** | ThothOS → Local | Supernets, subnets, pools, VLANs, IPs |
-| **Device Status** | Local → ThothOS | Heartbeat with device/node counts |
+| Data Type | Direction | Cadence | Description |
+|-----------|-----------|---------|-------------|
+| **SNMP Templates** | ThothOS → Local | 60-120s pull + apply | SNMPv2/v3 polling templates, applied to the live collectors |
+| **ICMP Templates** | ThothOS → Local | 60-120s pull + apply | Ping monitoring templates, applied to the live collectors |
+| **IPAM Data** | ThothOS → Local | 60-120s pull | Supernets, subnets, pools, VLANs, IPs (offset-paginated, 1000/page — no silent truncation) |
+| **OIDs** | Local → ThothOS (push-up) | on create/edit | SNMP object identifiers; ThothOS→proxy down-sync is not yet wired |
+| **Heartbeat** | Local → ThothOS | ~60s | Liveness + device/node counts (`proxyHeartbeat`) |
+| **Monitoring Results** | Local → ThothOS | 30s batch | Per-device up/down status, latency, and packet loss (`reportMonitoringResults`); companyId is injected server-side from the API key |
+
+Config transfer is pull-based on a jittered 60-120s ticker (the previous webhook-push receiver was removed). Each pull **applies** the fetched config to the local SQLite store and the running collectors, and the persisted copy lets the proxy keep polling during a ThothOS outage.
 
 ### API Key Permissions
 
@@ -269,8 +275,8 @@ ThothOS API keys support fine-grained permissions:
 - `snmp:read/write` - SNMP template and OID management
 - `icmp:read/write` - ICMP template management
 - `ipam:read/write` - IP address management
-- `config:read/write` - Configuration synchronization
-- `webhook:register` - Webhook registration for real-time updates
+- `config:read/write` - Configuration synchronization (pull)
+- `metrics:write` - Reporting monitoring results up to ThothOS
 
 ## Distributed Bandwidth Testing
 
@@ -469,9 +475,14 @@ GOOS=darwin GOARCH=amd64 go build -o network-monitor-macos-intel .
 ## Performance
 
 - **10+ Gbps** bandwidth testing between nodes
-- **100,000+ devices** supported per server
-- **Sub-second polling** with raw ICMP sockets
+- **~1,200-2,000 devices per proxy** on a default 60s ICMP cycle (100 concurrent pings × ~3-5s per device); scale beyond that horizontally by adding proxies/nodes
+- **60s default ICMP interval** with raw ICMP sockets (per-device intervals configurable)
 - **~100MB RAM** base usage
+
+> Design ceiling, honestly stated: a single proxy pings with a 100-slot concurrency
+> semaphore, so one 60s cycle drains roughly 1,200-2,000 devices before the interval
+> starts to stretch. Larger estates are served by running additional proxies/nodes,
+> not by driving one proxy toward 100k simultaneous pings.
 
 ## Acknowledgments
 
