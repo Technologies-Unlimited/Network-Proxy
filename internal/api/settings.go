@@ -267,11 +267,12 @@ func connectToThothOS(srv *server.Server) gin.HandlerFunc {
 
 func disconnectFromThothOS(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if err := models.ClearThothOSConfig(srv.DB); err != nil {
-			log.Error().Err(err).Msg("Failed to clear ThothOS configuration")
-		}
-		middleware.SetGlobalAuthContext(nil)
-		middleware.SetStandaloneMode(true)
+		// Real disconnect: cancel the live heartbeat/config-pull loop, delete
+		// BOTH persisted fallbacks (Settings config + ProxyConfig row) so a
+		// restart cannot silently reconnect, and flip to standalone. Previously
+		// this only cleared the Settings config, leaving the heartbeat loop
+		// running and any ProxyConfig row intact — a cosmetic disconnect.
+		teardownThothOSSession(srv.DB)
 		log.Info().Msg("Disconnected from ThothOS")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Disconnected from ThothOS. Running in standalone mode."})
 	}
@@ -292,14 +293,20 @@ func registerProxyWithThothOS(client *thothos.Client, config *models.ThothOSConf
 		localIP := getSettingsOutboundIP()
 		callbackURL = fmt.Sprintf("http://%s:%s", localIP, port)
 	}
-	proxyConfig, err := client.RegisterProxy(thothos.ProxyRegistrationInput{
+	webhookCallbackURL := fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL)
+
+	// Register the proxy AND start the heartbeat + config-pull session. Before
+	// this shared routine existed, the settings-connect flow registered but
+	// never started the heartbeat, so the wizard's happy path showed the proxy
+	// "online" with frozen counts until a process restart.
+	proxyConfig, err := StartThothOSSession(ThothOSSessionConfig{
+		Client:      client,
+		DB:          srv.DB,
 		ProxyName:   config.ProxyName,
 		Description: "Network Monitor Proxy",
-		SupernetID:  "default",
-		SubnetID:    "default",
 		IPAddress:   getSettingsOutboundIP(),
 		Port:        portNum,
-		CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
+		CallbackURL: webhookCallbackURL,
 		Version:     "1.0.0",
 	})
 	if err != nil {
@@ -310,10 +317,11 @@ func registerProxyWithThothOS(client *thothos.Client, config *models.ThothOSConf
 		Str("proxyId", proxyConfig.ID).
 		Str("proxyName", proxyConfig.ProxyName).
 		Msg("Proxy registered with ThothOS")
-	middleware.UpdateProxyID(proxyConfig.ID)
+	// Webhook registration is unchanged (a later stage removes the push
+	// channel); it runs after the session is live so it never blocks liveness.
 	webhookResult, err := client.RegisterWebhook(thothos.WebhookRegistrationInput{
 		Name:        fmt.Sprintf("config-sync-%s", proxyConfig.ID),
-		CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
+		CallbackURL: webhookCallbackURL,
 		Events:      []string{"config.sync", "snmp.template.updated", "icmp.template.updated"},
 		ProxyID:     proxyConfig.ID,
 	})
@@ -323,9 +331,6 @@ func registerProxyWithThothOS(client *thothos.Client, config *models.ThothOSConf
 		log.Info().Str("webhookId", webhookResult.ID).Msg("Webhook registered with ThothOS")
 		SetWebhookSecret(webhookResult.Secret)
 		PersistWebhookCredentials(srv.DB, webhookResult.ID, webhookResult.Secret)
-	}
-	if err := pullInitialConfigFromClient(client); err != nil {
-		log.Error().Err(err).Msg("Failed to pull initial config from ThothOS")
 	}
 	log.Info().Msg("ThothOS registration complete")
 }

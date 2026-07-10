@@ -52,6 +52,7 @@ type ThothOSSessionConfig struct {
 type thothosSession struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
+	done   chan struct{}
 	gen    uint64
 	active bool
 }
@@ -68,7 +69,9 @@ func (s *thothosSession) start(action func(ctx context.Context)) {
 		s.cancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	s.cancel = cancel
+	s.done = done
 	s.gen++
 	myGen := s.gen
 	s.active = true
@@ -84,9 +87,27 @@ func (s *thothosSession) start(action func(ctx context.Context)) {
 				s.cancel = nil
 			}
 			s.mu.Unlock()
+			close(done)
 		}()
 		action(ctx)
 	})
+}
+
+// waitStopped blocks until the currently-tracked loop goroutine has fully
+// exited (including any in-flight heartbeat) or timeout elapses. Used for
+// deterministic teardown in tests and could back a future graceful-shutdown
+// wait; production StopThothOSSession stays non-blocking.
+func (s *thothosSession) waitStopped(timeout time.Duration) {
+	s.mu.Lock()
+	done := s.done
+	s.mu.Unlock()
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
 }
 
 // stop cancels the running loop (if any) and marks the session inactive

@@ -438,6 +438,13 @@ func (s *AuthService) handleVerifyMFA(c *gin.Context) {
 		UserName:  thothosResp.UserName,
 	})
 
+	// Flip out of standalone the moment we have a validated identity. Without
+	// this the process stays in the hybrid state it booted in (standalone=true
+	// when no config existed at boot): RequireAuth would bypass auth even
+	// though a real auth context now exists, and the visible dataset would
+	// silently flip on the next restart (which boots with standalone=false).
+	middleware.SetStandaloneMode(false)
+
 	// Trigger ThothOS registration in background
 	go s.registerWithThothOS(&config)
 
@@ -562,16 +569,17 @@ func constantTimeEqual(a, b string) bool {
 	return diff == 0
 }
 
-// handleLogout clears the authentication configuration
+// handleLogout clears the authentication configuration and returns the process
+// to standalone mode. Flipping to standalone (rather than leaving auth context
+// nil while standalone stays false) is what un-bricks a logged-out integrated
+// server: RequireAuth would otherwise 401 every /api/v1 route — including the
+// settings reconnect endpoints — leaving no in-product way back to connected.
+// The login endpoints live outside RequireAuth and were always reachable; the
+// settings reconnect endpoints become reachable again in standalone.
 func (s *AuthService) handleLogout(c *gin.Context) {
-	if err := s.db.Unscoped().Where("id > ?", 0).Delete(&models.ProxyConfig{}).Error; err != nil {
-		log.Error().Err(err).Msg("Failed to clear ProxyConfig on logout")
-	}
+	teardownThothOSSession(s.db)
 
-	// Clear global auth context
-	middleware.SetGlobalAuthContext(nil)
-
-	log.Info().Msg("Logged out, configuration cleared")
+	log.Info().Msg("Logged out, configuration cleared, standalone mode enabled")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -621,19 +629,22 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		localIP := getOutboundIP()
 		callbackURL = fmt.Sprintf("http://%s:%s", localIP, port)
 	}
+	webhookCallbackURL := fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL)
 
-	// Register the proxy
-	proxyConfig, err := client.RegisterProxy(thothos.ProxyRegistrationInput{
+	// Register the proxy AND start the heartbeat + config-pull session. Before
+	// this shared routine existed, the login flow registered but never started
+	// the heartbeat, so a proxy connected via the wizard showed "online" with
+	// frozen counts until a process restart.
+	proxyConfig, err := StartThothOSSession(ThothOSSessionConfig{
+		Client:      client,
+		DB:          s.db,
 		ProxyName:   config.ProxyName,
 		Description: "Network Monitor Proxy registered via login",
-		SupernetID:  "default",
-		SubnetID:    "default",
 		IPAddress:   getOutboundIP(),
 		Port:        portNum,
-		CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
+		CallbackURL: webhookCallbackURL,
 		Version:     "1.0.0",
 	})
-
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to register proxy with ThothOS")
 		return
@@ -644,20 +655,11 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		Str("proxyName", proxyConfig.ProxyName).
 		Msg("Proxy registered with ThothOS")
 
-	// Update the proxy ID in the config
-	now := time.Now()
-	s.db.Model(config).Updates(map[string]interface{}{
-		"proxy_id":       proxyConfig.ID,
-		"last_validated": now,
-	})
-
-	// Update the global auth context with proxy ID
-	middleware.UpdateProxyID(proxyConfig.ID)
-
-	// Register webhook for config updates
+	// Register webhook for config updates (unchanged; a later stage removes the
+	// push channel). Runs after the session is live so it never blocks liveness.
 	webhookResult, err := client.RegisterWebhook(thothos.WebhookRegistrationInput{
 		Name:        fmt.Sprintf("config-sync-%s", proxyConfig.ID),
-		CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
+		CallbackURL: webhookCallbackURL,
 		Events:      []string{"config.sync", "snmp.template.updated", "icmp.template.updated"},
 		ProxyID:     proxyConfig.ID,
 	})
@@ -673,11 +675,6 @@ func (s *AuthService) registerWithThothOS(config *models.ProxyConfig) {
 		// the hot path, on the ProxyConfig row to survive restarts).
 		SetWebhookSecret(webhookResult.Secret)
 		PersistWebhookCredentials(s.db, webhookResult.ID, webhookResult.Secret)
-	}
-
-	// Pull initial configuration
-	if err := pullInitialConfigFromClient(client); err != nil {
-		log.Error().Err(err).Msg("Failed to pull initial config from ThothOS")
 	}
 
 	log.Info().Msg("ThothOS registration complete")

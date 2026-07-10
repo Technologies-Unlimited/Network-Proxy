@@ -50,9 +50,9 @@ var (
 	buildTime  = "unknown"
 )
 
-// Server constants
+// Server constants. The ThothOS heartbeat interval lives with the session
+// lifecycle in internal/api (defaultHeartbeatInterval).
 const (
-	heartbeatInterval       = 60 * time.Second
 	nodeStatusCheckInterval = 30 * time.Second
 	nodeOfflineTimeout      = 5 * time.Minute
 	nodeStaleTimeout        = 15 * time.Minute
@@ -246,20 +246,26 @@ func runServer(cmd *cobra.Command, args []string) {
 				Permissions: authResult.Permissions,
 			})
 
-			// Register this proxy with ThothOS
+			// Register this proxy with ThothOS and start the heartbeat +
+			// config-pull session under a cancelable context. This is the same
+			// routine the login and settings-connect flows call, so all three
+			// entry points bring the proxy fully online (register -> pull ->
+			// heartbeat) rather than only the boot path.
 			if callbackURL == "" {
 				localIP := netutil.OutboundIP()
 				callbackURL = fmt.Sprintf("http://%s:%d", localIP, serverPort)
 			}
 
-			proxyConfig, err := thothosClient.RegisterProxy(thothos.ProxyRegistrationInput{
+			webhookCallbackURL := fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL)
+
+			proxyConfig, err := api.StartThothOSSession(api.ThothOSSessionConfig{
+				Client:      thothosClient,
+				DB:          db,
 				ProxyName:   proxyName,
 				Description: fmt.Sprintf("Network Monitor Proxy v%s", version),
-				SupernetID:  "default",
-				SubnetID:    "default",
 				IPAddress:   netutil.OutboundIP(),
 				Port:        serverPort,
-				CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
+				CallbackURL: webhookCallbackURL,
 				Version:     version,
 			})
 			if err != nil {
@@ -270,11 +276,12 @@ func runServer(cmd *cobra.Command, args []string) {
 					Str("proxyName", proxyConfig.ProxyName).
 					Msg("Proxy registered with ThothOS")
 
-				middleware.UpdateProxyID(proxyConfig.ID)
-
+				// Webhook registration is left as-is (a later stage removes the
+				// push channel entirely); it runs after the session is live so
+				// a webhook failure never blocks the heartbeat.
 				webhookResult, err := thothosClient.RegisterWebhook(thothos.WebhookRegistrationInput{
 					Name:        fmt.Sprintf("config-sync-%s", proxyConfig.ID),
-					CallbackURL: fmt.Sprintf("%s/api/v1/webhooks/config-update", callbackURL),
+					CallbackURL: webhookCallbackURL,
 					Events:      []string{"config.sync", "snmp.template.updated", "icmp.template.updated"},
 					ProxyID:     proxyConfig.ID,
 				})
@@ -287,16 +294,6 @@ func runServer(cmd *cobra.Command, args []string) {
 					api.SetWebhookSecret(webhookResult.Secret)
 					api.PersistWebhookCredentials(db, webhookResult.ID, webhookResult.Secret)
 				}
-
-				safego.Go("thothos-initial-config", func() {
-					if err := pullInitialConfig(thothosClient); err != nil {
-						log.Error().Err(err).Msg("Failed to pull initial config from ThothOS")
-					}
-				})
-
-				safego.Go("thothos-heartbeat", func() {
-					startHeartbeat(thothosClient, serverPort, db)
-				})
 			}
 		}
 	} else {
@@ -496,7 +493,9 @@ func runServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Now stop background workers. Cancel their contexts and give them up
-	// to 5s each to drain.
+	// to 5s each to drain. Stop the ThothOS heartbeat/config-pull session too
+	// so no stray heartbeat fires during shutdown drain.
+	api.StopThothOSSession()
 	cancelCollectors()
 	cancelAlerts()
 	cancelNodeMon()
@@ -685,82 +684,6 @@ func findSubstring(s, substr string) int {
 		}
 	}
 	return -1
-}
-
-func pullInitialConfig(client *thothos.Client) error {
-	log.Info().Msg("Pulling initial configuration from ThothOS...")
-
-	icmpMonitoring, err := client.GetICMPMonitoringTemplates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull ICMP monitoring templates")
-	} else {
-		api.GetConfigCache().UpdateICMPMonitoringTemplates(icmpMonitoring)
-	}
-
-	icmpPolling, err := client.GetICMPPollingTemplates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull ICMP polling templates")
-	} else {
-		api.GetConfigCache().UpdateICMPPollingTemplates(icmpPolling)
-	}
-
-	snmpv2, err := client.GetSNMPv2Templates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull SNMPv2 templates")
-	} else {
-		api.GetConfigCache().UpdateSNMPv2Templates(snmpv2)
-	}
-
-	snmpv3, err := client.GetSNMPv3Templates()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull SNMPv3 templates")
-	} else {
-		api.GetConfigCache().UpdateSNMPv3Templates(snmpv3)
-	}
-
-	ipamConfig, err := client.GetIPAMConfig()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to pull IPAM configuration")
-	} else {
-		api.GetConfigCache().UpdateIPAMConfig(ipamConfig)
-	}
-
-	log.Info().Msg("Initial configuration pull complete")
-	return nil
-}
-
-func startHeartbeat(client *thothos.Client, port int, db *gorm.DB) {
-	ticker := time.NewTicker(heartbeatInterval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		var nodeCount int64
-		var deviceCount int64
-
-		if err := db.Model(&models.Node{}).Count(&nodeCount).Error; err != nil {
-			log.Error().Err(err).Msg("Failed to count nodes for heartbeat")
-		}
-
-		if err := db.Model(&models.Device{}).Count(&deviceCount).Error; err != nil {
-			log.Error().Err(err).Msg("Failed to count devices for heartbeat")
-		}
-
-		_, err := client.SendHeartbeat(thothos.HeartbeatStatus{
-			IPAddress:   netutil.OutboundIP(),
-			Port:        port,
-			Version:     version,
-			AgentCount:  int(nodeCount),
-			DeviceCount: int(deviceCount),
-		})
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to send heartbeat to ThothOS")
-		} else {
-			log.Debug().
-				Int64("nodes", nodeCount).
-				Int64("devices", deviceCount).
-				Msg("Heartbeat sent to ThothOS")
-		}
-	}
 }
 
 // startNodeStatusMonitor is the legacy entry point retained for callers
