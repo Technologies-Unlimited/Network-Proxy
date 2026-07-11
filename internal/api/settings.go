@@ -267,13 +267,47 @@ func connectToThothOS(srv *server.Server) gin.HandlerFunc {
 
 func disconnectFromThothOS(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// SECURITY: disconnect runs teardownThothOSSession — it deletes BOTH
+		// persisted ThothOS fallbacks and flips the whole API into standalone
+		// (auth-bypassed) mode, exactly like handleLogout. It is registered
+		// behind RequireAuth, but RequireAuth in INTEGRATED mode only checks the
+		// process-global "is this proxy connected" flag; it verifies NO
+		// per-request credential (the local API has no cookie/bearer/API-key
+		// check), so every remote caller passes it and reaches this handler.
+		// That makes disconnect the SAME remote-unauthenticated destructive
+		// surface logout was, so gate it identically via the shared
+		// requireLocalOrBootstrap: loopback-only, plus the bootstrap token once
+		// a ProxyConfig exists. Without this, any host that can reach the server
+		// could brick/bypass an integrated proxy with one unauthenticated POST.
+		result, configExists := requireLocalOrBootstrap(c, srv.DB)
+		switch result {
+		case localGateNotLoopback:
+			log.Warn().
+				Str("ip", c.ClientIP()).
+				Msg("Refused remote /settings/thothos/disconnect request")
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"error":   "disconnect can only be performed from a local loopback connection",
+			})
+			return
+		case localGateBadToken:
+			log.Warn().Msg("Refused /settings/thothos/disconnect: config exists but bootstrap token missing/mismatched")
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"error":   "ProxyConfig exists; disconnect requires NETWORK_MONITOR_BOOTSTRAP_TOKEN",
+			})
+			return
+		}
+
 		// Real disconnect: cancel the live heartbeat/config-pull loop, delete
 		// BOTH persisted fallbacks (Settings config + ProxyConfig row) so a
 		// restart cannot silently reconnect, and flip to standalone. Previously
 		// this only cleared the Settings config, leaving the heartbeat loop
 		// running and any ProxyConfig row intact — a cosmetic disconnect.
 		teardownThothOSSession(srv.DB)
-		log.Info().Msg("Disconnected from ThothOS")
+		log.Info().
+			Bool("configExisted", configExists).
+			Msg("Disconnected from ThothOS")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Disconnected from ThothOS. Running in standalone mode."})
 	}
 }

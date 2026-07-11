@@ -188,10 +188,18 @@ func TestDisconnectCancelsHeartbeatAndClearsFallback(t *testing.T) {
 		t.Fatalf("session not active after connect")
 	}
 
-	// Disconnect via the real handler.
+	// Disconnect via the real handler. Disconnect is now loopback+bootstrap-token
+	// gated (it tears down auth for the whole API, like logout), and this test
+	// seeds a ProxyConfig, so present valid local credentials: a loopback
+	// RemoteAddr and the matching bootstrap token. The gate itself is pinned by
+	// the dedicated suite in settings_disconnect_test.go; here we only need to
+	// pass it so the downstream teardown mechanics can be verified.
+	t.Setenv("NETWORK_MONITOR_BOOTSTRAP_TOKEN", "s3cret-boot")
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/settings/thothos/disconnect", nil)
+	c.Request.RemoteAddr = "127.0.0.1:40030"
+	c.Request.Header.Set("Authorization", "Bearer s3cret-boot")
 	disconnectFromThothOS(srv)(c)
 	if w.Code != http.StatusOK {
 		t.Fatalf("disconnect status=%d body=%s", w.Code, w.Body.String())
