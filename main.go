@@ -303,6 +303,14 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Initialize updater
 	api.InitUpdater(version, commitSHA)
 
+	// Record build provenance so an operator reading the logs can tell exactly
+	// which build is running (version + commit + build time set via -ldflags).
+	log.Info().
+		Str("version", version).
+		Str("commit", commitSHA).
+		Str("buildTime", buildTime).
+		Msg("Network Monitor server build info")
+
 	// Warn loudly if no encryption key is configured for at-rest secrets —
 	// the field-level cipher falls back to plaintext to keep first-run
 	// installs working, but operators should set NETWORK_MONITOR_SECRET_KEY.
@@ -666,13 +674,6 @@ func findSubstring(s, substr string) int {
 	return -1
 }
 
-// startNodeStatusMonitor is the legacy entry point retained for callers
-// that don't have a context. New callers should use startNodeStatusMonitorCtx
-// so they can drain on shutdown.
-func startNodeStatusMonitor(db *gorm.DB) {
-	startNodeStatusMonitorCtx(context.Background(), db)
-}
-
 // startNodeStatusMonitorCtx runs the periodic stale-node sweep until ctx
 // is cancelled. The previous version had no exit condition, so on shutdown
 // it kept poking the DB after the connection pool was already closing.
@@ -816,7 +817,6 @@ func runNode(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fmt.Printf("Warning: Failed to register with server: %v\n", err)
 		fmt.Println("Continuing in standalone mode...")
-		nodeID = config.NodeID
 	} else {
 		fmt.Printf("Registered successfully with ID: %s\n", nodeID)
 		config.NodeID = nodeID

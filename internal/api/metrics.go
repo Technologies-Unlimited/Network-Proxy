@@ -158,7 +158,7 @@ func getUptimeMetrics(srv *server.Server) gin.HandlerFunc {
 		}
 
 		// Calculate uptime (mock calculation - in production would use historical data)
-		uptimePercentage := 0.0
+		var uptimePercentage float64
 		if device.Status == "up" {
 			uptimePercentage = 99.9 // Assume high uptime if currently up
 		} else if device.Status == "down" {

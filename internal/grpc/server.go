@@ -254,10 +254,12 @@ func (s *Server) DisconnectFromPeer(nodeID string) error {
 	if peer.Client != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		peer.Client.Disconnect(ctx, &pb.DisconnectRequest{
+		if _, err := peer.Client.Disconnect(ctx, &pb.DisconnectRequest{
 			RequesterId: s.nodeID,
 			Reason:      "user requested disconnect",
-		})
+		}); err != nil {
+			log.Printf("best-effort disconnect from peer %s failed: %v", nodeID, err)
+		}
 	}
 
 	if peer.Conn != nil {

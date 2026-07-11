@@ -24,10 +24,9 @@ import (
 // already-encrypted values (e.g. when a row is loaded, mutated, and re-saved)
 // from plaintext that still needs encryption.
 type fieldCryptoState struct {
-	aead      cipher.AEAD
-	ready     bool
-	keyErr    error
-	noKeyWarn bool
+	aead   cipher.AEAD
+	ready  bool
+	keyErr error
 }
 
 var (

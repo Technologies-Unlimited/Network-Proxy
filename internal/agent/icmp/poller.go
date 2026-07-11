@@ -281,7 +281,7 @@ func (c *Collector) checkPrivilege() {
 		if err := privilegeProbe(); err != nil {
 			if isPrivilegeError(err) {
 				c.setRawSocketErr(fmt.Errorf(
-					"ICMP raw socket unavailable (%w); devices report UNKNOWN, not down, until the process gets CAP_NET_RAW (Linux) or admin (Windows). Surfaced on /health.",
+					"ICMP raw socket unavailable (%w); devices report UNKNOWN, not down, until the process gets CAP_NET_RAW (Linux) or admin (Windows); surfaced on /health",
 					err))
 				log.Error().Err(err).Msg("ICMP raw socket unavailable; devices will report UNKNOWN (not down) until privilege is granted")
 			} else {

@@ -213,7 +213,6 @@ func (s *Server) StreamUpload(stream grpc.ClientStreamingServer[pb.DataChunk, pb
 	var perSecondBytes []int64
 	lastSecond := time.Now()
 	bytesThisSecond := int64(0)
-	var recvErrors int64
 
 	if DiagnosticMode() {
 		var m runtime.MemStats
@@ -231,7 +230,6 @@ func (s *Server) StreamUpload(stream grpc.ClientStreamingServer[pb.DataChunk, pb
 			break
 		}
 		if err != nil {
-			recvErrors++
 			if DiagnosticMode() {
 				log.Printf("[DIAG-UPLOAD-ERROR] Recv error after %d chunks: %v", totalChunks, err)
 			}
@@ -381,7 +379,6 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 	var perSecondBytes []int64
 	lastSecond := time.Now()
 	bytesThisSecond := int64(0)
-	var sendErrors int64
 
 	if DiagnosticMode() {
 		var m runtime.MemStats
@@ -402,7 +399,6 @@ func (s *Server) StreamDownload(req *pb.DownloadRequest, stream grpc.ServerStrea
 		}
 
 		if err := stream.Send(chunk); err != nil {
-			sendErrors++
 			if DiagnosticMode() {
 				log.Printf("[DIAG-DOWNLOAD-ERROR] Send error at chunk %d: %v", sequence, err)
 			}

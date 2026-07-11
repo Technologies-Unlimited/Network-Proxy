@@ -91,7 +91,7 @@ func (g *Generator) GenerateUptimeReport(format string, deviceID string, startDa
 	for _, device := range devices {
 		// In a real implementation, you would query metrics from Prometheus or a time-series DB
 		// For now, we'll create sample data based on device status
-		uptimePercent := 0.0
+		var uptimePercent float64
 		if device.Status == "up" {
 			uptimePercent = 99.9
 		} else if device.Status == "down" {

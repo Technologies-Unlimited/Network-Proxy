@@ -248,7 +248,7 @@ func verifyBearer(ctx context.Context, secret string) error {
 	}
 	const prefix = "Bearer "
 	got := values[0]
-	if !strings.HasPrefix(got, prefix) || subtleEqual(got[len(prefix):], secret) != true {
+	if !strings.HasPrefix(got, prefix) || !subtleEqual(got[len(prefix):], secret) {
 		return status.Error(codes.Unauthenticated, "invalid bearer token")
 	}
 	return nil
