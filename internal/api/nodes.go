@@ -492,7 +492,16 @@ func getNode(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// updateNode updates a node
+// updateNode updates a node.
+//
+// The body is decoded into a typed allowlist of editable columns with
+// DisallowUnknownFields, so a client typo (e.g. a wrong casing/name that is not
+// a real column) is rejected with a clean 400 "unknown field" rather than being
+// handed to GORM as a raw column name — which previously built invalid SQL,
+// returned a 500, and leaked the DB schema in the error body. Pointer fields
+// give partial-update semantics: only keys the client actually sent are written
+// (so a bool can be set to false), and the column mapping is an explicit,
+// hard-coded allowlist — never client-controlled.
 func updateNode(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
@@ -503,15 +512,72 @@ func updateNode(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		var updates map[string]interface{}
-		if err := c.ShouldBindJSON(&updates); err != nil {
+		var payload struct {
+			Name              *string `json:"name"`
+			Hostname          *string `json:"hostname"`
+			IPAddress         *string `json:"ip_address"`
+			Version           *string `json:"version"`
+			Status            *string `json:"status"`
+			GRPCPort          *int    `json:"grpc_port"`
+			GRPCEnabled       *bool   `json:"grpc_enabled"`
+			SupportsICMP      *bool   `json:"supports_icmp"`
+			SupportsSNMP      *bool   `json:"supports_snmp"`
+			SupportsDiscovery *bool   `json:"supports_discovery"`
+			SupportsBandwidth *bool   `json:"supports_bandwidth"`
+		}
+		if err := decodeStrictJSON(c, &payload); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		if err := srv.DB.Model(&node).Updates(updates).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		updates := map[string]interface{}{}
+		if payload.Name != nil {
+			updates["name"] = *payload.Name
+		}
+		if payload.Hostname != nil {
+			updates["hostname"] = *payload.Hostname
+		}
+		if payload.IPAddress != nil {
+			updates["ip_address"] = *payload.IPAddress
+		}
+		if payload.Version != nil {
+			updates["version"] = *payload.Version
+		}
+		if payload.Status != nil {
+			updates["status"] = *payload.Status
+		}
+		if payload.GRPCPort != nil {
+			updates["grpc_port"] = *payload.GRPCPort
+		}
+		if payload.GRPCEnabled != nil {
+			updates["grpc_enabled"] = *payload.GRPCEnabled
+		}
+		if payload.SupportsICMP != nil {
+			updates["supports_icmp"] = *payload.SupportsICMP
+		}
+		if payload.SupportsSNMP != nil {
+			updates["supports_snmp"] = *payload.SupportsSNMP
+		}
+		if payload.SupportsDiscovery != nil {
+			updates["supports_discovery"] = *payload.SupportsDiscovery
+		}
+		if payload.SupportsBandwidth != nil {
+			updates["supports_bandwidth"] = *payload.SupportsBandwidth
+		}
+
+		if len(updates) > 0 {
+			if err := srv.DB.Model(&node).Updates(updates).Error; err != nil {
+				log.Error().Err(err).Str("node_id", id).Msg("updateNode: failed to persist node update")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update node"})
+				return
+			}
+			// Reload so the response reflects the persisted state, not the
+			// pre-update in-memory copy.
+			if err := srv.DB.First(&node, "id = ?", id).Error; err != nil {
+				log.Error().Err(err).Str("node_id", id).Msg("updateNode: failed to reload node after update")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load updated node"})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"node": node})
