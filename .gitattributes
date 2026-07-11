@@ -1,0 +1,7 @@
+# Shell scripts and CI/lint config MUST use LF endings. A CRLF shebang makes
+# Linux CI fail with "bad interpreter: /usr/bin/env bash^M", and the linters
+# read these config files on the same runners. Do not let autocrlf touch them.
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.conf  text eol=lf

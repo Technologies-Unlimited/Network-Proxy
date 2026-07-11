@@ -71,8 +71,12 @@ fi
 # ---------------------------------------------------------------------------
 # 5. go test — add -race ONLY when a C compiler is available (race needs cgo).
 # ---------------------------------------------------------------------------
+# -race needs cgo, and cgo uses the specific compiler `go env CC` resolves to
+# (gcc by default on this box). Only enable -race when THAT compiler actually
+# exists — a stray clang in PATH does not make cgo work if go wants gcc.
 race_flag=""
-if command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1 || command -v cc >/dev/null 2>&1; then
+cc_bin="$(go env CC 2>/dev/null)"
+if [ -n "$cc_bin" ] && command -v "$cc_bin" >/dev/null 2>&1; then
   race_flag="-race"
 fi
 
@@ -83,7 +87,7 @@ if [ -n "$race_flag" ]; then
   test_rc=${PIPESTATUS[0]}
 else
   step "go test ./..."
-  notice "no C compiler (gcc/clang/cc) found — running WITHOUT -race; the race detector needs cgo. CI runs -race on Linux."
+  notice "go's cgo compiler ('${cc_bin:-unset}') not found — running WITHOUT -race (the race detector needs cgo). CI runs -race on Linux."
   test_out="$(mktemp)"
   go test ./... 2>&1 | tee "$test_out"
   test_rc=${PIPESTATUS[0]}
