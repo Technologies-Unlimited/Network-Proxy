@@ -472,6 +472,60 @@ GOOS=darwin GOARCH=arm64 go build -o network-monitor-macos .
 GOOS=darwin GOARCH=amd64 go build -o network-monitor-macos-intel .
 ```
 
+## Development / Quality Gates
+
+The repo ships a single local gate that mirrors CI. Run it before pushing:
+
+```bash
+bash scripts/check.sh
+```
+
+It runs, in order, stopping at the first hard failure:
+
+| Gate | Catches |
+|------|---------|
+| `go build ./...` | Compilation errors |
+| `go vet ./...` | Suspicious constructs (printf mismatches, lost locks, ...) |
+| `staticcheck ./...` | Real bugs, dead code, ineffectual assignments (SA/ST/S/U) |
+| `golangci-lint run` | Curated **usability** linters (see below) |
+| `go test ./...` | The full suite (adds `-race` automatically when a C compiler is present) |
+| `scripts/checks/*.sh` | Custom class-detection gates added by later work (extension point) |
+
+`staticcheck` and `golangci-lint` **skip with a notice** if not installed, so a
+fresh clone is never blocked — but **CI installs and enforces them**. Install
+locally with:
+
+```bash
+go install honnef.co/go/tools/cmd/staticcheck@latest
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+```
+
+### What the linters guard (correctness/usability, not style)
+
+`.golangci.yml` deliberately enables only linters that catch ways the running
+product can silently misbehave — swallowed errors (`errcheck`), leaked HTTP
+bodies (`bodyclose`), leaked/unchecked DB rows (`sqlclosecheck`,
+`rowserrcheck`), endpoints that return `nil` after an error (`nilerr`),
+ineffectual/wasted assignments, bad context propagation (`contextcheck`), and
+duration bugs (`durationcheck`) — plus `staticcheck`, `govet`, `unconvert`.
+Pure-style linters (gofmt/lll/gocyclo/…) are intentionally **off**; this repo is
+not gofmt-clean and the gate is about correctness, not formatting.
+
+### The race detector runs in CI
+
+`go test -race` needs cgo, which the Windows dev box lacks, so `scripts/check.sh`
+skips it locally with a notice. **CI (`.github/workflows/ci.yml`, ubuntu) runs
+`go test -race ./...` on every push and PR** — that is the standing race gate for
+the collectors, tickers, sweeps and shared session state. CI also runs
+`govulncheck`.
+
+### Adding a class-detection gate
+
+When a bug is fixed, add a script under `scripts/checks/` that enumerates that
+bug's whole class across the tree and exits non-zero if any instance remains
+(see `scripts/checks/README.md`). `scripts/check.sh` and CI pick it up
+automatically, turning the fix into a permanent regression wall.
+
 ## Performance
 
 - **10+ Gbps** bandwidth testing between nodes
