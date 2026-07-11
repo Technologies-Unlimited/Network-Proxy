@@ -52,6 +52,24 @@ jobs:
         with:
           version: v2.12.2
 
+      # Custom class-detection gates (scripts/checks/*.sh) — the SAME extension
+      # point scripts/check.sh runs locally, wired here so every current and
+      # future class gate (e.g. the discarded-GORM-error analyzer) is enforced
+      # on CI too, not just on a developer's machine. Kept as a dedicated step
+      # (rather than `bash scripts/check.sh`) so it does not re-run the
+      # build/vet/test/lint steps above.
+      - name: custom class gates
+        run: |
+          shopt -s nullglob
+          gates=(scripts/checks/*.sh)
+          if [ ${#gates[@]} -eq 0 ]; then
+            echo "no custom gates present"; exit 0
+          fi
+          for gate in "${gates[@]}"; do
+            echo "== $gate =="
+            bash "$gate"
+          done
+
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
