@@ -490,6 +490,9 @@ func TestCommonPortsHandler(t *testing.T) {
 	}
 
 	w, body = doJSON(t, r, "GET", "/api/v1/tools/common-ports?count=3", nil)
+	if w.Code != 200 {
+		t.Fatalf("count=3 status=%d", w.Code)
+	}
 	if ports, ok := body["ports"].([]interface{}); !ok || len(ports) != 3 {
 		t.Errorf("count=3 ports=%v", body["ports"])
 	}
