@@ -499,7 +499,9 @@ func (s *AuthService) handleAuthStatus(c *gin.Context) {
 // Without these gates, anyone reachable to the server could disable auth
 // with a single curl POST.
 func (s *AuthService) handleEnableStandalone(c *gin.Context) {
-	if !isLoopbackRequest(c) {
+	result, configExists := requireLocalOrBootstrap(c, s.db)
+	switch result {
+	case localGateNotLoopback:
 		log.Warn().
 			Str("ip", c.ClientIP()).
 			Msg("Refused remote /auth/standalone request")
@@ -508,26 +510,13 @@ func (s *AuthService) handleEnableStandalone(c *gin.Context) {
 			"error":   "standalone mode can only be enabled from a local loopback connection",
 		})
 		return
-	}
-
-	// First-run check: a fresh install with no saved config can flip on
-	// without a token. Once a config exists, require the bootstrap token
-	// so a stolen LAN session can't undo the operator's setup.
-	var existing models.ProxyConfig
-	configExists := s.db.First(&existing).Error == nil
-
-	bootstrapToken := os.Getenv("NETWORK_MONITOR_BOOTSTRAP_TOKEN")
-	supplied := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-
-	if configExists {
-		if bootstrapToken == "" || supplied == "" || !constantTimeEqual(supplied, bootstrapToken) {
-			log.Warn().Msg("Refused /auth/standalone: config exists but bootstrap token missing/mismatched")
-			c.JSON(http.StatusForbidden, gin.H{
-				"success": false,
-				"error":   "ProxyConfig exists; standalone enable requires NETWORK_MONITOR_BOOTSTRAP_TOKEN",
-			})
-			return
-		}
+	case localGateBadToken:
+		log.Warn().Msg("Refused /auth/standalone: config exists but bootstrap token missing/mismatched")
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "ProxyConfig exists; standalone enable requires NETWORK_MONITOR_BOOTSTRAP_TOKEN",
+		})
+		return
 	}
 
 	middleware.SetStandaloneMode(true)
@@ -569,6 +558,50 @@ func constantTimeEqual(a, b string) bool {
 	return diff == 0
 }
 
+// localGateResult is the outcome of requireLocalOrBootstrap: whether a
+// security-sensitive local-control action is permitted, and if not, why.
+type localGateResult int
+
+const (
+	localGateAllowed localGateResult = iota
+	localGateNotLoopback
+	localGateBadToken
+)
+
+// requireLocalOrBootstrap is the shared gate for the endpoints that can disable
+// ThothOS authentication for the WHOLE API — enable-standalone and logout (the
+// latter tears down the session and flips to standalone). Both must be equally
+// hard to reach from off-box, so the gate is defined once here:
+//
+//   - localGateNotLoopback: the caller is not on the loopback interface.
+//   - localGateBadToken: a ProxyConfig exists (the operator has already set the
+//     box up) but the request lacks the matching NETWORK_MONITOR_BOOTSTRAP_TOKEN,
+//     so a stolen LAN/remote session can't undo the setup.
+//   - localGateAllowed: loopback AND (no config yet — legitimate first-run — OR
+//     a matching bootstrap token).
+//
+// It writes no response; each caller maps the result to a context-appropriate
+// message. The second return value reports whether a ProxyConfig currently
+// exists so callers can log it.
+func requireLocalOrBootstrap(c *gin.Context, db *gorm.DB) (localGateResult, bool) {
+	if !isLoopbackRequest(c) {
+		return localGateNotLoopback, false
+	}
+
+	// First-run check: a fresh install with no saved config can proceed
+	// without a token. Once a config exists, require the bootstrap token.
+	var existing models.ProxyConfig
+	configExists := db.First(&existing).Error == nil
+	if configExists {
+		bootstrapToken := os.Getenv("NETWORK_MONITOR_BOOTSTRAP_TOKEN")
+		supplied := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+		if bootstrapToken == "" || supplied == "" || !constantTimeEqual(supplied, bootstrapToken) {
+			return localGateBadToken, configExists
+		}
+	}
+	return localGateAllowed, configExists
+}
+
 // handleLogout clears the authentication configuration and returns the process
 // to standalone mode. Flipping to standalone (rather than leaving auth context
 // nil while standalone stays false) is what un-bricks a logged-out integrated
@@ -576,10 +609,39 @@ func constantTimeEqual(a, b string) bool {
 // settings reconnect endpoints — leaving no in-product way back to connected.
 // The login endpoints live outside RequireAuth and were always reachable; the
 // settings reconnect endpoints become reachable again in standalone.
+//
+// SECURITY: logout deletes the persisted ThothOS config and flips the entire
+// API into auth-bypassed standalone mode, so it is gated exactly like
+// handleEnableStandalone (loopback-only, plus the bootstrap token once a config
+// exists). Without this, any host that can reach the server could brick an
+// integrated proxy — or bypass its auth — with a single unauthenticated POST. A
+// local operator on the box (loopback) can still always log out / disconnect.
 func (s *AuthService) handleLogout(c *gin.Context) {
+	result, configExists := requireLocalOrBootstrap(c, s.db)
+	switch result {
+	case localGateNotLoopback:
+		log.Warn().
+			Str("ip", c.ClientIP()).
+			Msg("Refused remote /auth/logout request")
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "logout can only be performed from a local loopback connection",
+		})
+		return
+	case localGateBadToken:
+		log.Warn().Msg("Refused /auth/logout: config exists but bootstrap token missing/mismatched")
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "ProxyConfig exists; logout requires NETWORK_MONITOR_BOOTSTRAP_TOKEN",
+		})
+		return
+	}
+
 	teardownThothOSSession(s.db)
 
-	log.Info().Msg("Logged out, configuration cleared, standalone mode enabled")
+	log.Info().
+		Bool("configExisted", configExists).
+		Msg("Logged out, configuration cleared, standalone mode enabled")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
