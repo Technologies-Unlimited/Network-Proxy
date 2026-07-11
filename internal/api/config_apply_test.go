@@ -232,6 +232,107 @@ func TestReconcileOIDsAdoptsInsteadOfDuplicating(t *testing.T) {
 	}
 }
 
+// TestReconcileOIDsDeletePropagation proves the down-sync now propagates
+// UPSTREAM DELETES: a local OID that is ThothOS-owned (non-empty ThothOSID) but
+// absent from a successful upstream pull is removed locally, so a deleted OID in
+// the ThothOS dashboard no longer leaves a stale ghost row polling forever.
+// Regression for the audit's "remote-delete propagation is structurally absent"
+// OID-bidirectional finding.
+//
+// The three cases pin the three invariants the delete pass must hold:
+//
+//	(a) an upstream-absent ThothOS-owned OID is DELETED (while a still-present
+//	    ThothOS-owned sibling in the same pull SURVIVES),
+//	(b) a locally-created OID (empty ThothOSID) is NEVER deleted — it is the
+//	    proxy's own row, not ThothOS-owned, even on an empty upstream,
+//	(c) a GetOIDs pull ERROR deletes NOTHING — a transient control-plane blip
+//	    must never be able to wipe the local table (the guard: reconcile bails
+//	    before any mutation when the pull did not genuinely succeed; an
+//	    empty-but-successful pull returns ([], nil) and IS distinguishable from
+//	    a failure which returns (nil, err)).
+func TestReconcileOIDsDeletePropagation(t *testing.T) {
+	// forcePullErr is the sentinel upstream value that makes the real
+	// thothos.Client.GetOIDs return an error ("unexpected response format") — a
+	// non-array data payload — standing in for a transient pull failure.
+	const forcePullErr = "null"
+
+	cases := []struct {
+		name        string
+		seed        []models.OID // local rows created before the apply
+		upstream    string       // JSON array for getOIDsForCompany (or forcePullErr)
+		wantDeleted int
+		wantGone    []string // Names that must NO LONGER exist after apply
+		wantPresent []string // Names that MUST still exist after apply
+	}{
+		{
+			name: "upstream-absent ThothOS-owned OID is deleted; present sibling survives",
+			seed: []models.OID{
+				{CompanyID: "c1", ThothOSID: "oid-keep", OID: "1.3.6.1.4.1.1", Name: "keep"},
+				{CompanyID: "c1", ThothOSID: "oid-ghost", OID: "1.3.6.1.4.1.2", Name: "ghost"},
+			},
+			upstream:    `[{"_id":"oid-keep","companyId":"c1","oidName":"keep","oid":"1.3.6.1.4.1.1","description":""}]`,
+			wantDeleted: 1,
+			wantGone:    []string{"ghost"},
+			wantPresent: []string{"keep"},
+		},
+		{
+			name: "locally-created OID (empty ThothOSID) is never deleted",
+			seed: []models.OID{
+				{CompanyID: "c1", ThothOSID: "", OID: "1.3.6.1.4.1.9", Name: "localonly"},
+			},
+			// Empty but SUCCESSFUL pull: nothing upstream, yet the local-only row
+			// (proxy's own) must be left in place.
+			upstream:    `[]`,
+			wantDeleted: 0,
+			wantPresent: []string{"localonly"},
+		},
+		{
+			name: "GetOIDs error deletes nothing",
+			seed: []models.OID{
+				{CompanyID: "c1", ThothOSID: "oid-owned", OID: "1.3.6.1.4.1.3", Name: "owned"},
+			},
+			upstream:    forcePullErr,
+			wantDeleted: 0,
+			wantPresent: []string{"owned"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newTestDB(t)
+			for i := range tc.seed {
+				row := tc.seed[i]
+				if err := db.Create(&row).Error; err != nil {
+					t.Fatalf("seed oid %q: %v", row.Name, err)
+				}
+			}
+
+			fake := newFakeConfigThothOS(t, map[string]string{
+				"getOIDsForCompany": tc.upstream,
+			})
+			res := applyConfigFromClient(db, fake.client(t))
+
+			if res.OIDsDeleted != tc.wantDeleted {
+				t.Errorf("OIDsDeleted=%d want %d (warnings=%v)", res.OIDsDeleted, tc.wantDeleted, res.Warnings)
+			}
+			for _, name := range tc.wantGone {
+				var count int64
+				db.Model(&models.OID{}).Where(&models.OID{Name: name}).Count(&count)
+				if count != 0 {
+					t.Errorf("OID %q should have been deleted, still present (count=%d)", name, count)
+				}
+			}
+			for _, name := range tc.wantPresent {
+				var count int64
+				db.Model(&models.OID{}).Where(&models.OID{Name: name}).Count(&count)
+				if count != 1 {
+					t.Errorf("OID %q must survive, count=%d want 1", name, count)
+				}
+			}
+		})
+	}
+}
+
 // TestMonitorSyncHandlerReportsHonestAppliedCounts proves POST /monitor/sync no
 // longer fetches-and-discards while claiming "synced successfully": it runs the
 // apply step and its response reflects what was actually persisted (a template

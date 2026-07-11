@@ -39,6 +39,7 @@ type ApplyResult struct {
 	OIDsAdopted            int        `json:"oidsAdopted"`
 	OIDsCreated            int        `json:"oidsCreated"`
 	OIDsUpdated            int        `json:"oidsUpdated"`
+	OIDsDeleted            int        `json:"oidsDeleted"`
 	SNMPTemplatesPersisted int        `json:"snmpTemplatesPersisted"`
 	ICMPIntervalSeconds    int        `json:"icmpIntervalSeconds"`
 	SNMPIntervalSeconds    int        `json:"snmpIntervalSeconds"`
@@ -55,11 +56,15 @@ type ApplyResult struct {
 //   - polling-template frequencies retune the LIVE collectors via SetInterval.
 //   - IPAM is fetched and counted honestly (served live, not mirrored locally).
 //
-// Merge semantic (documented per the audit's "pick the safer semantic"): this
-// is UPSERT-ONLY. A local row whose upstream counterpart has disappeared is
-// LEFT IN PLACE, never hard-deleted — a transient/partial pull must not be able
-// to wipe live monitoring config out from under an on-prem proxy during a
-// control-plane blip. Down-sync adds and updates; it never removes.
+// Merge semantic (documented per the audit's "pick the safer semantic"):
+// down-sync is create/adopt/update PLUS scoped delete-propagation. A local row
+// that ThothOS OWNS (non-empty ThothOSID) and that a SUCCESSFUL pull no longer
+// returns is deleted locally (its upstream OID was removed) — see reconcileOIDs.
+// Two safety rails keep a control-plane blip from wiping live config out from
+// under an on-prem proxy: (1) a locally-created row (empty ThothOSID) is the
+// proxy's own and is NEVER deleted by the down-sync; (2) a FAILED pull
+// (GetOIDs error) bails before any mutation, so only a genuine empty-but-
+// successful pull can delete the (now upstream-absent) ThothOS-owned rows.
 func applyConfigFromClient(db *gorm.DB, client *thothos.Client) ApplyResult {
 	applyMu.Lock()
 	defer applyMu.Unlock()
@@ -72,8 +77,8 @@ func applyConfigFromClient(db *gorm.DB, client *thothos.Client) ApplyResult {
 		// collector intervals (they're global to this proxy).
 		res.Warnings = append(res.Warnings, "no company id on client; skipping OID/template persistence")
 	} else {
-		adopted, created, updated, oidWarns := reconcileOIDs(db, client, companyID)
-		res.OIDsAdopted, res.OIDsCreated, res.OIDsUpdated = adopted, created, updated
+		adopted, created, updated, deleted, oidWarns := reconcileOIDs(db, client, companyID)
+		res.OIDsAdopted, res.OIDsCreated, res.OIDsUpdated, res.OIDsDeleted = adopted, created, updated, deleted
 		res.Warnings = append(res.Warnings, oidWarns...)
 
 		persisted, tmplWarns := persistSNMPTemplates(db, client, companyID)
@@ -114,18 +119,37 @@ func applyConfigFromClient(db *gorm.DB, client *thothos.Client) ApplyResult {
 //   - upstream matches a local row by oid-string with an empty ThothOSID
 //     -> ADOPT it (backfill ThothOSID) instead of creating a duplicate.
 //   - upstream present nowhere locally -> create it (down-sync).
+//   - a local row that is ThothOS-owned (non-empty ThothOSID) but ABSENT from
+//     this pull's upstream set -> DELETE it (down-sync of an upstream delete),
+//     so a ThothOS-side delete no longer leaves a stale ghost OID polling
+//     forever.
 //
 // Locally-created OIDs (empty ThothOSID) that have no upstream match are left
-// untouched — they are the proxy's own rows, not ThothOS-owned.
-func reconcileOIDs(db *gorm.DB, client *thothos.Client, companyID string) (adopted, created, updated int, warnings []string) {
+// untouched — they are the proxy's own rows, not ThothOS-owned, and are never
+// deleted by the down-sync.
+//
+// Transient-failure guard: GetOIDs returns (nil, err) on a failed pull and
+// ([], nil) on a genuine empty-but-successful pull — the two ARE
+// distinguishable. reconcile bails on the error path below BEFORE building any
+// map or touching the DB, so a control-plane blip can never mass-delete the
+// local table; only a pull that genuinely succeeded with zero rows deletes the
+// (now upstream-absent) ThothOS-owned rows.
+func reconcileOIDs(db *gorm.DB, client *thothos.Client, companyID string) (adopted, created, updated, deleted int, warnings []string) {
 	upstream, err := client.GetOIDs()
 	if err != nil {
-		return 0, 0, 0, []string{"OID pull: " + err.Error()}
+		return 0, 0, 0, 0, []string{"OID pull: " + err.Error()}
 	}
 
 	var local []models.OID
 	if err := db.Where(&models.OID{CompanyID: companyID}).Find(&local).Error; err != nil {
-		return 0, 0, 0, []string{"OID local read: " + err.Error()}
+		return 0, 0, 0, 0, []string{"OID local read: " + err.Error()}
+	}
+
+	// upstreamIDs is the set of ThothOS ids seen in THIS (successful) pull; any
+	// local ThothOS-owned row whose id is not in it is a propagated delete.
+	upstreamIDs := make(map[string]bool, len(upstream))
+	for _, up := range upstream {
+		upstreamIDs[up.ID] = true
 	}
 
 	byThothOSID := make(map[string]*models.OID)
@@ -198,7 +222,27 @@ func reconcileOIDs(db *gorm.DB, client *thothos.Client, companyID string) (adopt
 		created++
 	}
 
-	return adopted, created, updated, warnings
+	// Delete-propagation: remove local rows that ThothOS owns (non-empty
+	// ThothOSID) but that this successful pull did not return — the upstream
+	// OID was deleted. Rows adopted above now carry an upstream id that IS in
+	// upstreamIDs, so they are correctly skipped; locally-created rows (empty
+	// ThothOSID) are the proxy's own and are never deleted.
+	for i := range local {
+		row := &local[i]
+		if row.ThothOSID == "" {
+			continue // proxy's own row — not ThothOS-owned, never delete
+		}
+		if upstreamIDs[row.ThothOSID] {
+			continue // still present upstream
+		}
+		if err := db.Delete(row).Error; err != nil {
+			warnings = append(warnings, "OID delete "+row.ThothOSID+": "+err.Error())
+			continue
+		}
+		deleted++
+	}
+
+	return adopted, created, updated, deleted, warnings
 }
 
 // persistSNMPTemplates upserts ThothOS SNMPv2/v3 monitoring templates into the
@@ -429,6 +473,7 @@ func logApplyResult(phase string, res ApplyResult) {
 		Int("oidsAdopted", res.OIDsAdopted).
 		Int("oidsCreated", res.OIDsCreated).
 		Int("oidsUpdated", res.OIDsUpdated).
+		Int("oidsDeleted", res.OIDsDeleted).
 		Int("snmpTemplatesPersisted", res.SNMPTemplatesPersisted).
 		Int("icmpIntervalSeconds", res.ICMPIntervalSeconds).
 		Int("snmpIntervalSeconds", res.SNMPIntervalSeconds).
