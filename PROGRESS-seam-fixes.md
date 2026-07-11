@@ -84,8 +84,32 @@ gh release w/ binary, push ai-native.
   unauthenticated brick/auth-bypass. Local operator logout preserved. (70375b9)
 - **README OID synced-data table** row corrected to Bidirectional (verifier-caught stale row). (4bdd760)
 
-### STILL OPEN (not in this campaign's scope — future work)
-- 21 non-reachable govulncheck advisories remain (require-only / uncalled) — no risky major bump attempted.
-- `handleEnableStandalone` has no dedicated regression test (verified by diff-identity only) — optional.
-- Settings `disconnect` also calls `teardownThothOSSession` but sits behind `RequireAuth` — worth a follow-up auth-adequacy confirm.
-- NM repo `CLAUDE.md` is gitignored by repo policy — the OID doc correction is on-disk (effective for Claude Code) but not version-controlled; owner decides whether to un-ignore.
+### SHIPPED (follow-up #3 — residuals closed, all Opus, all adversarially verified)
+- **Dead-webhook cleanup** — removed the stale `registerWebhook` mock branch in `session_test.go`
+  AND (recon-missed) the vestigial `X-Webhook-*` CORS allow-headers + a stale bodylimit comment. (d566c09)
+- **`handleEnableStandalone` regression test** — 4 tests pinning the loopback+token gate. (5ab73f3)
+- **Settings `disconnect` was a REAL remote-unauthenticated teardown surface** — `RequireAuth` only
+  checks the process-global connected-flag, not a per-request credential, so any LAN/remote host in
+  integrated mode reached `teardownThothOSSession`. Proven with a RED e2e test, then gated with
+  `requireLocalOrBootstrap` (same as logout). (094bddd)
+- **Stale-node sweep atomic** — node+peers+bandwidth+scheduled-tests cascade wrapped in one
+  `db.Transaction`, race-safe `last_seen` re-assertion preserved inside. (e8ccf3a)
+- **OID soft-delete reaping verified** — audited every `models.OID` consumer; none use
+  `Unscoped()`/raw SQL, so a down-synced delete genuinely stops polling; pinned with a regression test. (3487aa1)
+- **Non-reachable vulns 21 → 1** — safe within-major bumps (x/net v0.55.0, x/sys v0.45.0, x/crypto v0.52.0);
+  reachable stayed 0. The one remaining (`GO-2026-5932` in x/crypto) has NO fix version available and is
+  non-reachable — documented, not force-bumped. (8c666d0)
+- **`MonitoringResultsInput` consistency (ai-native)** — investigation confirmed NO named GraphQL input
+  types are defined anywhere in ThothOS (runtime-inert regex dispatch); the Go-side typed declarations are
+  uniformly cosmetic, so this is not a defect — added a guard comment so no one false-fixes it.
+- `CLAUDE.md` gitignore: intentional explicit `.gitignore` entry (`claude.md`, predates this work);
+  version-controlled README carries the OID correction. Closed by acknowledgment — not force-added.
+
+### STILL OPEN (out-of-band finding, queued 2026-07-11 — being fixed this pass)
+- **SNMP polling walks ZERO OIDs (capability bug, surfaced by the OID-softdelete audit).**
+  `SNMPTemplate.OIDs` is a `many2many` (models/snmp.go:29) needing explicit `Preload("OIDs")`. The
+  collector load paths (`seed.go:104` `Preload("SNMPTemplate")` only; `collectors.go` wireDeviceIntoCollectors)
+  don't preload the nested OIDs, so `walker.go:163` iterates an empty `template.OIDs` → SNMP connects but
+  polls nothing. API handlers preload correctly (`snmp.go:18,57`), so the UI shows OIDs the poller never sees.
+  Fix shape: nested `Preload("SNMPTemplate.OIDs")` on both collector-feeding loads; fail-first test asserting
+  the collector's template has OIDs populated; T8 class-check for other iterated-but-unpreloaded associations.
