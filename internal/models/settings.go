@@ -193,11 +193,20 @@ func SetProxyName(db *gorm.DB, name string) error {
 	return SetSetting(db, SettingProxyName, name)
 }
 
-// ClearThothOSConfig removes all ThothOS configuration from settings
+// ClearThothOSConfig removes all ThothOS configuration from settings.
+//
+// It returns the FIRST delete error it hits (wrapping the offending key) rather
+// than swallowing every failure and hard-returning nil. The disconnect/logout
+// teardown relies on this: if the saved URL or API key survives a failed delete
+// (locked/busy SQLite, disk-full), the box auto-reconnects to the tenant the
+// operator believed they severed on the next boot. The caller MUST surface a
+// non-nil error instead of reporting "standalone mode".
 func ClearThothOSConfig(db *gorm.DB) error {
 	keys := []string{SettingThothOSURL, SettingThothOSAPIKey, SettingProxyName}
 	for _, key := range keys {
-		db.Where("key = ?", key).Delete(&Settings{})
+		if err := db.Where("key = ?", key).Delete(&Settings{}).Error; err != nil {
+			return fmt.Errorf("clearing ThothOS setting %q: %w", key, err)
+		}
 	}
 	return nil
 }
