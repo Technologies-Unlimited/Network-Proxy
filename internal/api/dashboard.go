@@ -7,42 +7,51 @@ import (
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
+
+// renderCountTile runs a scoped GORM Count and writes the number as plain text.
+// On a DB error it renders "—" (unknown) instead of "0": a monitoring dashboard
+// that silently shows "0 down / 0 active alerts" precisely when its own
+// datastore is failing would tell the operator all-clear during an outage. The
+// error is logged so the failure is diagnosable.
+func renderCountTile(c *gin.Context, query *gorm.DB, tile string) {
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		log.Error().Err(err).Str("tile", tile).Msg("Dashboard count query failed")
+		c.String(http.StatusOK, "—")
+		return
+	}
+	c.String(http.StatusOK, "%d", count)
+}
 
 // getDashboardDeviceCount returns the total device count as plain text,
 // scoped to the caller's company.
 func getDashboardDeviceCount(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var count int64
-		scopeByCompany(c, srv.DB).Model(&models.Device{}).Count(&count)
-		c.String(http.StatusOK, "%d", count)
+		renderCountTile(c, scopeByCompany(c, srv.DB).Model(&models.Device{}), "device_count")
 	}
 }
 
 // getDashboardDevicesUp returns the count of devices with status "up", scoped.
 func getDashboardDevicesUp(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var count int64
-		scopeByCompany(c, srv.DB).Model(&models.Device{}).Where("status = ?", "up").Count(&count)
-		c.String(http.StatusOK, "%d", count)
+		renderCountTile(c, scopeByCompany(c, srv.DB).Model(&models.Device{}).Where("status = ?", "up"), "devices_up")
 	}
 }
 
 // getDashboardDevicesDown returns the count of devices with status "down", scoped.
 func getDashboardDevicesDown(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var count int64
-		scopeByCompany(c, srv.DB).Model(&models.Device{}).Where("status = ?", "down").Count(&count)
-		c.String(http.StatusOK, "%d", count)
+		renderCountTile(c, scopeByCompany(c, srv.DB).Model(&models.Device{}).Where("status = ?", "down"), "devices_down")
 	}
 }
 
 // getDashboardActiveAlerts returns the count of active alerts, scoped.
 func getDashboardActiveAlerts(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var count int64
-		scopeByCompany(c, srv.DB).Model(&models.Alert{}).Where("status = ?", "active").Count(&count)
-		c.String(http.StatusOK, "%d", count)
+		renderCountTile(c, scopeByCompany(c, srv.DB).Model(&models.Alert{}).Where("status = ?", "active"), "active_alerts")
 	}
 }
 

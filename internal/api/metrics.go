@@ -7,13 +7,20 @@ import (
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // getDeviceStatusMetrics returns device status counts
 func getDeviceStatusMetrics(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var devices []models.Device
-		srv.DB.Find(&devices)
+		if err := srv.DB.Find(&devices).Error; err != nil {
+			// Do NOT emit {up:0,down:0,unknown:0} on a failed read — that is a
+			// fabricated all-healthy snapshot served with 200 OK.
+			log.Error().Err(err).Msg("getDeviceStatusMetrics: device query failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load device status"})
+			return
+		}
 
 		statusCounts := map[string]int{
 			"up":      0,
@@ -45,7 +52,11 @@ func getPingHistoryMetrics(srv *server.Server) gin.HandlerFunc {
 		timeRange := c.DefaultQuery("range", "1h")
 
 		var devices []models.Device
-		srv.DB.Where("icmp_enabled = ?", true).Find(&devices)
+		if err := srv.DB.Where("icmp_enabled = ?", true).Find(&devices).Error; err != nil {
+			log.Error().Err(err).Msg("getPingHistoryMetrics: device query failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load ping history"})
+			return
+		}
 
 		// Generate mock data since we don't have time-series storage yet
 		// In production, this would query Prometheus or a time-series database
@@ -115,7 +126,13 @@ func getPingHistoryMetrics(srv *server.Server) gin.HandlerFunc {
 func getAlertStatsMetrics(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var alerts []models.Alert
-		srv.DB.Where("status = ?", "active").Find(&alerts)
+		if err := srv.DB.Where("status = ?", "active").Find(&alerts).Error; err != nil {
+			// A failed read must not report {total:0,critical:0,warning:0} — an
+			// all-clear that hides the fleet's real alert state.
+			log.Error().Err(err).Msg("getAlertStatsMetrics: alert query failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load alert stats"})
+			return
+		}
 
 		criticalCount := 0
 		warningCount := 0
@@ -140,7 +157,13 @@ func getAlertStatsMetrics(srv *server.Server) gin.HandlerFunc {
 func getDevicesJSON(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var devices []models.Device
-		srv.DB.Find(&devices)
+		if err := srv.DB.Find(&devices).Error; err != nil {
+			// Returning [] on a failed read looks identical to "no devices" —
+			// a silent lie to any UI/automation consuming this endpoint.
+			log.Error().Err(err).Msg("getDevicesJSON: device query failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load devices"})
+			return
+		}
 
 		c.JSON(http.StatusOK, devices)
 	}
@@ -180,7 +203,11 @@ func getOutageHistory(srv *server.Server) gin.HandlerFunc {
 		timeRange := c.DefaultQuery("range", "24h")
 
 		var devices []models.Device
-		srv.DB.Find(&devices)
+		if err := srv.DB.Find(&devices).Error; err != nil {
+			log.Error().Err(err).Msg("getOutageHistory: device query failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load outage history"})
+			return
+		}
 
 		// Generate mock outage data (in production, track actual outages)
 		now := time.Now()
