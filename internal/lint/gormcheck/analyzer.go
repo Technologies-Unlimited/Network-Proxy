@@ -19,7 +19,9 @@ package gormcheck
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -62,6 +64,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// 1. Bare call statement: `db.Save(x)` — the whole *gorm.DB is dropped.
 	insp.Preorder([]ast.Node{(*ast.ExprStmt)(nil)}, func(n ast.Node) {
 		stmt := n.(*ast.ExprStmt)
+		if isTestFile(pass, stmt.Pos()) {
+			return
+		}
 		call, ok := stmt.X.(*ast.CallExpr)
 		if !ok {
 			return
@@ -75,6 +80,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// 2. Blank-assignment: `_ = db.Save(x)` — .Error is silenced, not checked.
 	insp.Preorder([]ast.Node{(*ast.AssignStmt)(nil)}, func(n ast.Node) {
 		assign := n.(*ast.AssignStmt)
+		if isTestFile(pass, assign.Pos()) {
+			return
+		}
 		if len(assign.Rhs) != 1 {
 			return
 		}
@@ -95,6 +103,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	})
 
 	return nil, nil
+}
+
+// isTestFile reports whether pos lands in a _test.go file. The gate is scoped
+// to PRODUCTION code, matching the repo's existing errcheck exclusion for the
+// same silent-failure class (.golangci.yml: "keep errcheck focused on
+// production silent-failures") — a swallowed DB error in test setup surfaces as
+// a failed assertion, whereas in production it silently misleads the operator.
+func isTestFile(pass *analysis.Pass, pos token.Pos) bool {
+	if f := pass.Fset.File(pos); f != nil {
+		return strings.HasSuffix(f.Name(), "_test.go")
+	}
+	return false
 }
 
 // gormFinisher reports whether call is a terminal GORM method whose result type
