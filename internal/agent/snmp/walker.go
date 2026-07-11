@@ -298,3 +298,17 @@ func (c *Collector) GetDeviceCount() int {
 	defer c.mu.RUnlock()
 	return len(c.devices)
 }
+
+// DeviceTemplate returns the SNMP template registered for a device (the exact
+// pointer pollDevice iterates OIDs on), or nil if the device isn't monitored.
+// Exposed so callers/tests can verify the template handed to the collector is
+// fully hydrated — critically, that its many2many OIDs association was preloaded
+// by the feeding query; an empty template.OIDs means the poller walks nothing.
+func (c *Collector) DeviceTemplate(deviceID string) *models.SNMPTemplate {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if sd, ok := c.devices[deviceID]; ok {
+		return sd.Template
+	}
+	return nil
+}

@@ -84,7 +84,11 @@ func wireDeviceIntoCollectors(db *gorm.DB, device *models.Device) {
 	if device.SNMPEnabled && lc.SNMP != nil {
 		if device.SNMPTemplate == nil && device.SNMPTemplateID != nil && db != nil {
 			var tmpl models.SNMPTemplate
-			if err := db.First(&tmpl, "id = ?", *device.SNMPTemplateID).Error; err == nil {
+			// Preload("OIDs") is required: the walker's pollDevice ranges over
+			// template.OIDs, so fetching the template without its many2many OIDs
+			// hands the collector an OID-less template and the device polls
+			// ZERO metrics (it connects but walks nothing).
+			if err := db.Preload("OIDs").First(&tmpl, "id = ?", *device.SNMPTemplateID).Error; err == nil {
 				device.SNMPTemplate = &tmpl
 			}
 		}

@@ -101,7 +101,11 @@ func SeedDefaultDevices(db *gorm.DB) error {
 func LoadDevicesIntoCollectors(db *gorm.DB, icmpCollector *icmp.Collector, snmpCollector *snmp.Collector) {
 	var devices []models.Device
 
-	if err := db.Preload("SNMPTemplate").Find(&devices).Error; err != nil {
+	// Nested preload loads each device's SNMPTemplate AND that template's
+	// many2many OIDs. The walker's pollDevice ranges over template.OIDs, so
+	// preloading only "SNMPTemplate" (without ".OIDs") hands the collector an
+	// OID-less template and the device connects but polls ZERO metrics.
+	if err := db.Preload("SNMPTemplate.OIDs").Find(&devices).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to load devices from database")
 		return
 	}
