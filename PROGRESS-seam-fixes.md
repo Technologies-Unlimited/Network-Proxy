@@ -66,6 +66,16 @@ gh release w/ binary, push ai-native.
   v1.1.0 + mark-stale-proxies cron), keeping the peer's uncommitted TryClient/try-classify/
   business-workspace-map files untouched.
 
+### SHIPPED (follow-up, post-campaign)
+- **OID down-sync delete-propagation (audit §2 OID-bidirectional P2):** `reconcileOIDs` now
+  deletes local rows that ThothOS owns (non-empty `ThothOSID`) but a SUCCESSFUL upstream pull
+  no longer returns — an upstream OID delete no longer leaves a stale ghost row polling
+  forever. Added `OIDsDeleted` to `ApplyResult` (logged + returned). Safety rails: locally-
+  created rows (empty `ThothOSID`) are never deleted; a failed `GetOIDs` pull bails before any
+  mutation (empty-but-successful `[]`/`nil` is distinguishable from failure `nil`/`err`), so a
+  transient blip can't wipe the local table. Table test pins delete / no-delete-of-local /
+  no-delete-on-error. OID sync is now fully bidirectional (push-up + down-sync
+  create/adopt/update/delete); README + CLAUDE.md corrected. (dbc2f65)
+
 ### STILL OPEN (not in this campaign's scope — future work)
-- OID down-sync (ThothOS→proxy) is still not wired; OID sync remains push-up-only (documented
-  honestly in README/CLAUDE.md as "push-up").
+- (none tracked here — OID down-sync is now wired; see SHIPPED follow-up above.)

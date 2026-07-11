@@ -24,7 +24,7 @@ When connected to ThothOS (technologiesunlimited.net), Network Monitor operates 
 - **Centralized management** - SNMP templates, ICMP templates, and IPAM data pulled from ThothOS
 - **Pull-based config sync** - The proxy re-pulls templates, OIDs, and IPAM data on a jittered 60-120s ticker and **applies** them to the live SQLite store and the running collectors (no webhook receiver; the proxy keeps a persisted local copy so it keeps polling during a ThothOS outage)
 - **Results reported up to ThothOS** - The proxy batches each device's latest status (up/down), latency, and packet loss and posts them to ThothOS every 30s, so a down device on the buyer's LAN is visible in the dashboard
-- **OID sync (push-up)** - OIDs created/edited locally are pushed to ThothOS; a ThothOS→proxy down-sync channel is not yet wired
+- **OID sync (bidirectional)** - Push-up: OIDs created/edited/deleted locally are pushed to ThothOS (user-action driven). Down-sync: on the config pull ticker the proxy reconciles ThothOS-owned OIDs into its local store — creating new ones, adopting oid-string matches, updating changed fields, and deleting local rows whose upstream OID was removed. Locally-created OIDs (never pushed) are left untouched, and a failed pull deletes nothing (so a control-plane blip can't wipe the local table)
 - **User authentication** - Login through ThothOS with MFA support
 
 ```
