@@ -261,7 +261,7 @@ When connected to ThothOS, the following data is synchronized:
 | **SNMP Templates** | ThothOS → Local | 60-120s pull + apply | SNMPv2/v3 polling templates, applied to the live collectors |
 | **ICMP Templates** | ThothOS → Local | 60-120s pull + apply | Ping monitoring templates, applied to the live collectors |
 | **IPAM Data** | ThothOS → Local | 60-120s pull | Supernets, subnets, pools, VLANs, IPs (offset-paginated, 1000/page — no silent truncation) |
-| **OIDs** | Local → ThothOS (push-up) | on create/edit | SNMP object identifiers; ThothOS→proxy down-sync is not yet wired |
+| **OIDs** | Bidirectional | push-up on create/edit; down-sync on the 60-120s pull | SNMP object identifiers. Push-up: local create/edit/delete → ThothOS (user-driven). Down-sync: ThothOS → proxy create/adopt/update/delete (upstream deletes reap ThothOS-owned local rows; locally-created rows are preserved) |
 | **Heartbeat** | Local → ThothOS | ~60s | Liveness + device/node counts (`proxyHeartbeat`) |
 | **Monitoring Results** | Local → ThothOS | 30s batch | Per-device up/down status, latency, and packet loss (`reportMonitoringResults`); companyId is injected server-side from the API key |
 
