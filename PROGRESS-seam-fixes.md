@@ -56,15 +56,13 @@ gh release w/ binary, push ai-native.
   `-ldflags "-X main.version=..."`). update.bat does NOT pin a branch (local copy-over
   self-updater) — nothing to change there.
 
-### REMAINS for the orchestrator (owner/push actions this agent must NOT do)
-- Push NM `production` (`git push origin production`, NO branch/PR).
-- Tag `v1.1.0` on the shipped NM HEAD and push the tag.
-- Cut the GitHub release for `v1.1.0` with a prebuilt binary built via
-  `go build -ldflags "-X main.version=1.1.0 -X main.commitSHA=<sha> -X main.buildTime=<ts>"`
-  (so the release zip's folder is `Network-Monitor-1.1.0`, matching the README link).
-- Push the ai-native side (results ingest entity + IPAM pagination args + wizard pinning tag
-  v1.1.0 + mark-stale-proxies cron), keeping the peer's uncommitted TryClient/try-classify/
-  business-workspace-map files untouched.
+### PUBLISHED (all orchestrator push/release actions DONE)
+- NM `production` pushed (HEAD `1e8ff1a`). ai-native pushed (`06205b657`), peer's uncommitted
+  files left untouched (scoped commits only).
+- **v1.1.0** tag + release (prebuilt binary) — the ThothOS-integration-operational release.
+- **v1.1.1** tag + release (Latest) — security + OID-bidirectional. Binary self-identifies 1.1.1,
+  `govulncheck` 0 reachable. Supersedes v1.1.0 (whose binary predates the security fixes).
+- ai-native wizard re-pinned v1.1.0 → **v1.1.1** so buyers build the secure release.
 
 ### SHIPPED (follow-up, post-campaign)
 - **OID down-sync delete-propagation (audit §2 OID-bidirectional P2):** `reconcileOIDs` now
@@ -77,5 +75,17 @@ gh release w/ binary, push ai-native.
   no-delete-on-error. OID sync is now fully bidirectional (push-up + down-sync
   create/adopt/update/delete); README + CLAUDE.md corrected. (dbc2f65)
 
+### SHIPPED (follow-up #2 — security + hardening, v1.1.1)
+- **All reachable vulns cleared** — `govulncheck` 11 → 0 reachable. Toolchain `go1.25.12`
+  (8 stdlib advisories incl. crypto/tls), `golang.org/x/net` v0.53.0, `quic-go` v0.59.1.
+  `go` language directive moved 1.24.0 → 1.25.0 (build-forced by x/net). (0f25156)
+- **Logout hardened** — `handleLogout` now behind the loopback+bootstrap-token gate (shared
+  `requireLocalOrBootstrap` helper, `handleEnableStandalone` byte-identical); closes the remote
+  unauthenticated brick/auth-bypass. Local operator logout preserved. (70375b9)
+- **README OID synced-data table** row corrected to Bidirectional (verifier-caught stale row). (4bdd760)
+
 ### STILL OPEN (not in this campaign's scope — future work)
-- (none tracked here — OID down-sync is now wired; see SHIPPED follow-up above.)
+- 21 non-reachable govulncheck advisories remain (require-only / uncalled) — no risky major bump attempted.
+- `handleEnableStandalone` has no dedicated regression test (verified by diff-identity only) — optional.
+- Settings `disconnect` also calls `teardownThothOSSession` but sits behind `RequireAuth` — worth a follow-up auth-adequacy confirm.
+- NM repo `CLAUDE.md` is gitignored by repo policy — the OID doc correction is on-disk (effective for Claude Code) but not version-controlled; owner decides whether to un-ignore.
