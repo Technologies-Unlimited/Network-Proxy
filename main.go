@@ -709,6 +709,16 @@ func startNodeStatusMonitorCtx(ctx context.Context, db *gorm.DB) {
 // heartbeat. Dependent rows (peers, bandwidth results, AND scheduled tests) are
 // cascaded ONLY when the node was actually deleted, so a spared node keeps its
 // history.
+//
+// Atomicity: each node's full cascade (node delete + its peers + bandwidth
+// results + scheduled tests) runs inside a single db.Transaction, so it is
+// all-or-nothing. A crash or error between the node delete and any child delete
+// can never commit a partial orphan (node gone with dangling children, or a
+// still-live node's history torn out). The race-safe last_seen re-assertion
+// lives INSIDE the transaction; if the node lost the race (RowsAffected == 0)
+// the transaction commits without touching that node's children. A per-node
+// transaction error is logged and skipped so one bad node cannot abort the
+// whole sweep.
 func sweepStaleNodes(db *gorm.DB, now time.Time) (deleted int, markedOffline int64) {
 	offlineCutoff := now.Add(-nodeOfflineTimeout)
 	staleCutoff := now.Add(-nodeStaleTimeout)
@@ -718,23 +728,39 @@ func sweepStaleNodes(db *gorm.DB, now time.Time) (deleted int, markedOffline int
 	db.Where("last_seen < ?", staleCutoff).Find(&staleNodes)
 
 	for _, node := range staleNodes {
-		// Re-check the staleness predicate INSIDE the delete: if a heartbeat
-		// refreshed last_seen after the Find above, this matches 0 rows and the
-		// node survives.
-		res := db.Where("last_seen < ?", staleCutoff).Delete(&models.Node{}, "id = ?", node.ID)
-		if res.Error != nil {
-			log.Error().Err(res.Error).Str("nodeId", node.ID).Msg("Failed to delete stale node")
+		nodeDeleted := false
+		err := db.Transaction(func(tx *gorm.DB) error {
+			// Re-check the staleness predicate INSIDE the delete: if a heartbeat
+			// refreshed last_seen after the Find above, this matches 0 rows and
+			// the node survives.
+			res := tx.Where("last_seen < ?", staleCutoff).Delete(&models.Node{}, "id = ?", node.ID)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				// Saved by a fresh heartbeat in the race window — commit
+				// without cascading, so a still-alive node keeps its history.
+				return nil
+			}
+			if err := tx.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.NodePeer{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.BandwidthTestResult{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.ScheduledTest{}).Error; err != nil {
+				return err
+			}
+			nodeDeleted = true
+			return nil
+		})
+		if err != nil {
+			log.Error().Err(err).Str("nodeId", node.ID).Msg("Failed to delete stale node cascade; skipping")
 			continue
 		}
-		if res.RowsAffected == 0 {
-			// Saved by a fresh heartbeat in the race window — do NOT cascade
-			// its history.
-			continue
+		if nodeDeleted {
+			deleted++
 		}
-		db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.NodePeer{})
-		db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.BandwidthTestResult{})
-		db.Where("source_node_id = ? OR target_node_id = ?", node.ID, node.ID).Delete(&models.ScheduledTest{})
-		deleted++
 	}
 
 	if deleted > 0 {

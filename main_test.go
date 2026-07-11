@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -145,6 +146,78 @@ func TestSweepSparesNodeHeartbeatedDuringSweep(t *testing.T) {
 	if btCount != 1 {
 		t.Fatalf("history cascaded for a spared node: count=%d want 1", btCount)
 	}
+}
+
+// TestSweepCascadeIsAtomicOnChildFailure proves the per-node cleanup is
+// all-or-nothing. When a child delete fails partway through the cascade, the
+// node deletion itself must ROLL BACK — leaving the node AND every dependent row
+// intact — rather than committing a partial orphan (node gone, some children
+// dangling, or vice-versa).
+//
+// Against the old sequential deletes on the raw db (node deleted FIRST at :724,
+// then peers/results/scheduled tests as separate un-transacted statements whose
+// errors are ignored) a failing child delete leaves the node ALREADY gone: this
+// test then finds the node missing and fails. With each node's cascade wrapped
+// in a single db.Transaction, the failing child delete aborts the tx and the
+// node re-materializes.
+func TestSweepCascadeIsAtomicOnChildFailure(t *testing.T) {
+	db := newMainTestDB(t)
+	now := time.Now()
+	old := now.Add(-nodeStaleTimeout - time.Minute)
+
+	node := &models.Node{CompanyID: "c1", Name: "atomic", Hostname: "h", IPAddress: "10.0.0.7", Status: "online", LastSeen: &old}
+	if err := db.Create(node).Error; err != nil {
+		t.Fatal(err)
+	}
+	peer := &models.NodePeer{SourceNodeID: node.ID, TargetNodeID: node.ID}
+	bt := &models.BandwidthTestResult{SourceNodeID: node.ID, TargetNodeID: node.ID, Status: "completed"}
+	sched := &models.ScheduledTest{Name: "nightly", SourceNodeID: node.ID, TargetNodeID: node.ID, Duration: 5}
+	if err := db.Create(peer).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(bt).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(sched).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject a failure on the BandwidthTestResult delete so the cascade breaks
+	// AFTER the node row is removed but BEFORE the whole cleanup completes. A
+	// non-atomic cascade would already have committed the node deletion.
+	boom := errors.New("injected child-delete failure")
+	if err := db.Callback().Delete().Before("gorm:delete").Register("test:fail_bt_delete", func(tx *gorm.DB) {
+		if _, ok := tx.Statement.Dest.(*models.BandwidthTestResult); ok {
+			tx.AddError(boom)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Callback().Delete().Remove("test:fail_bt_delete")
+
+	deleted, _ := sweepStaleNodes(db, now)
+	if deleted != 0 {
+		t.Fatalf("deleted=%d; a cascade that fails mid-way must roll back and count 0", deleted)
+	}
+
+	// The node must survive — the failed child delete rolled the whole tx back.
+	var check models.Node
+	if err := db.First(&check, "id = ?", node.ID).Error; err != nil {
+		t.Fatalf("cascade not atomic: node was deleted despite a child-delete failure: %v", err)
+	}
+	// Every dependent row must survive too — no partial orphaning either way.
+	assertPresent := func(model interface{}, label string) {
+		var count int64
+		if err := db.Model(model).Where("source_node_id = ?", node.ID).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("%s count=%d want 1 (partial cascade — not atomic)", label, count)
+		}
+	}
+	assertPresent(&models.NodePeer{}, "NodePeer")
+	assertPresent(&models.BandwidthTestResult{}, "BandwidthTestResult")
+	assertPresent(&models.ScheduledTest{}, "ScheduledTest")
 }
 
 // TestHeartbeat404TriggersReRegistration proves a node whose heartbeat 404s
