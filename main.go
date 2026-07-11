@@ -726,7 +726,12 @@ func sweepStaleNodes(db *gorm.DB, now time.Time) (deleted int, markedOffline int
 
 	// Step 1: Delete stale nodes (not seen for 15+ minutes).
 	var staleNodes []models.Node
-	db.Where("last_seen < ?", staleCutoff).Find(&staleNodes)
+	if err := db.Where("last_seen < ?", staleCutoff).Find(&staleNodes).Error; err != nil {
+		// Don't silently treat a failed read as "no stale nodes" — log it and
+		// skip the delete phase; the mark-offline phase below is independent.
+		log.Error().Err(err).Msg("Failed to load stale nodes; skipping stale-node deletion this sweep")
+		staleNodes = nil
+	}
 
 	for _, node := range staleNodes {
 		nodeDeleted := false

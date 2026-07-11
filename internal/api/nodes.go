@@ -330,7 +330,10 @@ func listNodesJSON(srv *server.Server) gin.HandlerFunc {
 		limit, offset := Page(c)
 		var nodes []models.Node
 		var total int64
-		scopeByCompany(c, srv.DB).Model(&models.Node{}).Count(&total)
+		if err := scopeByCompany(c, srv.DB).Model(&models.Node{}).Count(&total).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading nodes"})
+			return
+		}
 		if err := scopeByCompany(c, srv.DB).Limit(limit).Offset(offset).Find(&nodes).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading nodes"})
 			return
@@ -550,18 +553,31 @@ func deleteNode(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		// Delete associated peers first
-		srv.DB.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.NodePeer{})
-
-		// Delete associated bandwidth tests
-		srv.DB.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.BandwidthTestResult{})
-
-		// Delete associated scheduled tests so they don't orphan against a
-		// node ID that no longer exists (a run-now on an orphan would either
-		// fail or, worse, fabricate a result for a deleted endpoint).
-		srv.DB.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.ScheduledTest{})
-
-		if err := srv.DB.Delete(&node).Error; err != nil {
+		// Delete the node and its children ATOMICALLY, mirroring the background
+		// sweepStaleNodes cascade. Previously the three child deletes ran
+		// unchecked and outside a transaction, so a failed child delete left
+		// orphaned rows (an orphaned scheduled test's run-now can fabricate a
+		// result for a deleted endpoint) while the handler still reported
+		// "Node deleted successfully". Only report success if the tx commits.
+		err := srv.DB.Transaction(func(tx *gorm.DB) error {
+			// Peers.
+			if err := tx.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.NodePeer{}).Error; err != nil {
+				return err
+			}
+			// Bandwidth test results.
+			if err := tx.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.BandwidthTestResult{}).Error; err != nil {
+				return err
+			}
+			// Scheduled tests so they don't orphan against a node ID that no
+			// longer exists.
+			if err := tx.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.ScheduledTest{}).Error; err != nil {
+				return err
+			}
+			// The node itself.
+			return tx.Delete(&node).Error
+		})
+		if err != nil {
+			log.Error().Err(err).Str("nodeId", id).Msg("Failed to delete node cascade")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -581,11 +597,15 @@ func cleanupDuplicateNodes(srv *server.Server) gin.HandlerFunc {
 		}
 
 		var groups []NodeGroup
-		srv.DB.Model(&models.Node{}).
+		if err := srv.DB.Model(&models.Node{}).
 			Select("name, grpc_port, COUNT(*) as count").
 			Group("name, grpc_port").
 			Having("COUNT(*) > 1").
-			Scan(&groups)
+			Scan(&groups).Error; err != nil {
+			log.Error().Err(err).Msg("cleanupDuplicateNodes: failed to scan duplicate groups")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error scanning for duplicate nodes"})
+			return
+		}
 
 		if len(groups) == 0 {
 			c.JSON(http.StatusOK, gin.H{"message": "No duplicate nodes found", "deleted": 0})
@@ -597,27 +617,42 @@ func cleanupDuplicateNodes(srv *server.Server) gin.HandlerFunc {
 		for _, group := range groups {
 			// Get all nodes with this name+port, ordered by last_seen DESC
 			var nodes []models.Node
-			srv.DB.Where("name = ? AND grpc_port = ?", group.Name, group.GRPCPort).
+			if err := srv.DB.Where("name = ? AND grpc_port = ?", group.Name, group.GRPCPort).
 				Order("last_seen DESC NULLS LAST").
-				Find(&nodes)
+				Find(&nodes).Error; err != nil {
+				log.Error().Err(err).Str("name", group.Name).Msg("cleanupDuplicateNodes: failed to load duplicate set")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading duplicate nodes"})
+				return
+			}
 
 			if len(nodes) <= 1 {
 				continue
 			}
 
-			// Keep the first one (most recently seen), delete the rest
+			// Keep the first one (most recently seen), delete the rest. Each
+			// removal cascades ATOMICALLY (same as the sweep and manual delete)
+			// so a failed child delete can't orphan schedules/peers/results
+			// against the removed duplicate's ID while still counting it deleted.
 			for i := 1; i < len(nodes); i++ {
 				nodeID := nodes[i].ID
-				// Delete associated peers
-				srv.DB.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.NodePeer{})
-				// Delete associated bandwidth tests
-				srv.DB.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.BandwidthTestResult{})
-				// Delete associated scheduled tests (same cascade as the sweep
-				// and manual delete — otherwise schedules orphan against the
-				// removed duplicate's ID).
-				srv.DB.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.ScheduledTest{})
-				// Delete the node
-				srv.DB.Delete(&nodes[i])
+				target := nodes[i]
+				err := srv.DB.Transaction(func(tx *gorm.DB) error {
+					if err := tx.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.NodePeer{}).Error; err != nil {
+						return err
+					}
+					if err := tx.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.BandwidthTestResult{}).Error; err != nil {
+						return err
+					}
+					if err := tx.Where("source_node_id = ? OR target_node_id = ?", nodeID, nodeID).Delete(&models.ScheduledTest{}).Error; err != nil {
+						return err
+					}
+					return tx.Delete(&target).Error
+				})
+				if err != nil {
+					log.Error().Err(err).Str("nodeId", nodeID).Msg("cleanupDuplicateNodes: failed to delete duplicate cascade")
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting duplicate node", "deleted": totalDeleted})
+					return
+				}
 				totalDeleted++
 			}
 		}
@@ -657,7 +692,10 @@ func listNodePeers(srv *server.Server) gin.HandlerFunc {
 		limit, offset := Page(c)
 		var peers []models.NodePeer
 		var total int64
-		scopeByNodeOwnership(c, srv.DB).Model(&models.NodePeer{}).Count(&total)
+		if err := scopeByNodeOwnership(c, srv.DB).Model(&models.NodePeer{}).Count(&total).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading peers"})
+			return
+		}
 		if err := scopeByNodeOwnership(c, srv.DB).Preload("SourceNode").Preload("TargetNode").
 			Limit(limit).Offset(offset).Find(&peers).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error loading peers"})
@@ -1359,7 +1397,9 @@ func runScheduledTestNow(srv *server.Server) gin.HandlerFunc {
 		// Update last run time
 		now := time.Now()
 		scheduledTest.LastRun = &now
-		srv.DB.Save(&scheduledTest)
+		if err := srv.DB.Save(&scheduledTest).Error; err != nil {
+			log.Error().Err(err).Str("schedule_id", scheduledTest.ID).Msg("failed to stamp scheduled test LastRun")
+		}
 
 		// Execute the REAL bandwidth test in a panic-recovered goroutine, the
 		// same path startBandwidthTest uses. On success it writes measured
@@ -1599,7 +1639,11 @@ func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, 
 		test.ErrorMessage = msg
 		now := time.Now()
 		test.EndTime = &now
-		srv.DB.Save(test)
+		// If THIS write fails a genuinely-failed test is never recorded as
+		// failed; surface it so a stuck record is at least diagnosable.
+		if err := srv.DB.Save(test).Error; err != nil {
+			log.Error().Err(err).Str("test_id", test.ID).Msg("failed to persist failed bandwidth test state")
+		}
 	}
 
 	// Determine target address based on test mode. Refuse direct mode if the
@@ -1630,7 +1674,9 @@ func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, 
 
 	// Store the actual target address used
 	test.ActualTargetAddress = targetAddr
-	srv.DB.Save(test)
+	if err := srv.DB.Save(test).Error; err != nil {
+		log.Error().Err(err).Str("test_id", test.ID).Msg("failed to persist bandwidth test target address")
+	}
 
 	log.Info().Msgf("Connecting to target node at %s", targetAddr)
 
@@ -1704,7 +1750,9 @@ func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, 
 		test.Status = "failed"
 		test.ErrorMessage = fmt.Sprintf("Failed to start test: %v", err)
 		close(cpuDone)
-		srv.DB.Save(test)
+		if serr := srv.DB.Save(test).Error; serr != nil {
+			log.Error().Err(serr).Str("test_id", test.ID).Msg("failed to persist bandwidth test start-failure state")
+		}
 		return
 	}
 	log.Info().Msgf("Test started on target: %s (chunk size: %d KB)", startResp.Message, chunkSize/1024)
@@ -1791,7 +1839,12 @@ func runRealBandwidthTest(srv *server.Server, test *models.BandwidthTestResult, 
 		}
 	}
 
-	srv.DB.Save(test)
+	// Terminal write of the completed result. If this fails the record stays
+	// Status="running" forever in the UI even though the test finished — log
+	// loudly so a stuck-running row is diagnosable.
+	if err := srv.DB.Save(test).Error; err != nil {
+		log.Error().Err(err).Str("test_id", test.ID).Msg("failed to persist completed bandwidth test result; UI may show it stuck 'running'")
+	}
 
 	// Log results with CPU stats
 	log.Info().Msgf("Bandwidth test %s completed: upload=%.2f Mbps, download=%.2f Mbps",

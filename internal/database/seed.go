@@ -1,6 +1,8 @@
 package database
 
 import (
+	"fmt"
+
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/icmp"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/snmp"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -10,9 +12,12 @@ import (
 
 // SeedDefaultDevices adds default monitoring targets to the database
 func SeedDefaultDevices(db *gorm.DB) error {
-	// Check if any devices already exist
+	// Check if any devices already exist. A swallowed error here reads as
+	// count==0 and would (wrongly) re-seed on top of existing rows.
 	var count int64
-	db.Model(&models.Device{}).Count(&count)
+	if err := db.Model(&models.Device{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("counting existing devices: %w", err)
+	}
 
 	if count > 0 {
 		log.Info().Int64("count", count).Msg("Devices already exist, skipping seed")
@@ -128,9 +133,12 @@ func LoadDevicesIntoCollectors(db *gorm.DB, icmpCollector *icmp.Collector, snmpC
 
 // SeedDefaultAlertRules adds default alert rules for monitoring
 func SeedDefaultAlertRules(db *gorm.DB) error {
-	// Check if any alert rules already exist
+	// Check if any alert rules already exist. A swallowed error here reads as
+	// count==0 and would (wrongly) re-seed on top of existing rows.
 	var count int64
-	db.Model(&models.AlertRule{}).Count(&count)
+	if err := db.Model(&models.AlertRule{}).Count(&count).Error; err != nil {
+		return fmt.Errorf("counting existing alert rules: %w", err)
+	}
 
 	if count > 0 {
 		log.Info().Int64("count", count).Msg("Alert rules already exist, skipping seed")

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -9,6 +10,8 @@ import (
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/agent/discovery"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 var (
@@ -95,7 +98,10 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 				return
 			}
 
-			// Save discovered devices to database
+			// Save discovered devices to database. A dropped Create/Updates here
+			// means a device the operator SEES in the scan results never enters
+			// the DB-backed inventory and is never polled — it silently drops out
+			// of monitoring. Check every write and log per-device failures.
 			if srv.DB != nil {
 				for _, device := range devices {
 					device.CompanyID = companyID
@@ -108,19 +114,29 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 						Where("ip_address = ? AND company_id = ?", device.IPAddress, companyID).
 						First(&existingDevice)
 
-					if result.Error != nil {
-						// Device doesn't exist, create it
-						srv.DB.Create(device)
-					} else {
-						// Device exists, update it
-						srv.DB.Model(device).
+					switch {
+					case result.Error == nil:
+						// Device exists, update it.
+						if err := srv.DB.Model(device).
 							Where("ip_address = ? AND company_id = ?", device.IPAddress, companyID).
 							Updates(map[string]interface{}{
 								"hostname":    device.Hostname,
 								"status":      device.Status,
 								"last_seen":   device.LastSeen,
 								"device_type": device.DeviceType,
-							})
+							}).Error; err != nil {
+							log.Error().Err(err).Str("ip", device.IPAddress).Msg("discovery: failed to update discovered device")
+						}
+					case errors.Is(result.Error, gorm.ErrRecordNotFound):
+						// Genuinely absent — create it.
+						if err := srv.DB.Create(device).Error; err != nil {
+							log.Error().Err(err).Str("ip", device.IPAddress).Msg("discovery: failed to persist discovered device")
+						}
+					default:
+						// A transient READ error is NOT proof the device is
+						// absent; taking the create branch here would risk a
+						// duplicate. Log and skip this device.
+						log.Error().Err(result.Error).Str("ip", device.IPAddress).Msg("discovery: existence check failed; skipping device")
 					}
 				}
 			}

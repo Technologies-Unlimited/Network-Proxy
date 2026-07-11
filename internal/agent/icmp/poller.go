@@ -447,7 +447,12 @@ func (c *Collector) recordLossAndStatus(device *models.Device, loss float64) {
 	if status == "up" {
 		updates["last_seen"] = time.Now()
 	}
-	c.db.Model(&models.Device{}).Where("id = ?", device.ID).Updates(updates)
+	// A dropped write here means the device's up/down status silently never
+	// changes in the UI even though polling detected a transition — log it so
+	// the stale status is diagnosable.
+	if err := c.db.Model(&models.Device{}).Where("id = ?", device.ID).Updates(updates).Error; err != nil {
+		log.Error().Err(err).Str("device", device.Hostname).Str("status", status).Msg("Failed to persist ICMP poll status/packet_loss")
+	}
 }
 
 // GetDeviceCount returns the number of monitored devices

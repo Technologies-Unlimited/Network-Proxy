@@ -160,13 +160,25 @@ func dedupeLiveNodes(db *gorm.DB) error {
 			Find(&nodes).Error; err != nil {
 			return err
 		}
-		// Keep nodes[0] (most recently seen); remove the rest with their history.
+		// Keep nodes[0] (most recently seen); remove the rest with their
+		// history. Each removal cascades ATOMICALLY and every child delete is
+		// checked — previously the three child deletes were unchecked, so a
+		// failed cascade could soft-delete the node while leaving orphaned
+		// peers/results/schedules pointing at a now-absent node ID.
 		for i := 1; i < len(nodes); i++ {
 			id := nodes[i].ID
-			db.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.NodePeer{})
-			db.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.BandwidthTestResult{})
-			db.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.ScheduledTest{})
-			if err := db.Delete(&models.Node{}, "id = ?", id).Error; err != nil {
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.NodePeer{}).Error; err != nil {
+					return err
+				}
+				if err := tx.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.BandwidthTestResult{}).Error; err != nil {
+					return err
+				}
+				if err := tx.Where("source_node_id = ? OR target_node_id = ?", id, id).Delete(&models.ScheduledTest{}).Error; err != nil {
+					return err
+				}
+				return tx.Delete(&models.Node{}, "id = ?", id).Error
+			}); err != nil {
 				return err
 			}
 		}
