@@ -304,7 +304,20 @@ func disconnectFromThothOS(srv *server.Server) gin.HandlerFunc {
 		// restart cannot silently reconnect, and flip to standalone. Previously
 		// this only cleared the Settings config, leaving the heartbeat loop
 		// running and any ProxyConfig row intact — a cosmetic disconnect.
-		teardownThothOSSession(srv.DB)
+		if err := teardownThothOSSession(srv.DB); err != nil {
+			// The live session is stopped and the process is standalone, but a
+			// persisted credential could not be deleted — it may survive and
+			// auto-reconnect on reboot. Do NOT claim a clean disconnect.
+			log.Error().
+				Err(err).
+				Bool("configExisted", configExists).
+				Msg("Disconnect could not fully clear persisted ThothOS config")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "Disconnected the live session, but failed to remove saved ThothOS credentials; they may reconnect on restart. Check server logs and retry.",
+			})
+			return
+		}
 		log.Info().
 			Bool("configExisted", configExists).
 			Msg("Disconnected from ThothOS")

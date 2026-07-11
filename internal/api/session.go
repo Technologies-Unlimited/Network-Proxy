@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -332,7 +334,13 @@ func stampLastHeartbeat(db *gorm.DB) {
 // heartbeat surviving a disconnect, no restart auto-reconnect, and — because
 // standalone bypasses RequireAuth — the login and settings-reconnect endpoints
 // stay reachable after logout instead of 401-bricking.
-func teardownThothOSSession(db *gorm.DB) {
+//
+// It returns a non-nil error if EITHER persisted fallback failed to delete. The
+// live session is still stopped and the process still flips to standalone (so
+// the box stays usable), but a returned error means saved credentials may have
+// SURVIVED on disk and could auto-reconnect on the next boot — the caller MUST
+// surface that instead of reporting a clean "standalone mode".
+func teardownThothOSSession(db *gorm.DB) error {
 	// 1. Stop the heartbeat + config-pull loop.
 	StopThothOSSession()
 
@@ -342,15 +350,21 @@ func teardownThothOSSession(db *gorm.DB) {
 	// 3. Delete BOTH persisted fallbacks. main.go's boot reads the Settings
 	//    config (GetThothOSConfig) first and falls back to the ProxyConfig row
 	//    (LoadConfigOnStartup); either surviving would auto-reconnect on the
-	//    next boot, which is exactly the cosmetic-disconnect bug.
+	//    next boot, which is exactly the cosmetic-disconnect bug. Collect (not
+	//    swallow) each error so a failed delete can be surfaced to the operator.
+	var errs []error
 	if err := models.ClearThothOSConfig(db); err != nil {
 		log.Error().Err(err).Msg("Failed to clear ThothOS settings on teardown")
+		errs = append(errs, err)
 	}
 	if err := db.Unscoped().Where("id > ?", 0).Delete(&models.ProxyConfig{}).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to clear ProxyConfig on teardown")
+		errs = append(errs, fmt.Errorf("clearing ProxyConfig: %w", err))
 	}
 
 	// 4. Flip to standalone so the box stays usable and reconnect/login remain
-	//    reachable.
+	//    reachable, even if a persisted row could not be removed.
 	middleware.SetStandaloneMode(true)
+
+	return errors.Join(errs...)
 }

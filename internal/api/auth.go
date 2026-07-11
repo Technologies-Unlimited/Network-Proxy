@@ -637,7 +637,20 @@ func (s *AuthService) handleLogout(c *gin.Context) {
 		return
 	}
 
-	teardownThothOSSession(s.db)
+	if err := teardownThothOSSession(s.db); err != nil {
+		// Session stopped and process flipped to standalone, but a saved
+		// credential could not be removed — it may auto-reconnect on reboot.
+		// Surface the failure rather than reporting a clean logout.
+		log.Error().
+			Err(err).
+			Bool("configExisted", configExists).
+			Msg("Logout could not fully clear persisted ThothOS config")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Logged out the live session, but failed to remove saved credentials; they may reconnect on restart. Check server logs and retry.",
+		})
+		return
+	}
 
 	log.Info().
 		Bool("configExisted", configExists).
