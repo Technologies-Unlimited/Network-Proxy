@@ -1,0 +1,48 @@
+# golangci-lint v2 configuration for Network-Monitor.
+#
+# Curated for USABILITY/CORRECTNESS, not style. Every linter here catches a way
+# the running product can silently misbehave for its operator. Pure-style
+# linters (gofmt, lll, gocyclo, godot, whitespace, ...) are deliberately NOT
+# enabled — this repo is not gofmt-clean and we want correctness signal, not
+# formatting churn.
+#
+# Run locally via `bash scripts/check.sh`; CI runs it on every push/PR.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # Start from nothing and opt in deliberately, so the set is exactly what we
+  # reviewed rather than whatever the tool defaults to this release.
+  default: none
+  enable:
+    - errcheck # swallowed errors = silent failure (the #1 usability class here)
+    - govet # go vet correctness checks (shadowing, printf, locks, ...)
+    - ineffassign # ineffectual assignments: a value computed then discarded
+    - staticcheck # SA/ST/S/QF: real bugs, dead code, dubious constructs
+    - unconvert # redundant type conversions (often a sign of confused code)
+    - wastedassign # assignment whose value is never read (logic that does nothing)
+    - bodyclose # unclosed http.Response.Body -> fd/socket leak on a long-running server
+    - sqlclosecheck # unclosed sql.Rows/Stmt -> DB resource leak
+    - rowserrcheck # unchecked rows.Err() -> silently truncated result set
+    - nilerr # `return nil` when err != nil -> endpoint lies that it succeeded
+    - durationcheck # multiplying two time.Durations -> wrong timeout/interval
+    - contextcheck # passing a non-inherited context -> broken cancellation/deadlines
+
+  exclusions:
+    generated: lax
+    rules:
+      # CARVE-OUT (gate-burndown TODO): scanner.go imports github.com/go-ping/ping,
+      # deprecated upstream (SA1019). Migrating to the maintained fork
+      # (prometheus-community/pro-bing) is a dependency change for a later stage.
+      # Scoped to this one file + this one check so nothing else is hidden.
+      - path: internal/agent/discovery/scanner\.go
+        linters:
+          - staticcheck
+        text: 'SA1019'
+
+issues:
+  # Report every finding so the baseline count is honest (defaults truncate).
+  max-issues-per-linter: 0
+  max-same-issues: 0
