@@ -7,9 +7,9 @@ import (
 )
 
 // MaxBodyBytes caps the request body. Sized for the largest expected
-// payload: a ThothOS config.sync webhook can carry several hundred SNMP /
-// ICMP templates. 10 MiB is comfortable headroom; anything over that is
-// almost certainly hostile or a configuration error.
+// payload: a bulk config import (several hundred SNMP / ICMP templates)
+// posted through the settings UI. 10 MiB is comfortable headroom; anything
+// over that is almost certainly hostile or a configuration error.
 const MaxBodyBytes = 10 << 20 // 10 MiB
 
 // BodyLimit caps c.Request.Body at maxBytes. Reads beyond the cap return

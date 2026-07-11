@@ -18,11 +18,12 @@ import (
 
 // fakeThothOS stands up a minimal in-process ThothOS that answers the exact
 // endpoints the Go client hits during a connect: api-key validation, the
-// registerProxy / proxyHeartbeat / registerWebhook GraphQL mutations, and the
-// config-pull queries. It records every proxyHeartbeat so a test can prove the
-// heartbeat loop actually started. This exercises the real thothos.Client and
-// the real session lifecycle end-to-end — only the ThothOS server is a local
-// double (the T5 "hit the full stack, don't mock a layer" analog for Go).
+// registerProxy / proxyHeartbeat GraphQL mutations, the config-pull queries,
+// and the reportMonitoringResults mutation. It records every proxyHeartbeat so
+// a test can prove the heartbeat loop actually started. This exercises the real
+// thothos.Client and the real session lifecycle end-to-end — only the ThothOS
+// server is a local double (the T5 "hit the full stack, don't mock a layer"
+// analog for Go).
 type fakeThothOS struct {
 	server     *httptest.Server
 	registers  int32
@@ -51,8 +52,6 @@ func newFakeThothOS(t *testing.T) *fakeThothOS {
 		case strings.Contains(payload, "registerProxy"):
 			atomic.AddInt32(&f.registers, 1)
 			io.WriteString(w, `{"data":{"registerProxy":{"_id":"p1","proxyName":"test-proxy","proxyStatus":"online"}}}`)
-		case strings.Contains(payload, "registerWebhook"):
-			io.WriteString(w, `{"data":{"registerWebhook":{"_id":"wh1","secret":"whsecret","isActive":true}}}`)
 		default:
 			// Config-pull queries etc. — return empty data; the client logs a
 			// warning per missing key and moves on (never fatal, never retried).

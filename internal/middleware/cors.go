@@ -66,7 +66,7 @@ func SameOriginOnly() gin.HandlerFunc {
 		c.Header("Vary", "Origin")
 		if c.Request.Method == http.MethodOptions {
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Webhook-Signature, X-Webhook-Timestamp, X-Webhook-Id, HX-Request, HX-Target, HX-Trigger")
+			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, HX-Request, HX-Target, HX-Trigger")
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
