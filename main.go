@@ -45,7 +45,7 @@ import (
 
 // Build-time variables (set via -ldflags)
 var (
-	version    = "1.1.1"
+	version    = "1.1.2"
 	commitSHA  = "dev"
 	buildTime  = "unknown"
 )
