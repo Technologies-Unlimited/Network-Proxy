@@ -10,11 +10,18 @@ import (
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/gosnmp/gosnmp"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // Collector handles SNMP polling for devices
 type Collector struct {
-	metrics  *metrics.Registry
+	metrics *metrics.Registry
+	// db persists a reachability-derived Device.Status for SNMP-only devices.
+	// Without it, Device.Status was written ONLY by the ICMP poller, so a device
+	// monitored purely by SNMP stayed 'unknown' forever even while it was being
+	// polled successfully — the dashboard counted it as neither up nor down. May
+	// be nil in unit tests that only exercise the lifecycle map.
+	db       *gorm.DB
 	devices  map[string]*SNMPDevice
 	mu       sync.RWMutex
 	interval time.Duration
@@ -26,10 +33,13 @@ type SNMPDevice struct {
 	Template *models.SNMPTemplate
 }
 
-// NewCollector creates a new SNMP collector
-func NewCollector(registry *metrics.Registry) *Collector {
+// NewCollector creates a new SNMP collector. db may be nil (unit tests that only
+// exercise the device lifecycle map); when non-nil the collector persists a
+// reachability-derived Device.Status for the SNMP-only devices it polls.
+func NewCollector(registry *metrics.Registry, db *gorm.DB) *Collector {
 	return &Collector{
 		metrics:  registry,
+		db:       db,
 		devices:  make(map[string]*SNMPDevice),
 		interval: 60 * time.Second,
 	}
@@ -160,18 +170,55 @@ func (c *Collector) pollDevice(ctx context.Context, snmpDevice *SNMPDevice) {
 	if err != nil {
 		log.Error().Err(err).Str("device", device.Hostname).Msg("Failed to connect SNMP")
 		c.metrics.RecordSNMPFailure(device.ID, device.IPAddress)
+		// Connect failed -> the device did not answer SNMP. For an SNMP-only
+		// device this is its reachability signal (down); for an ICMP+SNMP device
+		// ICMP owns status, so recordReachability no-ops.
+		c.recordReachability(device, false)
 		return
 	}
 	defer snmpClient.Conn.Close()
 
-	// Poll each OID in the template
+	// Poll each OID in the template, tracking whether the device answered at all
+	// so we can persist an honest reachability status for SNMP-only devices.
+	answered := false
 	for _, oid := range template.OIDs {
-		c.pollOID(snmpClient, device, oid)
+		if c.pollOID(snmpClient, device, oid) {
+			answered = true
+		}
+	}
+	c.recordReachability(device, answered)
+}
+
+// recordReachability persists an SNMP-derived up/down status to the device row,
+// but ONLY for devices where SNMP is the authoritative status writer — i.e. ICMP
+// is disabled. When ICMP is enabled it owns up/down (loss-based), so SNMP must
+// not fight it; keeping a single writer per device avoids two collectors racing
+// the same column. This closes the "SNMP-only device stuck 'unknown' forever
+// even while actively, successfully polled" gap. No-op when the collector has no
+// DB (unit tests).
+func (c *Collector) recordReachability(device *models.Device, reachable bool) {
+	if c.db == nil || device.ICMPEnabled {
+		return
+	}
+	updates := map[string]interface{}{}
+	if reachable {
+		updates["status"] = "up"
+		updates["last_seen"] = time.Now()
+	} else {
+		updates["status"] = "down"
+	}
+	// A dropped write here means an SNMP-only device's up/down silently never
+	// changes in the UI even though polling detected reachability — log it so the
+	// stale status is diagnosable.
+	if err := c.db.Model(&models.Device{}).Where("id = ?", device.ID).Updates(updates).Error; err != nil {
+		log.Error().Err(err).Str("device", device.Hostname).Bool("reachable", reachable).Msg("Failed to persist SNMP reachability status")
 	}
 }
 
-// pollOID queries a single OID and records the metric
-func (c *Collector) pollOID(client *gosnmp.GoSNMP, device *models.Device, oid models.OID) {
+// pollOID queries a single OID and records the metric. It returns true when the
+// device answered (a value came back), which the caller aggregates into the
+// device's SNMP reachability status.
+func (c *Collector) pollOID(client *gosnmp.GoSNMP, device *models.Device, oid models.OID) bool {
 	result, err := client.Get([]string{oid.OID})
 	if err != nil {
 		log.Error().
@@ -179,7 +226,7 @@ func (c *Collector) pollOID(client *gosnmp.GoSNMP, device *models.Device, oid mo
 			Str("device", device.Hostname).
 			Str("oid", oid.OID).
 			Msg("Failed to get SNMP value")
-		return
+		return false
 	}
 
 	if len(result.Variables) == 0 {
@@ -187,7 +234,7 @@ func (c *Collector) pollOID(client *gosnmp.GoSNMP, device *models.Device, oid mo
 			Str("device", device.Hostname).
 			Str("oid", oid.OID).
 			Msg("No SNMP variables returned")
-		return
+		return false
 	}
 
 	variable := result.Variables[0]
@@ -202,6 +249,7 @@ func (c *Collector) pollOID(client *gosnmp.GoSNMP, device *models.Device, oid mo
 
 	// Record metric
 	c.metrics.RecordSNMPValue(device.ID, device.IPAddress, oid.Name, value)
+	return true
 }
 
 // getSNMPVersion converts string version to gosnmp version

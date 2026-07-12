@@ -334,7 +334,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	// data to evaluate against and Prometheus /metrics is empty.
 	metricsRegistry := metrics.NewRegistry()
 	icmpCollector := icmp.NewCollector(metricsRegistry, db)
-	snmpCollector := snmp.NewCollector(metricsRegistry)
+	snmpCollector := snmp.NewCollector(metricsRegistry, db)
 	collectors := collector.New(icmpCollector, snmpCollector)
 
 	// Publish the collectors to the API package so device create/update/delete

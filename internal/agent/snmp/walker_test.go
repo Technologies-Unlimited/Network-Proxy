@@ -8,7 +8,7 @@ import (
 )
 
 func TestSNMPSetIntervalRetunesLiveCollector(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, nil)
 
 	if got := c.GetInterval(); got != 60*time.Second {
 		t.Fatalf("default interval = %s, want 60s", got)
@@ -29,7 +29,7 @@ func TestSNMPSetIntervalRetunesLiveCollector(t *testing.T) {
 }
 
 func TestSNMPAddRemoveDeviceCount(t *testing.T) {
-	c := NewCollector(nil)
+	c := NewCollector(nil, nil)
 	tmpl := &models.SNMPTemplate{ID: "t1", Version: "v2c", Community: "public"}
 
 	c.AddDevice(&models.Device{ID: "d1", Hostname: "h1", IPAddress: "10.0.0.1"}, tmpl)

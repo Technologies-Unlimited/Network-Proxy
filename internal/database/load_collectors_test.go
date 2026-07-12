@@ -82,7 +82,7 @@ func TestLoadDevicesIntoCollectorsPreloadsTemplateOIDs(t *testing.T) {
 	}
 
 	icmpC := icmp.NewCollector(nil, nil)
-	snmpC := snmp.NewCollector(nil)
+	snmpC := snmp.NewCollector(nil, nil)
 
 	LoadDevicesIntoCollectors(db, icmpC, snmpC)
 

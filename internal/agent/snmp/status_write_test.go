@@ -44,6 +44,10 @@ func TestSNMPRecordReachabilityWritesStatusForSNMPOnlyDevice(t *testing.T) {
 	if err := db.Create(dev).Error; err != nil {
 		t.Fatalf("seed device: %v", err)
 	}
+	// Device.ICMPEnabled has gorm `default:true`, so creating with the zero-value
+	// false back-fills it to true in memory. Force the real SNMP-only posture the
+	// device form produces (icmp checkbox unchecked -> ICMPEnabled=false).
+	dev.ICMPEnabled = false
 
 	// A successful poll -> up + LastSeen stamped.
 	c.recordReachability(dev, true)

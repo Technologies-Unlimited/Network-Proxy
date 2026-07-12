@@ -19,7 +19,7 @@ func withLiveCollectors(t *testing.T) (*icmp.Collector, *snmp.Collector) {
 	// second metrics.NewRegistry() would panic on duplicate Prometheus
 	// registration within one test binary.
 	icmpC := icmp.NewCollector(nil, nil)
-	snmpC := snmp.NewCollector(nil)
+	snmpC := snmp.NewCollector(nil, nil)
 
 	collectorsMu.Lock()
 	prev := liveCollectors
@@ -58,7 +58,7 @@ func TestCollectorHealthSurface(t *testing.T) {
 	}
 
 	// A wired, healthy collector (no privilege fault recorded) reports available.
-	SetCollectors(icmp.NewCollector(nil, nil), snmp.NewCollector(nil))
+	SetCollectors(icmp.NewCollector(nil, nil), snmp.NewCollector(nil, nil))
 	if h := collectorHealth(); !h.ICMPRawSocketAvailable || h.ICMPHealthError != "" {
 		t.Errorf("healthy collector health=%+v want available/no-error", h)
 	}

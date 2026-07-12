@@ -129,6 +129,21 @@ func applyDeviceForm(c *gin.Context, device *models.Device) {
 	device.ICMPInterval = formInt(c.PostForm("icmp_interval"), 60)
 }
 
+// normalizeDeviceStatus keeps Device.Status HONEST about what is actually being
+// monitored. Device.Status is written only by the collectors (ICMP loss-based,
+// SNMP reachability-based); a device with NO enabled collector has nothing
+// polling it, so any persisted 'up'/'down' is a frozen last-known value the
+// dashboard "devices up/down" counters would present as live truth. When a
+// device is created or edited into a state with no enabled collector, reset it
+// to 'unknown' so it drops out of the up/down counts instead of lying green
+// forever. A device that still has an enabled collector is left alone — the next
+// poll cycle refreshes it — so a still-monitored device does not flicker off.
+func normalizeDeviceStatus(device *models.Device) {
+	if !device.ICMPEnabled && !device.SNMPEnabled {
+		device.Status = "unknown"
+	}
+}
+
 // createDevice creates a new device. It serves both the JSON API (JSON body ->
 // JSON response) and the htmx add-device form (url-encoded body -> the refreshed
 // devices-table HTML fragment). Before this split the form's url-encoded body
@@ -229,6 +244,9 @@ func updateDevice(srv *server.Server) gin.HandlerFunc {
 					[]byte(`<p style="color: var(--danger);">Hostname and IP Address / FQDN are required.</p>`))
 				return
 			}
+			// A device edited to have no enabled collector must not keep a live
+			// status the dashboard counts (nothing polls it anymore).
+			normalizeDeviceStatus(&device)
 			if err := srv.DB.Save(&device).Error; err != nil {
 				c.Data(http.StatusOK, "text/html",
 					[]byte(`<p style="color: var(--danger);">Error saving device</p>`))
@@ -245,6 +263,10 @@ func updateDevice(srv *server.Server) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+
+		// A device edited to have no enabled collector must not keep a live
+		// status the dashboard counts (nothing polls it anymore).
+		normalizeDeviceStatus(&device)
 
 		// Update device
 		if err := srv.DB.Save(&device).Error; err != nil {

@@ -18,7 +18,7 @@ var snmpLeakReg = metrics.NewRegistry()
 // drains the removed device's Prometheus series (via Registry.ForgetDevice).
 // Before the fix, RemoveDevice left every per-device SNMP series behind forever.
 func TestSNMPRemoveDeviceDrainsMetrics(t *testing.T) {
-	c := NewCollector(snmpLeakReg)
+	c := NewCollector(snmpLeakReg, nil)
 	tmpl := &models.SNMPTemplate{ID: "t1", Version: "v2c", Community: "public"}
 	dev := &models.Device{ID: "leak-snmp-1", Hostname: "h", IPAddress: "10.8.8.8"}
 	c.AddDevice(dev, tmpl)

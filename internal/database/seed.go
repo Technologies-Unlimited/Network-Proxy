@@ -10,6 +10,25 @@ import (
 	"gorm.io/gorm"
 )
 
+// SeedDefaults populates a fresh install with its out-of-box defaults: the
+// default monitoring targets AND the default alert rules. Both underlying seeds
+// are idempotent (they no-op when their table already has rows), so this is safe
+// to call on every boot — a fresh DB gets seeded, an existing DB is untouched.
+//
+// This is the single wiring point runServer calls after migrations. Before it
+// existed, SeedDefaultDevices and SeedDefaultAlertRules had ZERO callers, so a
+// brand-new install shipped with no alert rules and the alerting engine ran but
+// evaluated nothing — a "device down" never alerted out of the box.
+func SeedDefaults(db *gorm.DB) error {
+	if err := SeedDefaultDevices(db); err != nil {
+		return fmt.Errorf("seeding default devices: %w", err)
+	}
+	if err := SeedDefaultAlertRules(db); err != nil {
+		return fmt.Errorf("seeding default alert rules: %w", err)
+	}
+	return nil
+}
+
 // SeedDefaultDevices adds default monitoring targets to the database
 func SeedDefaultDevices(db *gorm.DB) error {
 	// Check if any devices already exist. A swallowed error here reads as
