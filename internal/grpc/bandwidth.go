@@ -663,10 +663,12 @@ func (s *Server) GetTestResults(ctx context.Context, req *pb.GetTestResultsReque
 	s.testsLock.RLock()
 	test, ok := s.tests[req.TestId]
 	var state pb.TestState
+	var endTime time.Time
 	if ok {
-		// Read State under the same lock finishTest writes it under; a read after
-		// RUnlock would race the finish transition.
+		// Read State AND EndTime under the same lock finishTest writes them under;
+		// a read after RUnlock would race the finish transition.
 		state = test.State
+		endTime = test.EndTime
 	}
 	s.testsLock.RUnlock()
 
@@ -674,11 +676,14 @@ func (s *Server) GetTestResults(ctx context.Context, req *pb.GetTestResultsReque
 		return nil, fmt.Errorf("test %s not found", req.TestId)
 	}
 
-	endTime := time.Now()
-	if state == pb.TestState_TEST_STATE_COMPLETED ||
-		state == pb.TestState_TEST_STATE_FAILED ||
-		state == pb.TestState_TEST_STATE_CANCELLED {
-		// Use actual end time if test is done
+	// A finished test's duration is a fixed historical fact: freeze it at the
+	// recorded EndTime so repeated GetTestResults calls return a STABLE
+	// duration/Mbps. finishTest stamps EndTime on every terminal state, so a zero
+	// EndTime means the test is still running — measure live elapsed time instead.
+	// (Previously the terminal branch was empty (SA9003) and duration was always
+	// recomputed from time.Now(), so it inflated and Mbps decayed on every query.)
+	if endTime.IsZero() {
+		endTime = time.Now()
 	}
 
 	durationMs := endTime.Sub(test.StartTime).Milliseconds()

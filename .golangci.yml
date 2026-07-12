@@ -110,17 +110,6 @@ linters:
       # Burn this down; do NOT add more entries here.
       # ------------------------------------------------------------------
 
-      # SA9003 empty branch in GetTestResults (bandwidth.go): for a
-      # COMPLETED/FAILED/CANCELLED test the code MEANT to use the test's real
-      # end time, but the branch body is empty, so duration is computed from
-      # time.Now() and INFLATES on every subsequent query (wrong Mbps for
-      # finished tests). The real fix needs a BandwidthTest.EndTime field
-      # populated across the test lifecycle — owned by a later usability stage.
-      # TODO(gate-burndown): add BandwidthTest.EndTime, then remove this exclude.
-      - path: internal/grpc/bandwidth\.go
-        linters: [staticcheck]
-        text: 'SA9003'
-
       # The self-updater swallows os.Rename / os.Remove / os.MkdirAll /
       # fmt.Sscanf errors, INCLUDING the error-recovery renames that restore the
       # old binary — a failed restore leaves the install with NO executable,
