@@ -29,13 +29,19 @@ type ScanRequest struct {
 	Timeout int    `json:"timeout"` // Timeout in seconds (optional, default 300)
 }
 
-// ScanResponse represents a scan response
+// ScanResponse represents a scan response.
+//
+// Error carries the machine-readable failure message so every /api error body
+// shares the one canonical "error" envelope the rest of the API uses (a generic
+// REST client reads response.error uniformly). Message stays for the
+// human-readable SUCCESS text; on a failure it is left empty and Error is set.
 type ScanResponse struct {
-	Success    bool                    `json:"success"`
-	Message    string                  `json:"message"`
-	Discovered int                     `json:"discovered"`
-	Devices    []DeviceScanResult      `json:"devices,omitempty"`
-	Status     *discovery.ScanStatus   `json:"status,omitempty"`
+	Success    bool                  `json:"success"`
+	Message    string                `json:"message,omitempty"`
+	Error      string                `json:"error,omitempty"`
+	Discovered int                   `json:"discovered"`
+	Devices    []DeviceScanResult    `json:"devices,omitempty"`
+	Status     *discovery.ScanStatus `json:"status,omitempty"`
 }
 
 // DeviceScanResult represents a discovered device
@@ -53,7 +59,7 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, ScanResponse{
 				Success: false,
-				Message: "Invalid request: " + err.Error(),
+				Error:   "Invalid request: " + err.Error(),
 			})
 			return
 		}
@@ -63,7 +69,7 @@ func scanNetwork(srv *server.Server) gin.HandlerFunc {
 		if err != nil {
 			c.JSON(http.StatusBadRequest, ScanResponse{
 				Success: false,
-				Message: "Invalid CIDR format: " + err.Error(),
+				Error:   "Invalid CIDR format: " + err.Error(),
 			})
 			return
 		}

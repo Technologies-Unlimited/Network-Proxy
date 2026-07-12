@@ -492,6 +492,20 @@ func getNode(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
+// decodeStrictJSON decodes the request body into dst with DisallowUnknownFields
+// so an unknown/misspelled field is rejected with a clean, caller-facing error
+// instead of being silently ignored (partial-update handlers) or handed
+// downstream as a raw column name (which previously built invalid SQL, 500'd,
+// and leaked the DB schema). Callers render the returned error as a 400.
+func decodeStrictJSON(c *gin.Context, dst interface{}) error {
+	dec := json.NewDecoder(c.Request.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+	return nil
+}
+
 // updateNode updates a node.
 //
 // The body is decoded into a typed allowlist of editable columns with
