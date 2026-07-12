@@ -345,3 +345,32 @@ func TestRecordDownSuppressedWhenRawSocketUnavailable(t *testing.T) {
 		t.Errorf("privilege-down suppression failed: status=%q want unknown (not a false down)", got.Status)
 	}
 }
+
+// TestRttMillisPreservesSubMillisecond pins the fractional-latency fix: a real
+// sub-millisecond LAN RTT must NOT be recorded as 0ms (the old
+// Duration.Milliseconds() truncation), so latency metrics and sub-1ms alert
+// thresholds stay meaningful.
+func TestRttMillisPreservesSubMillisecond(t *testing.T) {
+	cases := []struct {
+		name string
+		rtt  time.Duration
+		want float64
+	}{
+		{"400us", 400 * time.Microsecond, 0.4},
+		{"900us", 900 * time.Microsecond, 0.9},
+		{"1500us", 1500 * time.Microsecond, 1.5},
+		{"12ms", 12 * time.Millisecond, 12.0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := rttMillis(tc.rtt)
+			if got != tc.want {
+				t.Errorf("rttMillis(%v)=%v want %v", tc.rtt, got, tc.want)
+			}
+			// Guard against a regression to integer truncation.
+			if tc.rtt < time.Millisecond && got == 0 {
+				t.Errorf("sub-millisecond RTT %v truncated to 0ms", tc.rtt)
+			}
+		})
+	}
+}

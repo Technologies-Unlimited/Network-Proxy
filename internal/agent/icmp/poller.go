@@ -386,15 +386,18 @@ func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
 	loss := stats.PacketLoss // percentage 0-100
 
 	if stats.PacketsRecv > 0 {
-		latency := stats.AvgRtt.Milliseconds()
+		// Use fractional milliseconds: Duration.Milliseconds() truncates to a
+		// whole number, so sub-millisecond LAN RTTs (0.2-0.9ms) would record and
+		// alert as 0ms. rttMillis preserves the fractional precision end to end.
+		latency := rttMillis(stats.AvgRtt)
 		log.Debug().
 			Str("device", device.Hostname).
 			Str("ip", device.IPAddress).
-			Int64("latency_ms", latency).
+			Float64("latency_ms", latency).
 			Float64("packet_loss", loss).
 			Msg("Ping completed")
 
-		c.metrics.RecordPingSuccess(device.ID, device.IPAddress, float64(latency))
+		c.metrics.RecordPingSuccess(device.ID, device.IPAddress, latency)
 	} else {
 		log.Warn().
 			Str("device", device.Hostname).
@@ -407,6 +410,14 @@ func (c *Collector) pollDevice(ctx context.Context, device *models.Device) {
 	}
 
 	c.recordLossAndStatus(device, loss)
+}
+
+// rttMillis converts a round-trip duration to fractional milliseconds. Unlike
+// time.Duration.Milliseconds() (which truncates to an integer and reports a real
+// 0.4ms LAN latency as 0), it preserves sub-millisecond precision, so the ping
+// latency metric and any latency-threshold alert see the true value.
+func rttMillis(d time.Duration) float64 {
+	return float64(d) / float64(time.Millisecond)
 }
 
 // recordDown records a device as fully lost (100% loss). If the raw socket is
