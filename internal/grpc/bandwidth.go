@@ -58,10 +58,40 @@ type DiagnosticStats struct {
 	HeapAllocMB      float64
 }
 
+// finishedTestRetention is how long a terminal (completed/failed/cancelled)
+// bandwidth test stays in s.tests before reapFinishedTests evicts it. It is long
+// enough for the source node to fetch results via GetTestResults, but bounded so
+// the map can't grow by one BandwidthTest per test run forever.
+const finishedTestRetention = 5 * time.Minute
+
+// reapFinishedTests evicts terminal tests whose EndTime is older than
+// finishedTestRetention. Running tests and just-finished tests (results still
+// fetchable) are kept. Called opportunistically from StartTest so the map stays
+// bounded under repeated test runs without a dedicated reaper goroutine. Caller
+// must NOT hold testsLock.
+func (s *Server) reapFinishedTests(now time.Time) {
+	s.testsLock.Lock()
+	defer s.testsLock.Unlock()
+	for id, test := range s.tests {
+		switch test.State {
+		case pb.TestState_TEST_STATE_COMPLETED,
+			pb.TestState_TEST_STATE_FAILED,
+			pb.TestState_TEST_STATE_CANCELLED:
+			if !test.EndTime.IsZero() && now.Sub(test.EndTime) >= finishedTestRetention {
+				delete(s.tests, id)
+			}
+		}
+	}
+}
+
 // StartTest initiates a bandwidth test
 func (s *Server) StartTest(ctx context.Context, req *pb.StartTestRequest) (*pb.StartTestResponse, error) {
 	log.Printf("Starting bandwidth test %s: %s -> %s, type=%s, duration=%ds",
 		req.TestId, req.SourceNodeId, req.TargetNodeId, req.TestType, req.DurationSeconds)
+
+	// Opportunistically evict long-finished tests so s.tests stays bounded as
+	// tests are run repeatedly against this node over its lifetime.
+	s.reapFinishedTests(time.Now())
 
 	testCtx, cancel := context.WithCancel(context.Background())
 
@@ -144,11 +174,23 @@ func (s *Server) addBytesReceived(testID string, n int64) {
 
 // finishTest marks a test as complete
 func (s *Server) finishTest(test *BandwidthTest, state pb.TestState, errMsg string) {
+	endTime := time.Now()
+
 	s.testsLock.Lock()
 	test.State = state
+	// Stamp EndTime under the same lock as State so reapFinishedTests can age the
+	// test out (and so a concurrent reader sees State and EndTime consistently).
+	test.EndTime = endTime
 	s.testsLock.Unlock()
 
-	endTime := time.Now()
+	// Release the test's context now that it is terminal. On the deadline-
+	// COMPLETED path nothing else calls Cancel (only CancelTest did), so without
+	// this the cancel func and its context resources leaked along with the map
+	// entry until reaping.
+	if test.Cancel != nil {
+		test.Cancel()
+	}
+
 	durationMs := endTime.Sub(test.StartTime).Milliseconds()
 
 	// Read the counters atomically — a streaming RPC handler may still be calling

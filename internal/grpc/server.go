@@ -71,6 +71,12 @@ type BandwidthTest struct {
 	TestType      pb.TestType
 	Duration      int32
 	StartTime     time.Time
+	// EndTime is stamped by finishTest when the test reaches a terminal state.
+	// It ages a finished test out of s.tests via reapFinishedTests so the map
+	// (and each test's retained Latencies slice + cancel func) does not grow
+	// without bound. Zero while the test is still running. Written/read under
+	// testsLock.
+	EndTime       time.Time
 	State         pb.TestState
 	BytesSent     int64
 	BytesReceived int64
