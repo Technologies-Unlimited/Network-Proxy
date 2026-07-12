@@ -186,6 +186,15 @@ func runServer(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Failed to initialize database")
 	}
 
+	// Seed out-of-box defaults (default devices + default alert rules) on a
+	// fresh install. Idempotent: no-ops once the tables have rows. Runs BEFORE
+	// LoadDevicesIntoCollectors so seeded devices are polled immediately, and it
+	// is what makes the alerting engine non-inert on a brand-new DB — without
+	// this the engine started with zero rules and a "device down" never fired.
+	if err := database.SeedDefaults(db); err != nil {
+		log.Error().Err(err).Msg("Failed to seed default devices/alert rules")
+	}
+
 	// Initialize server
 	srv := server.New(db)
 
