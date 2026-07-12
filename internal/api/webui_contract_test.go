@@ -185,7 +185,7 @@ func TestWebUINoDeadInternalLinks(t *testing.T) {
 
 	var dead []string
 	for _, rf := range refs {
-		ok := false
+		var ok bool
 		if rf.methodAware {
 			ok = methodPath[rf.method+" "+rf.norm]
 		} else {
