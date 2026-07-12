@@ -212,3 +212,38 @@ func (r *Registry) RecordAgentStatus(agentID, agentName string, status float64) 
 func (r *Registry) RecordDevicesMonitored(agentID, monitorType string, count float64) {
 	r.DevicesMonitored.WithLabelValues(agentID, monitorType).Set(count)
 }
+
+// ForgetDevice removes every per-device metric series for the given device, plus
+// its sampledStatus entry. It is the single drain point that keeps /metrics (and
+// process RSS) from growing without bound as devices churn: promauto Vecs
+// auto-create a child the first time a device is polled and NEVER remove it, so
+// without this a removed device — or a device whose ip_address/hostname changed
+// on edit (a fresh label set = a fresh, orphaned child) — leaves stale series
+// that promhttp re-serializes on every scrape forever.
+//
+// It deletes by DeletePartialMatch on device_id alone (every per-device Vec has
+// device_id as its first label), so it also reaps children orphaned by an
+// ip_address/hostname/oid_name change, not just the current label set. Idempotent
+// and safe to call for a device that has no recorded series. It intentionally
+// does NOT touch the per-agent Vecs (AgentUp / DevicesMonitored / PollDuration),
+// which are keyed by agent_id, not device_id.
+//
+// NOTE for future maintainers: any NEW per-device *Vec (one whose labels include
+// device_id) MUST be drained here — the reflection-driven gate in
+// registry_lifecycle_test.go enumerates the Registry and fails if a per-device
+// Vec is left un-drained.
+func (r *Registry) ForgetDevice(deviceID string) {
+	sel := prometheus.Labels{"device_id": deviceID}
+	r.DeviceStatus.DeletePartialMatch(sel)
+	r.PingLatency.DeletePartialMatch(sel)
+	r.PingSuccess.DeletePartialMatch(sel)
+	r.PingFailure.DeletePartialMatch(sel)
+	r.PacketLoss.DeletePartialMatch(sel)
+	r.SNMPValue.DeletePartialMatch(sel)
+	r.SNMPSuccess.DeletePartialMatch(sel)
+	r.SNMPFailure.DeletePartialMatch(sel)
+
+	r.sampledMu.Lock()
+	delete(r.sampledStatus, deviceID)
+	r.sampledMu.Unlock()
+}
