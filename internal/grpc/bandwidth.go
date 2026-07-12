@@ -151,11 +151,17 @@ func (s *Server) finishTest(test *BandwidthTest, state pb.TestState, errMsg stri
 	endTime := time.Now()
 	durationMs := endTime.Sub(test.StartTime).Milliseconds()
 
+	// Read the counters atomically — a streaming RPC handler may still be calling
+	// addBytesSent/addBytesReceived (the atomic writers) if a stream is draining as
+	// the deadline fires. A plain read here would race that write.
+	bytesSent := atomic.LoadInt64(&test.BytesSent)
+	bytesReceived := atomic.LoadInt64(&test.BytesReceived)
+
 	// Calculate speeds
 	var uploadMbps, downloadMbps float64
 	if durationMs > 0 {
-		uploadMbps = float64(test.BytesSent*8) / float64(durationMs) / 1000
-		downloadMbps = float64(test.BytesReceived*8) / float64(durationMs) / 1000
+		uploadMbps = float64(bytesSent*8) / float64(durationMs) / 1000
+		downloadMbps = float64(bytesReceived*8) / float64(durationMs) / 1000
 	}
 
 	results := &pb.TestResults{
@@ -167,9 +173,9 @@ func (s *Server) finishTest(test *BandwidthTest, state pb.TestState, errMsg stri
 		StartedAt:         timestamppb.New(test.StartTime),
 		EndedAt:           timestamppb.New(endTime),
 		DurationMs:        durationMs,
-		BytesSent:         test.BytesSent,
+		BytesSent:         bytesSent,
 		UploadSpeedMbps:   uploadMbps,
-		BytesReceived:     test.BytesReceived,
+		BytesReceived:     bytesReceived,
 		DownloadSpeedMbps: downloadMbps,
 		ErrorMessage:      errMsg,
 	}
@@ -540,6 +546,12 @@ func (s *Server) BidirectionalStream(stream grpc.BidiStreamingServer[pb.DataChun
 func (s *Server) GetTestStatus(ctx context.Context, req *pb.GetTestStatusRequest) (*pb.TestStatus, error) {
 	s.testsLock.RLock()
 	test, ok := s.tests[req.TestId]
+	var state pb.TestState
+	if ok {
+		// Read State under the same lock finishTest writes it under; a read after
+		// RUnlock would race the finish transition.
+		state = test.State
+	}
 	s.testsLock.RUnlock()
 
 	if !ok {
@@ -558,18 +570,22 @@ func (s *Server) GetTestStatus(ctx context.Context, req *pb.GetTestStatusRequest
 		progress = 100
 	}
 
+	// Counters are written atomically by the streaming handlers — load them the
+	// same way so a mid-test poll can't observe a torn value.
+	bytesSent := atomic.LoadInt64(&test.BytesSent)
+	bytesReceived := atomic.LoadInt64(&test.BytesReceived)
 	var uploadMbps, downloadMbps float64
 	if elapsedMs > 0 {
-		uploadMbps = float64(test.BytesSent*8) / float64(elapsedMs) / 1000
-		downloadMbps = float64(test.BytesReceived*8) / float64(elapsedMs) / 1000
+		uploadMbps = float64(bytesSent*8) / float64(elapsedMs) / 1000
+		downloadMbps = float64(bytesReceived*8) / float64(elapsedMs) / 1000
 	}
 
 	return &pb.TestStatus{
 		TestId:              req.TestId,
-		State:               test.State,
+		State:               state,
 		ProgressPercent:     progress,
-		BytesSent:           test.BytesSent,
-		BytesReceived:       test.BytesReceived,
+		BytesSent:           bytesSent,
+		BytesReceived:       bytesReceived,
 		CurrentUploadMbps:   uploadMbps,
 		CurrentDownloadMbps: downloadMbps,
 		ElapsedMs:           elapsedMs,
@@ -604,6 +620,12 @@ func (s *Server) CancelTest(ctx context.Context, req *pb.CancelTestRequest) (*pb
 func (s *Server) GetTestResults(ctx context.Context, req *pb.GetTestResultsRequest) (*pb.TestResults, error) {
 	s.testsLock.RLock()
 	test, ok := s.tests[req.TestId]
+	var state pb.TestState
+	if ok {
+		// Read State under the same lock finishTest writes it under; a read after
+		// RUnlock would race the finish transition.
+		state = test.State
+	}
 	s.testsLock.RUnlock()
 
 	if !ok {
@@ -611,18 +633,20 @@ func (s *Server) GetTestResults(ctx context.Context, req *pb.GetTestResultsReque
 	}
 
 	endTime := time.Now()
-	if test.State == pb.TestState_TEST_STATE_COMPLETED ||
-		test.State == pb.TestState_TEST_STATE_FAILED ||
-		test.State == pb.TestState_TEST_STATE_CANCELLED {
+	if state == pb.TestState_TEST_STATE_COMPLETED ||
+		state == pb.TestState_TEST_STATE_FAILED ||
+		state == pb.TestState_TEST_STATE_CANCELLED {
 		// Use actual end time if test is done
 	}
 
 	durationMs := endTime.Sub(test.StartTime).Milliseconds()
 
+	bytesSent := atomic.LoadInt64(&test.BytesSent)
+	bytesReceived := atomic.LoadInt64(&test.BytesReceived)
 	var uploadMbps, downloadMbps float64
 	if durationMs > 0 {
-		uploadMbps = float64(test.BytesSent*8) / float64(durationMs) / 1000
-		downloadMbps = float64(test.BytesReceived*8) / float64(durationMs) / 1000
+		uploadMbps = float64(bytesSent*8) / float64(durationMs) / 1000
+		downloadMbps = float64(bytesReceived*8) / float64(durationMs) / 1000
 	}
 
 	return &pb.TestResults{
@@ -630,13 +654,13 @@ func (s *Server) GetTestResults(ctx context.Context, req *pb.GetTestResultsReque
 		SourceNodeId:      test.SourceNodeID,
 		TargetNodeId:      test.TargetNodeID,
 		TestType:          test.TestType,
-		State:             test.State,
+		State:             state,
 		StartedAt:         timestamppb.New(test.StartTime),
 		EndedAt:           timestamppb.New(endTime),
 		DurationMs:        durationMs,
-		BytesSent:         test.BytesSent,
+		BytesSent:         bytesSent,
 		UploadSpeedMbps:   uploadMbps,
-		BytesReceived:     test.BytesReceived,
+		BytesReceived:     bytesReceived,
 		DownloadSpeedMbps: downloadMbps,
 	}, nil
 }
