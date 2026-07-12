@@ -164,6 +164,42 @@ func SetThothOSConfig(db *gorm.DB, config *ThothOSConfig) error {
 	return nil
 }
 
+// ThothOSConfigUpdate is a PARTIAL, present-aware ThothOS config update: a nil
+// pointer means "field omitted, leave unchanged"; a non-nil pointer (INCLUDING a
+// pointer to "") means "set to this value". This distinction is what lets an
+// operator CLEAR a field — the old string-only SetThothOSConfig treated empty as
+// "skip", so clearing a field silently did nothing while the Save reported
+// success.
+type ThothOSConfigUpdate struct {
+	URL       *string
+	APIKey    *string
+	ProxyName *string
+}
+
+// ApplyThothOSConfig writes only the fields that are PRESENT (non-nil pointer),
+// verbatim — including an explicit empty string, which clears the setting. An
+// omitted field (nil pointer) is left untouched. This is the correct fix for the
+// "cleared field is silently dropped" bug: omit means unchanged, empty means
+// clear.
+func ApplyThothOSConfig(db *gorm.DB, upd ThothOSConfigUpdate) error {
+	if upd.URL != nil {
+		if err := SetSetting(db, SettingThothOSURL, *upd.URL); err != nil {
+			return err
+		}
+	}
+	if upd.APIKey != nil {
+		if err := SetSetting(db, SettingThothOSAPIKey, *upd.APIKey); err != nil {
+			return err
+		}
+	}
+	if upd.ProxyName != nil {
+		if err := SetSetting(db, SettingProxyName, *upd.ProxyName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetThothOSURL retrieves the ThothOS URL setting
 func GetThothOSURL(db *gorm.DB) string {
 	url, err := GetSetting(db, SettingThothOSURL)

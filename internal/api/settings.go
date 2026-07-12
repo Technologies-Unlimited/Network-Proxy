@@ -150,28 +150,51 @@ func getThothOSConfig(srv *server.Server) gin.HandlerFunc {
 
 func setThothOSConfig(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Pointer fields distinguish "field omitted" (nil -> leave unchanged)
+		// from "field set to empty" (non-nil -> clear). Without this, an operator
+		// could not clear a saved value through Save: the old handler bound plain
+		// strings and the model skipped every empty field, so the clear silently
+		// did nothing while the response reported success.
 		var req struct {
-			URL       string `json:"url"`
-			APIKey    string `json:"apiKey"`
-			ProxyName string `json:"proxyName"`
+			URL       *string `json:"url"`
+			APIKey    *string `json:"apiKey"`
+			ProxyName *string `json:"proxyName"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 			return
 		}
-		config := &models.ThothOSConfig{URL: req.URL, APIKey: req.APIKey, ProxyName: req.ProxyName}
-		if err := models.SetThothOSConfig(srv.DB, config); err != nil {
+		if err := models.ApplyThothOSConfig(srv.DB, models.ThothOSConfigUpdate{
+			URL:       req.URL,
+			APIKey:    req.APIKey,
+			ProxyName: req.ProxyName,
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save configuration"})
 			return
 		}
+
+		// The running heartbeat/config-pull session captured its ThothOS client
+		// ONCE at connect time (see StartThothOSSession). A plain Save persists
+		// the new URL/key but does NOT retune those live loops, so the change is
+		// not applied until an explicit reconnect (or restart). Tell the operator
+		// honestly instead of reporting an unconditional "saved & live". When no
+		// session is running, the persisted config is picked up on the next
+		// connect/boot, so nothing needs restarting.
+		restartRequired := ThothOSSessionActive()
+		message := "Configuration saved successfully"
+		if restartRequired {
+			message = "Configuration saved. Reconnect to ThothOS to apply the new settings to the running session."
+		}
 		log.Info().
-			Str("url", config.URL).
-			Bool("hasApiKey", config.APIKey != "").
-			Str("proxyName", config.ProxyName).
+			Bool("urlChanged", req.URL != nil).
+			Bool("apiKeyChanged", req.APIKey != nil).
+			Bool("proxyNameChanged", req.ProxyName != nil).
+			Bool("restartRequired", restartRequired).
 			Msg("ThothOS configuration saved")
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "Configuration saved successfully",
+			"success":         true,
+			"message":         message,
+			"restartRequired": restartRequired,
 		})
 	}
 }
