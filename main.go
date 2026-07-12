@@ -338,7 +338,11 @@ func runServer(cmd *cobra.Command, args []string) {
 	// read each device's latest status/latency/loss sample and report it UP to
 	// ThothOS (the results-up channel). Wired before any session starts so all
 	// three connect paths (boot, login, settings) report results.
-	api.SetSampleSource(metrics.NewLocalQuerier(metricsRegistry))
+	metricsQuerier := metrics.NewLocalQuerier(metricsRegistry)
+	api.SetSampleSource(metricsQuerier)
+	// The same querier backs the Visualize dashboard + downloadable reports so
+	// they render REAL latency/availability instead of invented numbers.
+	api.SetMetricsQuerier(metricsQuerier)
 
 	collectorCtx, cancelCollectors := context.WithCancel(context.Background())
 	collectorsDone := make(chan struct{})

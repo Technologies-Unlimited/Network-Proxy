@@ -54,6 +54,31 @@ func (q *LocalQuerier) PacketLoss(deviceID, ipAddress string) (float64, error) {
 	return gaugeValue(q.reg.PacketLoss.WithLabelValues(deviceID, ipAddress))
 }
 
+// PingCounts returns the cumulative successful and failed ping counts recorded
+// for a device this process lifetime. It is the real basis for an availability
+// (uptime) figure: uptime% = success / (success + failure) * 100 — a genuine
+// measured ratio, never a hardcoded constant.
+//
+// It returns ErrNoSample for a device that has never been polled (guarded by
+// HasStatusSample BEFORE touching the counter Vecs, so a never-polled device
+// does not auto-create phantom 0 children). A polled-but-always-down device
+// legitimately returns success=0, failure=N (0% uptime) — that is real, not a
+// missing sample, because the poller records a status sample on every poll.
+func (q *LocalQuerier) PingCounts(deviceID, ipAddress string) (success, failure float64, err error) {
+	if !q.reg.HasStatusSample(deviceID) {
+		return 0, 0, ErrNoSample
+	}
+	success, err = counterValue(q.reg.PingSuccess.WithLabelValues(deviceID, ipAddress))
+	if err != nil {
+		return 0, 0, err
+	}
+	failure, err = counterValue(q.reg.PingFailure.WithLabelValues(deviceID, ipAddress))
+	if err != nil {
+		return 0, 0, err
+	}
+	return success, failure, nil
+}
+
 // gaugeValue extracts the float value from a Prometheus gauge metric. The
 // client_golang API doesn't expose a value reader directly, so we round-trip
 // through dto.Metric. Returns ErrNoSample if the gauge has never been set.
@@ -66,6 +91,20 @@ func gaugeValue(g interface{ Write(*dto.Metric) error }) (float64, error) {
 		return 0, ErrNoSample
 	}
 	return *m.Gauge.Value, nil
+}
+
+// counterValue extracts the float value from a Prometheus counter metric. Like
+// gaugeValue it round-trips through dto.Metric because client_golang exposes no
+// direct value reader. Returns ErrNoSample if the counter has never been set.
+func counterValue(counter interface{ Write(*dto.Metric) error }) (float64, error) {
+	var m dto.Metric
+	if err := counter.Write(&m); err != nil {
+		return 0, err
+	}
+	if m.Counter == nil || m.Counter.Value == nil {
+		return 0, ErrNoSample
+	}
+	return *m.Counter.Value, nil
 }
 
 // ErrNoSample is returned when a metric exists but has no recorded sample.

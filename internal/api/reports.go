@@ -38,7 +38,7 @@ func generateDeviceReport(srv *server.Server) gin.HandlerFunc {
 		}
 
 		// Generate report
-		generator := reporting.NewGenerator(srv.DB)
+		generator := reporting.NewGeneratorWithMetrics(srv.DB, getMetricsQuerier())
 		data, err := generator.GenerateDeviceReport(format, startDate, endDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -81,7 +81,7 @@ func generateUptimeReport(srv *server.Server) gin.HandlerFunc {
 		}
 
 		// Generate report
-		generator := reporting.NewGenerator(srv.DB)
+		generator := reporting.NewGeneratorWithMetrics(srv.DB, getMetricsQuerier())
 		data, err := generator.GenerateUptimeReport(format, deviceID, startDate, endDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -123,7 +123,7 @@ func generateAlertReport(srv *server.Server) gin.HandlerFunc {
 		}
 
 		// Generate report
-		generator := reporting.NewGenerator(srv.DB)
+		generator := reporting.NewGeneratorWithMetrics(srv.DB, getMetricsQuerier())
 		data, err := generator.GenerateAlertReport(format, startDate, endDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -166,7 +166,7 @@ func generatePerformanceReport(srv *server.Server) gin.HandlerFunc {
 		}
 
 		// Generate report
-		generator := reporting.NewGenerator(srv.DB)
+		generator := reporting.NewGeneratorWithMetrics(srv.DB, getMetricsQuerier())
 		data, err := generator.GeneratePerformanceReport(format, deviceID, startDate, endDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -189,7 +189,7 @@ func exportDevices(srv *server.Server) gin.HandlerFunc {
 		startDate := time.Time{}
 		endDate := time.Now()
 
-		generator := reporting.NewGenerator(srv.DB)
+		generator := reporting.NewGeneratorWithMetrics(srv.DB, getMetricsQuerier())
 		data, err := generator.GenerateDeviceReport(format, startDate, endDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -230,7 +230,7 @@ func exportMetrics(srv *server.Server) gin.HandlerFunc {
 			}
 		}
 
-		generator := reporting.NewGenerator(srv.DB)
+		generator := reporting.NewGeneratorWithMetrics(srv.DB, getMetricsQuerier())
 		data, err := generator.GeneratePerformanceReport(format, deviceID, startDate, endDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

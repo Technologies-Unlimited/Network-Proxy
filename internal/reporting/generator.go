@@ -9,14 +9,35 @@ import (
 	"gorm.io/gorm"
 )
 
-// Generator handles report generation
-type Generator struct {
-	db *gorm.DB
+// MetricsSource is the subset of the live metrics registry the report generator
+// reads to fill uptime/latency columns with REAL measured values instead of
+// hardcoded constants. It may be nil — device/alert reports do not need it, and
+// unit tests can omit it — in which case metric-dependent reports return an
+// explicit "no monitoring data yet" result rather than invented numbers.
+type MetricsSource interface {
+	// PingLatency is the most recent ICMP latency (ms) for a device.
+	PingLatency(deviceID, ipAddress string) (float64, error)
+	// PingCounts is the cumulative (success, failure) ping counts — the real
+	// basis for availability%: success / (success + failure) * 100.
+	PingCounts(deviceID, ipAddress string) (success, failure float64, err error)
 }
 
-// NewGenerator creates a new report generator
+// Generator handles report generation
+type Generator struct {
+	db      *gorm.DB
+	metrics MetricsSource // may be nil (metrics-free reports / tests)
+}
+
+// NewGenerator creates a report generator with no metrics source. Suitable for
+// the device and alert reports, which read only the database.
 func NewGenerator(db *gorm.DB) *Generator {
 	return &Generator{db: db}
+}
+
+// NewGeneratorWithMetrics creates a generator that fills the uptime and
+// performance reports from the live metrics registry. Pass nil for metrics.
+func NewGeneratorWithMetrics(db *gorm.DB, metrics MetricsSource) *Generator {
+	return &Generator{db: db, metrics: metrics}
 }
 
 // GenerateDeviceReport generates a report of all devices
@@ -86,38 +107,43 @@ func (g *Generator) GenerateUptimeReport(format string, deviceID string, startDa
 		return nil, fmt.Errorf("failed to fetch devices: %w", err)
 	}
 
-	// Calculate uptime statistics
+	// Fill each row from REAL metrics. Availability is the cumulative
+	// success/total ping ratio; the latency columns come from the latest measured
+	// sample. With no time-series store there is a single latest sample, so
+	// min=max=avg=that sample and there is no historical spread — honest, not the
+	// old hardcoded constants. A device with no real sample yet gets an explicit
+	// "no data" row rather than an invented uptime.
 	reportData := make([]exporters.UptimeReportData, 0, len(devices))
 	for _, device := range devices {
-		// In a real implementation, you would query metrics from Prometheus or a time-series DB
-		// For now, we'll create sample data based on device status
-		var uptimePercent float64
-		if device.Status == "up" {
-			uptimePercent = 99.9
-		} else if device.Status == "down" {
-			uptimePercent = 0.0
-		} else {
-			uptimePercent = 50.0
+		row := exporters.UptimeReportData{
+			DeviceID:  device.ID,
+			Hostname:  device.Hostname,
+			IPAddress: device.IPAddress,
+			Period:    "No monitoring data collected yet",
 		}
 
-		period := fmt.Sprintf("%s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
-		if startDate.IsZero() || endDate.IsZero() {
-			period = "Last 30 days"
+		if g.metrics != nil {
+			if success, failure, err := g.metrics.PingCounts(device.ID, device.IPAddress); err == nil {
+				if total := success + failure; total > 0 {
+					row.TotalChecks = int(total)
+					row.SuccessChecks = int(success)
+					row.FailedChecks = int(failure)
+					row.UptimePercent = success / total * 100
+					row.Period = "Live counters since server start"
+					if !startDate.IsZero() && !endDate.IsZero() {
+						row.Period = fmt.Sprintf("%s to %s requested; live counters since server start",
+							startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+					}
+				}
+			}
+			if lat, err := g.metrics.PingLatency(device.ID, device.IPAddress); err == nil {
+				row.AvgLatency = lat
+				row.MinLatency = lat
+				row.MaxLatency = lat
+			}
 		}
 
-		reportData = append(reportData, exporters.UptimeReportData{
-			DeviceID:      device.ID,
-			Hostname:      device.Hostname,
-			IPAddress:     device.IPAddress,
-			TotalChecks:   1440, // Sample: 1 check per minute for a day
-			SuccessChecks: int(1440 * uptimePercent / 100),
-			FailedChecks:  1440 - int(1440*uptimePercent/100),
-			UptimePercent: uptimePercent,
-			AvgLatency:    25.5,
-			MinLatency:    10.0,
-			MaxLatency:    100.0,
-			Period:        period,
-		})
+		reportData = append(reportData, row)
 	}
 
 	// Export based on format
@@ -199,9 +225,6 @@ func (g *Generator) GenerateAlertReport(format string, startDate, endDate time.T
 
 // GeneratePerformanceReport generates performance metrics report
 func (g *Generator) GeneratePerformanceReport(format string, deviceID string, startDate, endDate time.Time) ([]byte, error) {
-	// In a real implementation, this would query from Prometheus or time-series database
-	// For now, we'll generate sample data
-
 	var devices []models.Device
 	query := g.db.Model(&models.Device{})
 
@@ -213,37 +236,33 @@ func (g *Generator) GeneratePerformanceReport(format string, deviceID string, st
 		return nil, fmt.Errorf("failed to fetch devices: %w", err)
 	}
 
-	// Generate sample performance data
+	// Emit a metric row only when there is a REAL measurement. With no
+	// time-series store there is a single latest latency sample, so
+	// min=max=avg=that sample and std-dev is 0 (one data point) — honest
+	// single-sample values, not hardcoded constants. Devices with no real sample
+	// yet (and SNMP-derived metrics we do not actually collect here) are omitted
+	// rather than fabricated.
 	reportData := make([]exporters.PerformanceReportData, 0)
 	for _, device := range devices {
-		// Sample metrics
+		if g.metrics == nil {
+			continue
+		}
+		latency, err := g.metrics.PingLatency(device.ID, device.IPAddress)
+		if err != nil {
+			continue // no real sample — do not invent a row
+		}
 		reportData = append(reportData, exporters.PerformanceReportData{
 			DeviceID:     device.ID,
 			Hostname:     device.Hostname,
 			MetricName:   "Ping Latency",
-			MetricValue:  25.5,
+			MetricValue:  latency,
 			MetricUnit:   "ms",
 			Timestamp:    time.Now(),
-			MinValue:     10.0,
-			MaxValue:     100.0,
-			AvgValue:     25.5,
-			StdDeviation: 5.2,
+			MinValue:     latency,
+			MaxValue:     latency,
+			AvgValue:     latency,
+			StdDeviation: 0,
 		})
-
-		if device.SNMPEnabled {
-			reportData = append(reportData, exporters.PerformanceReportData{
-				DeviceID:     device.ID,
-				Hostname:     device.Hostname,
-				MetricName:   "CPU Usage",
-				MetricValue:  45.2,
-				MetricUnit:   "%",
-				Timestamp:    time.Now(),
-				MinValue:     10.0,
-				MaxValue:     85.0,
-				AvgValue:     45.2,
-				StdDeviation: 12.3,
-			})
-		}
 	}
 
 	// Export based on format

@@ -290,6 +290,9 @@
                 <!-- Network Throughput Area Chart -->
                 <div class="chart-container full-width-chart">
                     <h3>Network Throughput</h3>
+                    <p id="throughput-note" style="opacity:0.7; font-size:0.85em; margin:0 0 8px;">
+                        Per-device throughput is not collected in this build — no data to chart.
+                    </p>
                     <div class="chart-wrapper" style="height: 350px;">
                         <canvas id="throughputChart"></canvas>
                     </div>
@@ -689,8 +692,9 @@
                     document.getElementById('avg-response').textContent = pingData.avg_latency.toFixed(2) + 'ms';
                 }
 
-                // Generate mock throughput data (in a real implementation, this would come from SNMP or other sources)
-                generateMockThroughputData();
+                // Throughput is not collected per-device in this build; keep the
+                // chart empty rather than plotting invented traffic.
+                clearThroughputChart();
 
             } catch (error) {
                 console.error('Error loading metric panels:', error);
@@ -721,46 +725,12 @@
             }
         }
 
-        // Generate mock throughput data (replace with actual SNMP data)
-        function generateMockThroughputData() {
-            const now = new Date();
-            const labels = [];
-            const inboundData = [];
-            const outboundData = [];
-
-            // Generate data points based on time range
-            let points = 24; // Default for 1h
-            let interval = 5; // minutes
-
-            if (currentTimeRange === '6h') {
-                points = 36;
-                interval = 10;
-            } else if (currentTimeRange === '24h') {
-                points = 48;
-                interval = 30;
-            } else if (currentTimeRange === '7d') {
-                points = 168;
-                interval = 60;
-            } else if (currentTimeRange === '30d') {
-                points = 360;
-                interval = 120;
-            }
-
-            for (let i = points; i >= 0; i--) {
-                const time = new Date(now - i * interval * 60000);
-                labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
-
-                // Generate realistic-looking data with some variation
-                const baseInbound = 50 + Math.random() * 30;
-                const baseOutbound = 30 + Math.random() * 20;
-
-                inboundData.push(baseInbound);
-                outboundData.push(baseOutbound);
-            }
-
-            charts.throughput.data.labels = labels;
-            charts.throughput.data.datasets[0].data = inboundData;
-            charts.throughput.data.datasets[1].data = outboundData;
+        // Throughput is not collected per-device in this build, so there is no
+        // real series to show. Keep the chart empty rather than inventing traffic.
+        function clearThroughputChart() {
+            charts.throughput.data.labels = [];
+            charts.throughput.data.datasets[0].data = [];
+            charts.throughput.data.datasets[1].data = [];
             charts.throughput.update();
         }
 
