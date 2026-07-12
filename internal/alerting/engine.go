@@ -118,31 +118,65 @@ func (e *Engine) EvaluateRules() {
 		return
 	}
 
-	if len(rules) == 0 {
-		log.Debug().Msg("No enabled alert rules to evaluate")
-		return
-	}
-
-	log.Debug().Int("count", len(rules)).Msg("Evaluating alert rules")
-
 	var devices []models.Device
 	if err := e.db.Find(&devices).Error; err != nil {
 		log.Error().Err(err).Msg("Failed to fetch devices")
 		return
 	}
 
-	var wg sync.WaitGroup
-	for i := range rules {
-		for j := range devices {
-			wg.Add(1)
-			go func(r *models.AlertRule, d *models.Device) {
-				defer wg.Done()
-				e.evaluateRuleForDevice(r, d)
-			}(&rules[i], &devices[j])
+	if len(rules) > 0 && len(devices) > 0 {
+		log.Debug().Int("count", len(rules)).Msg("Evaluating alert rules")
+
+		var wg sync.WaitGroup
+		for i := range rules {
+			for j := range devices {
+				wg.Add(1)
+				go func(r *models.AlertRule, d *models.Device) {
+					defer wg.Done()
+					e.evaluateRuleForDevice(r, d)
+				}(&rules[i], &devices[j])
+			}
 		}
+		wg.Wait()
+	} else {
+		log.Debug().Msg("No enabled alert rules or devices to evaluate")
 	}
 
-	wg.Wait()
+	// Prune alert-state entries whose rule or device no longer exists so the
+	// in-memory map can't grow without bound as devices/rules churn (each device
+	// create mints a fresh UUID key, and rules can be deleted/disabled). Runs
+	// AFTER evaluation so states created this pass are retained, and only after
+	// the rule+device reads above SUCCEEDED so a transient DB error never wrongly
+	// wipes live state.
+	e.pruneAlertStates(rules, devices)
+}
+
+// pruneAlertStates removes alertStates entries keyed on a rule or device that is
+// no longer present in the current enabled-rules / devices sets. Without it,
+// every device create+delete cycle and every deleted/disabled rule leaves a
+// permanent, unreachable state entry — a slow monotonic RSS creep for a daemon
+// meant to run indefinitely.
+func (e *Engine) pruneAlertStates(rules []models.AlertRule, devices []models.Device) {
+	ruleSet := make(map[string]struct{}, len(rules))
+	for i := range rules {
+		ruleSet[rules[i].ID] = struct{}{}
+	}
+	deviceSet := make(map[string]struct{}, len(devices))
+	for j := range devices {
+		deviceSet[devices[j].ID] = struct{}{}
+	}
+
+	e.statesMu.Lock()
+	defer e.statesMu.Unlock()
+	for key, state := range e.alertStates {
+		if _, ok := ruleSet[state.RuleID]; !ok {
+			delete(e.alertStates, key)
+			continue
+		}
+		if _, ok := deviceSet[state.DeviceID]; !ok {
+			delete(e.alertStates, key)
+		}
+	}
 }
 
 // evaluateRuleForDevice evaluates a single rule against a single device.
