@@ -6,7 +6,7 @@ This module provides network discovery functionality for the Network-Proxy appli
 
 - **CIDR Range Scanning**: Scan entire network ranges (e.g., `192.168.1.0/24`)
 - **Concurrent Scanning**: Uses semaphore-based concurrency (100 concurrent goroutines)
-- **ICMP Ping**: Uses go-ping library for host detection
+- **ICMP Ping**: Uses the pro-bing library for host detection
 - **Hostname Resolution**: Reverse DNS lookup for discovered hosts
 - **Device Type Detection**: Basic port-based device classification
 - **Progress Tracking**: Real-time scan progress and status
@@ -171,7 +171,7 @@ Discovered devices are automatically saved to the database:
 
 ## Dependencies
 
-- `github.com/go-ping/ping` - ICMP ping functionality
+- `github.com/prometheus-community/pro-bing` - ICMP ping functionality (maintained fork of the deprecated go-ping/ping)
 - `net` (stdlib) - DNS resolution and TCP port scanning
 - `context` (stdlib) - Cancellation and timeout support
 

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
-	"github.com/go-ping/ping"
+	probing "github.com/prometheus-community/pro-bing"
 )
 
 // Scanner performs network discovery
@@ -160,7 +160,7 @@ func (s *Scanner) ScanCIDR(ctx context.Context, cidr string) ([]*models.Device, 
 // suffix; that lets non-/24 ranges (e.g. /23, /22, /30) work correctly.
 func (s *Scanner) scanHost(ctx context.Context, ip string) *models.Device {
 	// Perform ICMP ping
-	pinger, err := ping.NewPinger(ip)
+	pinger, err := probing.NewPinger(ip)
 	if err != nil {
 		return nil
 	}

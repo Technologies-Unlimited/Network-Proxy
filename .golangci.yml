@@ -56,13 +56,6 @@ linters:
       # PROVABLY-INTENTIONAL patterns (documented in-code) — narrowly scoped.
       # ------------------------------------------------------------------
 
-      # scanner.go imports github.com/go-ping/ping, deprecated upstream (SA1019).
-      # Migrating to the maintained fork (prometheus-community/pro-bing) is a
-      # dependency change for a later stage. Scoped to the one file + one check.
-      - path: internal/agent/discovery/scanner\.go
-        linters: [staticcheck]
-        text: 'SA1019'
-
       # diag_url.go's SSRF guard returns nil on DNS-resolution failure BY DESIGN
       # (documented in-code: a resolution failure is the HTTP layer's problem to
       # report, not this guard's). Intentional fail-open, not a nil-error lie.

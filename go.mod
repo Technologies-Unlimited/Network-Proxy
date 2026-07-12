@@ -7,7 +7,6 @@ toolchain go1.25.12
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-ping/ping v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/gosnmp/gosnmp v1.42.1
 	github.com/jung-kurt/gofpdf v1.16.2
