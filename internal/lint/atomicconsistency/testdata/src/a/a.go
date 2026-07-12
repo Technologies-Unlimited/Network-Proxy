@@ -4,9 +4,11 @@ import "sync/atomic"
 
 // counters mirrors the real BandwidthTest shape: some int64 fields are meant to
 // be touched only through sync/atomic.
+// The atomic-accessed fields carry an exported object fact (for cross-package
+// coverage); analysistest verifies the fact at the field declaration.
 type counters struct {
-	good  int64 // always accessed atomically -> OK
-	bad   int64 // atomic write, plain read/write elsewhere -> RED
+	good  int64 // want good:`atomic-accessed field`
+	bad   int64 // want bad:`atomic-accessed field`
 	plain int64 // never atomic -> out of class, ignored
 }
 
