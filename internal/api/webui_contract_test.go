@@ -35,6 +35,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
@@ -397,5 +398,42 @@ func TestWebUIHtmxFormsReturnHTML(t *testing.T) {
 			t.Errorf("%s: htmx %s %s -> Content-Type %q; an htmx swap target must receive an HTML fragment, not JSON. body=%s",
 				fc.file, fc.method, replay, ct, body)
 		}
+	}
+}
+
+// TestAlertListRendersAckResolveControls pins the fix for the unreachable
+// acknowledge/resolve actions: the rendered alert list must expose controls
+// that drive POST /alerts/:id/{acknowledge,resolve}. Without them an operator
+// could see an active alert but never work it — the workflow dead-ended.
+func TestAlertListRendersAckResolveControls(t *testing.T) {
+	prev := middleware.IsStandaloneMode()
+	middleware.SetStandaloneMode(true)
+	t.Cleanup(func() { middleware.SetStandaloneMode(prev) })
+
+	r, srv := newFullRouter(t)
+	dev := models.Device{Hostname: "h1", IPAddress: "10.0.0.1", Status: "down"}
+	if err := srv.DB.Create(&dev).Error; err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	if err := srv.DB.Create(&models.Alert{
+		DeviceID: dev.ID, Severity: "critical", Status: "active",
+		Title: "device down", TriggeredAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("seed alert: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/alerts?status=active", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if w.Code != 200 {
+		t.Fatalf("alerts list status=%d body=%s", w.Code, body)
+	}
+	if !strings.Contains(body, "ackAlert(") {
+		t.Errorf("active alert row is missing an Acknowledge control — the acknowledge endpoint is unreachable from the UI. body=%s", body)
+	}
+	if !strings.Contains(body, "resolveAlert(") {
+		t.Errorf("active alert row is missing a Resolve control — the resolve endpoint is unreachable from the UI. body=%s", body)
 	}
 }
