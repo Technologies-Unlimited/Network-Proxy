@@ -2,15 +2,26 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/models"
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/server"
 	"github.com/gin-gonic/gin"
 )
 
-// listDevices returns devices (paginated).
+// listDevices returns devices (paginated) as the HTML table fragment.
 func listDevices(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		writeDeviceListHTML(c, srv)
+	}
+}
+
+// writeDeviceListHTML renders the company-scoped devices table as an HTML
+// fragment. It is the single renderer shared by the list endpoint AND the
+// create/update form handlers, so an htmx form swaps the freshly-updated table
+// straight back into #devices-table.
+func writeDeviceListHTML(c *gin.Context, srv *server.Server) {
+	{
 		limit, offset := Page(c)
 		var devices []models.Device
 
@@ -104,11 +115,50 @@ func listDevices(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// createDevice creates a new device
+// applyDeviceForm populates an (existing or zero) Device from an
+// x-www-form-urlencoded submission — the field names the devices.html add/edit
+// forms actually send. An absent checkbox means "unchecked" (browsers omit
+// unchecked checkboxes from the body).
+func applyDeviceForm(c *gin.Context, device *models.Device) {
+	device.Hostname = strings.TrimSpace(c.PostForm("hostname"))
+	device.IPAddress = strings.TrimSpace(c.PostForm("ip_address"))
+	device.DeviceType = c.PostForm("device_type")
+	device.Location = c.PostForm("location")
+	device.Description = c.PostForm("description")
+	device.ICMPEnabled = c.PostForm("icmp_enabled") != ""
+	device.ICMPInterval = formInt(c.PostForm("icmp_interval"), 60)
+}
+
+// createDevice creates a new device. It serves both the JSON API (JSON body ->
+// JSON response) and the htmx add-device form (url-encoded body -> the refreshed
+// devices-table HTML fragment). Before this split the form's url-encoded body
+// hit ShouldBindJSON and 400'd with no visible error — a silent UI failure.
 func createDevice(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var device models.Device
+		// htmx / browser form submission.
+		if !isJSONRequest(c) {
+			var device models.Device
+			applyDeviceForm(c, &device)
+			if device.Hostname == "" || device.IPAddress == "" {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Hostname and IP Address / FQDN are required.</p>`))
+				return
+			}
+			device.Status = "unknown"
+			device.CompanyID = companyIDForWrite(c, "")
+			if err := srv.DB.Create(&device).Error; err != nil {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Error creating device</p>`))
+				return
+			}
+			wireDeviceIntoCollectors(srv.DB, &device)
+			// Return the fresh table so htmx swaps it into #devices-table.
+			writeDeviceListHTML(c, srv)
+			return
+		}
 
+		// JSON API client.
+		var device models.Device
 		if err := c.ShouldBindJSON(&device); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -152,7 +202,9 @@ func getDevice(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// updateDevice updates an existing device
+// updateDevice updates an existing device. Like createDevice it serves both
+// the JSON API and the htmx edit-device form (url-encoded -> refreshed table
+// fragment).
 func updateDevice(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
@@ -160,11 +212,35 @@ func updateDevice(srv *server.Server) gin.HandlerFunc {
 
 		// Check if device exists
 		if err := srv.DB.First(&device, "id = ?", id).Error; err != nil {
+			if !isJSONRequest(c) {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Device not found</p>`))
+				return
+			}
 			c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
 			return
 		}
 
-		// Bind update data
+		// htmx / browser form submission.
+		if !isJSONRequest(c) {
+			applyDeviceForm(c, &device)
+			if device.Hostname == "" || device.IPAddress == "" {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Hostname and IP Address / FQDN are required.</p>`))
+				return
+			}
+			if err := srv.DB.Save(&device).Error; err != nil {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Error saving device</p>`))
+				return
+			}
+			unwireDeviceFromCollectors(device.ID)
+			wireDeviceIntoCollectors(srv.DB, &device)
+			writeDeviceListHTML(c, srv)
+			return
+		}
+
+		// JSON API client.
 		if err := c.ShouldBindJSON(&device); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Technologies-Unlimited/Network-Proxy/internal/middleware"
@@ -63,6 +64,23 @@ func listAlerts(srv *server.Server) gin.HandlerFunc {
 				statusBadge = `<span style="padding: 4px 8px; background: var(--success); color: white; border-radius: 8px; font-size: 11px; margin-left: 10px;">RESOLVED</span>`
 			}
 
+			// Acknowledge/Resolve controls. Without these the POST
+			// /alerts/:id/{acknowledge,resolve} endpoints were unreachable from
+			// the UI and an active alert could never be worked from the page.
+			// alert.ID is embedded in a JS string literal, so JS-escape it.
+			jsID := jsStringEscape(alert.ID)
+			actions := ""
+			if alert.Status == "active" {
+				actions += `<button onclick="ackAlert('` + jsID + `')" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;">Acknowledge</button>`
+			}
+			if alert.Status != "resolved" {
+				actions += `<button onclick="resolveAlert('` + jsID + `')" class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; background: var(--success);">Resolve</button>`
+			}
+			actionRow := ""
+			if actions != "" {
+				actionRow = `<div style="display: flex; gap: 8px; margin-top: 10px;">` + actions + `</div>`
+			}
+
 			html += `<div style="padding: 15px; margin-bottom: 10px; background: var(--bg-secondary); border-left: 4px solid ` + severityColor + `; border-radius: 4px;">
 				<div style="display: flex; justify-content: space-between; align-items: start;">
 					<div style="flex: 1;">
@@ -74,6 +92,7 @@ func listAlerts(srv *server.Server) gin.HandlerFunc {
 						<span style="padding: 4px 12px; background: ` + severityColor + `; color: white; border-radius: 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; white-space: nowrap;">` + hesc(alert.Severity) + `</span>
 					</div>
 				</div>
+				` + actionRow + `
 			</div>`
 		}
 
@@ -152,9 +171,19 @@ func resolveAlert(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// listAlertRules returns alert rules (paginated, company-scoped).
+// listAlertRules returns alert rules (paginated, company-scoped) as the HTML
+// table fragment.
 func listAlertRules(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		writeAlertRuleListHTML(c, srv)
+	}
+}
+
+// writeAlertRuleListHTML renders the company-scoped alert-rule table as an HTML
+// fragment. Shared by the list endpoint AND the create/update form handlers so
+// an htmx form swaps the freshly-updated table back into #rules-list.
+func writeAlertRuleListHTML(c *gin.Context, srv *server.Server) {
+	{
 		limit, offset := Page(c)
 		var rules []models.AlertRule
 		result := scopeByCompany(c, srv.DB).Limit(limit).Offset(offset).Find(&rules)
@@ -239,11 +268,56 @@ func listAlertRules(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// createAlertRule creates a new alert rule
+// sourceForMetric derives the collector Source (icmp/snmp) a rule evaluates
+// against from its Metric. The add/edit forms don't ask for Source, but the
+// alert engine needs it or the rule never evaluates — so we infer it rather
+// than persist an empty, dead rule.
+func sourceForMetric(metric string) string {
+	if strings.HasPrefix(strings.ToLower(metric), "snmp") {
+		return "snmp"
+	}
+	return "icmp"
+}
+
+// applyAlertRuleForm populates an (existing or zero) AlertRule from an
+// x-www-form-urlencoded submission — the fields alerts.html actually sends.
+func applyAlertRuleForm(c *gin.Context, rule *models.AlertRule) {
+	rule.Name = strings.TrimSpace(c.PostForm("name"))
+	rule.Severity = c.PostForm("severity")
+	rule.Metric = c.PostForm("metric")
+	rule.Condition = c.PostForm("condition")
+	rule.Threshold = strings.TrimSpace(c.PostForm("threshold"))
+	rule.Duration = formInt(c.PostForm("duration"), 300)
+	rule.Source = sourceForMetric(rule.Metric)
+}
+
+// createAlertRule creates a new alert rule. Serves both the JSON API and the
+// htmx add-rule form (url-encoded -> refreshed #rules-list HTML fragment).
 func createAlertRule(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var rule models.AlertRule
+		// htmx / browser form submission.
+		if !isJSONRequest(c) {
+			var rule models.AlertRule
+			applyAlertRuleForm(c, &rule)
+			if rule.Name == "" || rule.Threshold == "" {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Rule Name and Threshold are required.</p>`))
+				return
+			}
+			// The add-rule form has no enable toggle; new rules start enabled.
+			rule.Enabled = true
+			rule.CompanyID = companyIDForWrite(c, "")
+			if err := srv.DB.Create(&rule).Error; err != nil {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Error creating alert rule</p>`))
+				return
+			}
+			writeAlertRuleListHTML(c, srv)
+			return
+		}
 
+		// JSON API client.
+		var rule models.AlertRule
 		if err := c.ShouldBindJSON(&rule); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -278,17 +352,43 @@ func getAlertRule(srv *server.Server) gin.HandlerFunc {
 	}
 }
 
-// updateAlertRule updates an existing alert rule
+// updateAlertRule updates an existing alert rule. Serves both the JSON API and
+// the htmx edit-rule form (url-encoded -> refreshed #rules-list HTML fragment).
 func updateAlertRule(srv *server.Server) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		var rule models.AlertRule
 
 		if err := srv.DB.First(&rule, "id = ?", id).Error; err != nil {
+			if !isJSONRequest(c) {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Alert rule not found</p>`))
+				return
+			}
 			c.JSON(http.StatusNotFound, gin.H{"error": "Alert rule not found"})
 			return
 		}
 
+		// htmx / browser form submission.
+		if !isJSONRequest(c) {
+			applyAlertRuleForm(c, &rule)
+			if rule.Name == "" || rule.Threshold == "" {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Rule Name and Threshold are required.</p>`))
+				return
+			}
+			// The edit form has an enable checkbox; an absent value means off.
+			rule.Enabled = c.PostForm("enabled") != ""
+			if err := srv.DB.Save(&rule).Error; err != nil {
+				c.Data(http.StatusOK, "text/html",
+					[]byte(`<p style="color: var(--danger);">Error saving alert rule</p>`))
+				return
+			}
+			writeAlertRuleListHTML(c, srv)
+			return
+		}
+
+		// JSON API client.
 		if err := c.ShouldBindJSON(&rule); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
