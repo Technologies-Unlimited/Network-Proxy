@@ -98,20 +98,9 @@ linters:
       - linters: [errcheck]
         source: '\.Set(Read|Write)?Deadline\('
 
-      # ------------------------------------------------------------------
-      # TIME-BOXED BUG BASELINE — a real bug, deferred to a later stage.
-      # Burn this down; do NOT add more entries here.
-      # ------------------------------------------------------------------
-
-      # The self-updater swallows os.Rename / os.Remove / os.MkdirAll /
-      # fmt.Sscanf errors, INCLUDING the error-recovery renames that restore the
-      # old binary — a failed restore leaves the install with NO executable,
-      # silently. And a failed os.MkdirAll makes extraction fail without a clear
-      # error. These need real error propagation, owned by a later usability
-      # stage (see 'concerns' for the exact call sites).
-      # TODO(gate-burndown): handle updater fs errors, then remove this exclude.
-      - path: internal/updater/updater\.go
-        linters: [errcheck]
+      # (The self-updater fs-error baseline was burned down 2026-07-12: the
+      # restore renames now log loudly, MkdirAll/Sscanf errors propagate. No
+      # gate-burndown baselines remain.)
 
 issues:
   # Report every finding so the baseline count is honest (defaults truncate).
