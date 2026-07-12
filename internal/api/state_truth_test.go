@@ -163,6 +163,33 @@ func TestStateTruthDeviceStatusMatrix(t *testing.T) {
 	}
 }
 
+// TestStateTruthSettingsRoundTrip enumerates the whole settings surface
+// (models.AllSettingKeys) and asserts each key both round-trips (write V -> read
+// V) AND clears (write V, then write "" -> read ""). This is the standing wall
+// for the settings-persistence class: a newly-registered setting is covered
+// automatically, and any key whose SetSetting drops a value fails here.
+func TestStateTruthSettingsRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	for _, key := range models.AllSettingKeys {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			if err := models.SetSetting(db, key, "value-1"); err != nil {
+				t.Fatalf("set %q: %v", key, err)
+			}
+			if got, err := models.GetSetting(db, key); err != nil || got != "value-1" {
+				t.Fatalf("round-trip %q = %q,%v want value-1", key, got, err)
+			}
+			// Clearing must persist an empty value, not silently keep the old one.
+			if err := models.SetSetting(db, key, ""); err != nil {
+				t.Fatalf("clear %q: %v", key, err)
+			}
+			if got, err := models.GetSetting(db, key); err != nil || got != "" {
+				t.Fatalf("clear %q = %q,%v want empty", key, got, err)
+			}
+		})
+	}
+}
+
 // TestStateTruthThothOSClearPersists closes the "Save reports success but
 // silently drops a cleared field" bug: clearing the ThothOS URL (sent as an
 // explicit empty value) must persist, while an OMITTED field (apiKey here) must

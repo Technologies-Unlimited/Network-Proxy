@@ -100,6 +100,18 @@ var secretSettingKeys = map[string]bool{
 	SettingThothOSAPIKey: true,
 }
 
+// AllSettingKeys enumerates every persisted setting key. The state-truth gate
+// (internal/api/state_truth_test.go) iterates this slice to assert each key
+// round-trips AND can be cleared, so a newly-added setting gets that coverage
+// automatically instead of silently growing the surface untested. A new
+// Setting* key MUST be appended here.
+var AllSettingKeys = []string{
+	"theme",
+	SettingThothOSURL,
+	SettingThothOSAPIKey,
+	SettingProxyName,
+}
+
 // ThothOSConfig represents the ThothOS connection settings
 type ThothOSConfig struct {
 	URL       string `json:"url"`
