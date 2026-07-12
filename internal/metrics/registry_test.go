@@ -84,3 +84,39 @@ func TestHasStatusSampleAndErrNoSample(t *testing.T) {
 		t.Errorf("DeviceStatus(polled-down)=%v,%v want 0,nil", v, err)
 	}
 }
+
+// TestPingCountsRealAvailability backs the uptime fix: uptime% is computed from
+// the REAL success/failure ping counters, never a hardcoded 99.9. A never-polled
+// device returns ErrNoSample (so the API/report can honestly say "no data"); a
+// polled device returns its true cumulative counts, from which availability is a
+// genuine ratio.
+func TestPingCountsRealAvailability(t *testing.T) {
+	q := NewLocalQuerier(reg)
+
+	const neverID = "dev-counts-never"
+	if _, _, err := q.PingCounts(neverID, "10.0.0.77"); err != ErrNoSample {
+		t.Errorf("PingCounts(never-polled) err=%v want ErrNoSample", err)
+	}
+
+	// Record a real status sample (as the poller does on every poll) plus a mix
+	// of successes and failures, then confirm the counts are the true values.
+	const id = "dev-counts"
+	const ip = "10.0.0.78"
+	reg.RecordDeviceStatus(id, ip, 1)
+	reg.RecordPingSuccess(id, ip, 5.0)
+	reg.RecordPingSuccess(id, ip, 6.0)
+	reg.RecordPingSuccess(id, ip, 7.0)
+	reg.RecordPingFailure(id, ip)
+
+	success, failure, err := q.PingCounts(id, ip)
+	if err != nil {
+		t.Fatalf("PingCounts(polled) err=%v want nil", err)
+	}
+	if success != 3 || failure != 1 {
+		t.Fatalf("PingCounts=%v,%v want 3,1", success, failure)
+	}
+	uptime := success / (success + failure) * 100
+	if uptime != 75 {
+		t.Errorf("derived availability=%v%% want 75%%", uptime)
+	}
+}
