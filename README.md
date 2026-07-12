@@ -142,7 +142,7 @@ Download and install Go 1.21+ from [https://go.dev/dl/](https://go.dev/dl/)
 Open PowerShell and run:
 
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/Technologies-Unlimited/Network-Monitor/archive/refs/tags/v1.1.0.zip" -OutFile "Network-Monitor.zip"
+Invoke-WebRequest -Uri "https://github.com/Technologies-Unlimited/Network-Monitor/archive/refs/tags/v1.1.3.zip" -OutFile "Network-Monitor.zip"
 ```
 
 ### Step III: Extract the Archive
@@ -154,7 +154,7 @@ Expand-Archive -Path Network-Monitor.zip -DestinationPath .
 ### Step IV: Build the Application
 
 ```powershell
-cd Network-Monitor-1.1.0
+cd Network-Monitor-1.1.3
 go build -o network-monitor.exe .
 ```
 
