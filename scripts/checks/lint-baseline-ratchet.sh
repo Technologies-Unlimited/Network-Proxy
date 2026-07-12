@@ -31,10 +31,12 @@ cd "$REPO_ROOT" || { echo "cannot cd to repo root $REPO_ROOT"; exit 1; }
 # Burn-down history (each drop is one real bug fixed + its exclude deleted):
 #   3  foundation: SA9003 bandwidth.GetTestResults, updater errcheck, SA1019 scanner
 #   1  staticcheck-triage: fixed SA9003 (frozen EndTime) + swapped go-ping->pro-bing
-#      (SA1019); remaining baseline = updater errcheck (owned by the errcheck stage)
+#   0  usability-close (2026-07-12): fixed the updater fs-error swallows (rollback
+#      renames log loudly; MkdirAll/Sscanf propagate; deferred cleanups explicit).
+# TERMINAL: ceiling is 0 — any NEW gate-burndown baseline is now rejected outright.
 # LOWER this (never raise it) as each remaining baseline is fixed.
 # ---------------------------------------------------------------------------
-CEILING=1
+CEILING=0
 
 # The config files that may legitimately carry a burndown exclude. Scoped tightly
 # so docs/READMEs mentioning the tag, and this script's own comments, are NOT

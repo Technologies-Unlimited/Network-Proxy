@@ -416,7 +416,9 @@ func parseVersionPart(part string) int {
 	}
 
 	var n int
-	fmt.Sscanf(part, "%d", &n)
+	if _, err := fmt.Sscanf(part, "%d", &n); err != nil {
+		return 0 // a non-numeric version part sorts as 0
+	}
 	return n
 }
 
@@ -446,7 +448,7 @@ func (u *Updater) DownloadAndUpdate() error {
 	if err != nil {
 		return u.setError(fmt.Errorf("failed to create temp directory: %w", err))
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }() // best-effort temp cleanup
 
 	// Download the zip file
 	zipPath := filepath.Join(tempDir, "update.zip")
@@ -677,8 +679,8 @@ func (u *Updater) ApplyUpdate() error {
 		// On Windows: rename current exe, copy new one, start new process, exit
 		oldExePath := currentExe + ".old"
 
-		// Remove old backup if exists
-		os.Remove(oldExePath)
+		// Remove any stale backup; a real conflict resurfaces at the checked rename below.
+		_ = os.Remove(oldExePath)
 
 		// Rename current exe to .old (Windows allows renaming running executables)
 		if err := os.Rename(currentExe, oldExePath); err != nil {
@@ -687,13 +689,16 @@ func (u *Updater) ApplyUpdate() error {
 
 		// Copy new binary to the original location
 		if err := copyFile(newBinaryPath, currentExe); err != nil {
-			// Restore old exe
-			os.Rename(oldExePath, currentExe)
+			// Roll back to the old exe. If this rename fails the install is
+			// left with no executable at currentExe — surface it loudly.
+			if rbErr := os.Rename(oldExePath, currentExe); rbErr != nil {
+				log.Error().Err(rbErr).Msg("Rollback rename failed after copy error; manual intervention required")
+			}
 			return fmt.Errorf("failed to copy new binary: %w", err)
 		}
 
-		// Clean up the new binary temp file
-		os.Remove(newBinaryPath)
+		// Best-effort cleanup of the new-binary temp file.
+		_ = os.Remove(newBinaryPath)
 
 		// Start the new process with the same arguments
 		log.Info().Msg("Starting new version...")
@@ -703,8 +708,14 @@ func (u *Updater) ApplyUpdate() error {
 		cmd.Dir = u.installDir
 
 		if err := cmd.Start(); err != nil {
-			os.Remove(currentExe)
-			os.Rename(oldExePath, currentExe)
+			// Roll back: drop the just-copied new binary, then restore the old
+			// one. A failed restore leaves no executable — surface it loudly.
+			if rmErr := os.Remove(currentExe); rmErr != nil {
+				log.Error().Err(rmErr).Msg("Could not remove new binary before rollback after start error")
+			}
+			if rbErr := os.Rename(oldExePath, currentExe); rbErr != nil {
+				log.Error().Err(rbErr).Msg("Rollback rename failed after start error; manual intervention required")
+			}
 			return fmt.Errorf("failed to start new version: %w", err)
 		}
 
@@ -877,7 +888,9 @@ func (u *Updater) extractZip(src, dest string) error {
 		}
 
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
+			if err := os.MkdirAll(fpath, os.ModePerm); err != nil {
+				return err
+			}
 			continue
 		}
 

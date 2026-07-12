@@ -99,8 +99,9 @@ linters:
         source: '\.Set(Read|Write)?Deadline\('
 
       # (The self-updater fs-error baseline was burned down 2026-07-12: the
-      # restore renames now log loudly, MkdirAll/Sscanf errors propagate. No
-      # gate-burndown baselines remain.)
+      # rollback renames now log loudly, MkdirAll/Sscanf errors propagate, and
+      # deferred temp cleanups are explicitly ignored. Zero deferred-bug
+      # baselines remain; the ratchet ceiling is now 0.)
 
 issues:
   # Report every finding so the baseline count is honest (defaults truncate).
