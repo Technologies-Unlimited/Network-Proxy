@@ -544,7 +544,7 @@
                     <div class="info-box">
                         Traceroute shows the path packets take to reach a destination, displaying each hop along the way.
                     </div>
-                    <form hx-post="/api/v1/tools/traceroute" hx-target="#traceroute-result" hx-indicator="#traceroute-loading">
+                    <form onsubmit="event.preventDefault(); performTraceroute();">
                         <div class="form-group">
                             <label for="traceroute-target">Target (IP or Hostname):</label>
                             <input type="text" id="traceroute-target" name="target" placeholder="e.g., 8.8.8.8 or google.com" required>
@@ -568,7 +568,7 @@
                         <button type="submit" class="btn btn-primary">Start Traceroute</button>
                     </form>
                 </div>
-                <div id="traceroute-loading" class="loading htmx-indicator">Running traceroute</div>
+                <div id="traceroute-loading" class="loading" style="display: none;">Running traceroute</div>
                 <div id="traceroute-result"></div>
             </div>
 
@@ -579,7 +579,7 @@
                     <div class="info-box">
                         Perform DNS queries to retrieve various types of DNS records for a domain.
                     </div>
-                    <form hx-post="/api/v1/tools/dns-lookup" hx-target="#dns-result" hx-indicator="#dns-loading">
+                    <form onsubmit="event.preventDefault(); performDNSLookup();">
                         <div class="form-group">
                             <label for="dns-domain">Domain:</label>
                             <input type="text" id="dns-domain" name="domain" placeholder="e.g., google.com" required>
@@ -605,7 +605,7 @@
                         <button type="submit" class="btn btn-primary">Lookup DNS</button>
                     </form>
                 </div>
-                <div id="dns-loading" class="loading htmx-indicator">Performing DNS lookup</div>
+                <div id="dns-loading" class="loading" style="display: none;">Performing DNS lookup</div>
                 <div id="dns-result"></div>
             </div>
 
@@ -616,7 +616,7 @@
                     <div class="info-box">
                         Scan TCP ports on a target host to determine which ports are open, closed, or filtered.
                     </div>
-                    <form hx-post="/api/v1/tools/port-scan" hx-target="#portscan-result" hx-indicator="#portscan-loading">
+                    <form onsubmit="event.preventDefault(); performPortScan();">
                         <div class="form-group">
                             <label for="portscan-target">Target (IP or Hostname):</label>
                             <input type="text" id="portscan-target" name="target" placeholder="e.g., 192.168.1.1" required>
@@ -651,7 +651,7 @@
                         <button type="submit" class="btn btn-primary">Start Scan</button>
                     </form>
                 </div>
-                <div id="portscan-loading" class="loading htmx-indicator">Scanning ports</div>
+                <div id="portscan-loading" class="loading" style="display: none;">Scanning ports</div>
                 <div id="portscan-result"></div>
             </div>
 
@@ -662,7 +662,7 @@
                     <div class="info-box">
                         Retrieve registration information for domain names and IP addresses.
                     </div>
-                    <form hx-post="/api/v1/tools/whois" hx-target="#whois-result" hx-indicator="#whois-loading">
+                    <form onsubmit="event.preventDefault(); performWhois();">
                         <div class="form-group">
                             <label for="whois-target">Domain or IP Address:</label>
                             <input type="text" id="whois-target" name="target" placeholder="e.g., google.com or 8.8.8.8" required>
@@ -674,7 +674,7 @@
                         <button type="submit" class="btn btn-primary">Lookup WHOIS</button>
                     </form>
                 </div>
-                <div id="whois-loading" class="loading htmx-indicator">Performing WHOIS lookup</div>
+                <div id="whois-loading" class="loading" style="display: none;">Performing WHOIS lookup</div>
                 <div id="whois-result"></div>
             </div>
 
@@ -685,7 +685,7 @@
                     <div class="info-box">
                         Measure network bandwidth and latency to a target host.
                     </div>
-                    <form hx-post="/api/v1/tools/bandwidth-test" hx-target="#bandwidth-result" hx-indicator="#bandwidth-loading">
+                    <form onsubmit="event.preventDefault(); performBandwidthTest();">
                         <div class="form-group">
                             <label for="bandwidth-target">Target (IP or Hostname):</label>
                             <input type="text" id="bandwidth-target" name="target" placeholder="e.g., 192.168.1.1" required>
@@ -703,7 +703,7 @@
                         <button type="submit" class="btn btn-primary">Start Test</button>
                     </form>
                 </div>
-                <div id="bandwidth-loading" class="loading htmx-indicator">Running bandwidth test</div>
+                <div id="bandwidth-loading" class="loading" style="display: none;">Running bandwidth test</div>
                 <div id="bandwidth-result"></div>
             </div>
 
@@ -714,7 +714,7 @@
                     <div class="info-box">
                         Test network connectivity and measure latency to a target host.
                     </div>
-                    <form hx-post="/api/v1/tools/ping" hx-target="#ping-result" hx-indicator="#ping-loading">
+                    <form onsubmit="event.preventDefault(); performPing();">
                         <div class="form-group">
                             <label for="ping-target">Target (IP or Hostname):</label>
                             <input type="text" id="ping-target" name="target" placeholder="e.g., 8.8.8.8 or google.com" required>
@@ -726,7 +726,7 @@
                         <button type="submit" class="btn btn-primary">Start Ping</button>
                     </form>
                 </div>
-                <div id="ping-loading" class="loading htmx-indicator">Pinging host</div>
+                <div id="ping-loading" class="loading" style="display: none;">Pinging host</div>
                 <div id="ping-result"></div>
             </div>
 
@@ -1624,24 +1624,79 @@
             }, 3000);
         }
 
-        // HTMX response handlers
-        document.body.addEventListener('htmx:afterSwap', function(evt) {
-            const target = evt.detail.target.id;
-
-            if (target === 'traceroute-result') {
-                renderTraceroute(evt.detail.xhr.response);
-            } else if (target === 'dns-result') {
-                renderDNS(evt.detail.xhr.response);
-            } else if (target === 'portscan-result') {
-                renderPortScan(evt.detail.xhr.response);
-            } else if (target === 'whois-result') {
-                renderWhois(evt.detail.xhr.response);
-            } else if (target === 'bandwidth-result') {
-                renderBandwidth(evt.detail.xhr.response);
-            } else if (target === 'ping-result') {
-                renderPing(evt.detail.xhr.response);
+        // Network-tools submit handlers. These POST JSON and render the JSON
+        // result. They replaced hx-post forms whose url-encoded body 400'd
+        // against the JSON (ShouldBindJSON) handlers — so the result div stayed
+        // empty with no error (a silent failure). This is the same fetch+render
+        // pattern the other tools (MAC/connection/HTTP/SSL/ARP/MTU) already use.
+        async function runTool(loadingId, resultId, url, body, render) {
+            const loadingEl = document.getElementById(loadingId);
+            const resultEl = document.getElementById(resultId);
+            loadingEl.style.display = 'block';
+            resultEl.innerHTML = '';
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const text = await response.text();
+                loadingEl.style.display = 'none';
+                render(text);
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                resultEl.innerHTML = `<div class="result-container"><div class="error">Error: ${error.message}</div></div>`;
             }
-        });
+        }
+
+        function performTraceroute() {
+            runTool('traceroute-loading', 'traceroute-result', '/api/v1/tools/traceroute', {
+                target: document.getElementById('traceroute-target').value,
+                max_hops: parseInt(document.getElementById('traceroute-maxhops').value) || 30,
+                timeout: parseInt(document.getElementById('traceroute-timeout').value) || 3,
+                resolve_addr: document.getElementById('traceroute-resolve').checked
+            }, renderTraceroute);
+        }
+
+        function performDNSLookup() {
+            runTool('dns-loading', 'dns-result', '/api/v1/tools/dns-lookup', {
+                domain: document.getElementById('dns-domain').value,
+                type: document.getElementById('dns-type').value,
+                nameserver: document.getElementById('dns-nameserver').value
+            }, renderDNS);
+        }
+
+        function performPortScan() {
+            runTool('portscan-loading', 'portscan-result', '/api/v1/tools/port-scan', {
+                target: document.getElementById('portscan-target').value,
+                ports: document.getElementById('portscan-ports').value,
+                timeout: parseInt(document.getElementById('portscan-timeout').value) || 2,
+                concurrency: parseInt(document.getElementById('portscan-concurrency').value) || 100,
+                grab_banner: document.getElementById('portscan-banner').checked
+            }, renderPortScan);
+        }
+
+        function performWhois() {
+            runTool('whois-loading', 'whois-result', '/api/v1/tools/whois', {
+                target: document.getElementById('whois-target').value,
+                server: document.getElementById('whois-server').value
+            }, renderWhois);
+        }
+
+        function performBandwidthTest() {
+            runTool('bandwidth-loading', 'bandwidth-result', '/api/v1/tools/bandwidth-test', {
+                target: document.getElementById('bandwidth-target').value,
+                duration: parseInt(document.getElementById('bandwidth-duration').value) || 10,
+                port: parseInt(document.getElementById('bandwidth-port').value) || 80
+            }, renderBandwidth);
+        }
+
+        function performPing() {
+            runTool('ping-loading', 'ping-result', '/api/v1/tools/ping', {
+                target: document.getElementById('ping-target').value,
+                count: parseInt(document.getElementById('ping-count').value) || 4
+            }, renderPing);
+        }
 
         function renderTraceroute(response) {
             const data = JSON.parse(response);
@@ -1802,31 +1857,6 @@
             };
             return text.replace(/[&<>"']/g, m => map[m]);
         }
-
-        // Convert form data to JSON for htmx
-        document.body.addEventListener('htmx:configRequest', function(evt) {
-            const form = evt.detail.elt;
-            if (form.tagName === 'FORM') {
-                const formData = new FormData(form);
-                const jsonData = {};
-
-                formData.forEach((value, key) => {
-                    if (form.querySelector(`[name="${key}"]`).type === 'checkbox') {
-                        jsonData[key] = form.querySelector(`[name="${key}"]`).checked;
-                    } else if (form.querySelector(`[name="${key}"]`).type === 'number') {
-                        const numValue = parseInt(value);
-                        if (!isNaN(numValue)) {
-                            jsonData[key] = numValue;
-                        }
-                    } else {
-                        if (value) jsonData[key] = value;
-                    }
-                });
-
-                evt.detail.parameters = jsonData;
-                evt.detail.headers['Content-Type'] = 'application/json';
-            }
-        });
 
         // MAC Lookup functions
         function setMAC(mac) {

@@ -35,7 +35,7 @@
             <!-- Add Device Form (hidden by default) -->
             <div id="add-device-form" class="section" style="display: none;">
                 <h3>Add New Device</h3>
-                <form hx-post="/api/v1/devices" hx-target="#devices-table" hx-swap="outerHTML">
+                <form hx-post="/api/v1/devices" hx-target="#devices-table" hx-swap="innerHTML">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                         <div>
                             <label>Hostname *</label>
@@ -90,7 +90,7 @@
             <!-- Edit Device Form (hidden by default) -->
             <div id="edit-device-form" class="section" style="display: none;">
                 <h3>Edit Device</h3>
-                <form id="edit-form" hx-put="" hx-target="#devices-table" hx-swap="outerHTML">
+                <form id="edit-form" hx-put="" hx-target="#devices-table" hx-swap="innerHTML">
                     <input type="hidden" id="edit-device-id" name="id">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                         <div>

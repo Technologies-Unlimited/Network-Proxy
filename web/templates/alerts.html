@@ -51,7 +51,7 @@
                 <!-- Add Rule Form -->
                 <div id="add-rule-form" style="display: none; margin-bottom: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
                     <h4>Create Alert Rule</h4>
-                    <form hx-post="/api/v1/alert-rules" hx-target="#rules-list" hx-swap="outerHTML">
+                    <form hx-post="/api/v1/alert-rules" hx-target="#rules-list" hx-swap="innerHTML">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                             <div>
                                 <label>Rule Name *</label>
@@ -101,7 +101,7 @@
                 <!-- Edit Rule Form -->
                 <div id="edit-rule-form" style="display: none; margin-bottom: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 8px;">
                     <h4>Edit Alert Rule</h4>
-                    <form id="edit-rule-form-element" hx-put="" hx-target="#rules-list" hx-swap="outerHTML">
+                    <form id="edit-rule-form-element" hx-put="" hx-target="#rules-list" hx-swap="innerHTML">
                         <input type="hidden" id="edit-rule-id" name="id">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                             <div>
@@ -229,6 +229,27 @@
                     alert('Failed to delete rule');
                 });
             }
+        }
+
+        // Acknowledge / Resolve an active alert, then refresh the list.
+        function ackAlert(id) {
+            fetch(`/api/v1/alerts/${id}/acknowledge`, { method: 'POST' })
+                .then(response => response.json())
+                .then(() => htmx.trigger('#alerts-list', 'load'))
+                .catch(error => {
+                    console.error('Error acknowledging alert:', error);
+                    alert('Failed to acknowledge alert');
+                });
+        }
+
+        function resolveAlert(id) {
+            fetch(`/api/v1/alerts/${id}/resolve`, { method: 'POST' })
+                .then(response => response.json())
+                .then(() => htmx.trigger('#alerts-list', 'load'))
+                .catch(error => {
+                    console.error('Error resolving alert:', error);
+                    alert('Failed to resolve alert');
+                });
         }
 
         // Handle htmx response
