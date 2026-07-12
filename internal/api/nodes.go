@@ -1372,15 +1372,58 @@ func updateScheduledTest(srv *server.Server) gin.HandlerFunc {
 			return
 		}
 
-		var updates map[string]interface{}
-		if err := c.ShouldBindJSON(&updates); err != nil {
+		// Typed allowlist + DisallowUnknownFields (see updateNode): an unknown
+		// key is a clean 400, never a raw-SQL 500. Keys mirror the model's
+		// field names (the create endpoint binds the tag-less model, so its
+		// wire vocabulary is the Go field names).
+		var payload struct {
+			Name         *string `json:"Name"`
+			SourceNodeID *string `json:"SourceNodeID"`
+			TargetNodeID *string `json:"TargetNodeID"`
+			CronSchedule *string `json:"CronSchedule"`
+			TestType     *string `json:"TestType"`
+			Duration     *int    `json:"Duration"`
+			Enabled      *bool   `json:"Enabled"`
+		}
+		if err := decodeStrictJSON(c, &payload); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		if err := srv.DB.Model(&test).Updates(updates).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		updates := map[string]interface{}{}
+		if payload.Name != nil {
+			updates["name"] = *payload.Name
+		}
+		if payload.SourceNodeID != nil {
+			updates["source_node_id"] = *payload.SourceNodeID
+		}
+		if payload.TargetNodeID != nil {
+			updates["target_node_id"] = *payload.TargetNodeID
+		}
+		if payload.CronSchedule != nil {
+			updates["cron_schedule"] = *payload.CronSchedule
+		}
+		if payload.TestType != nil {
+			updates["test_type"] = *payload.TestType
+		}
+		if payload.Duration != nil {
+			updates["duration"] = *payload.Duration
+		}
+		if payload.Enabled != nil {
+			updates["enabled"] = *payload.Enabled
+		}
+
+		if len(updates) > 0 {
+			if err := srv.DB.Model(&test).Updates(updates).Error; err != nil {
+				log.Error().Err(err).Str("scheduled_test_id", id).Msg("updateScheduledTest: failed to persist update")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update scheduled test"})
+				return
+			}
+			if err := srv.DB.First(&test, "id = ?", id).Error; err != nil {
+				log.Error().Err(err).Str("scheduled_test_id", id).Msg("updateScheduledTest: failed to reload after update")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load updated scheduled test"})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"scheduled_test": test})
