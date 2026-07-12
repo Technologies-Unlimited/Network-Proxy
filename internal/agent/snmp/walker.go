@@ -60,6 +60,11 @@ func (c *Collector) RemoveDevice(deviceID string) {
 	if device, exists := c.devices[deviceID]; exists {
 		log.Info().Str("device", device.Device.Hostname).Msg("Removed device from SNMP monitoring")
 		delete(c.devices, deviceID)
+		// Drain the device's Prometheus series so /metrics (and RSS) don't retain
+		// orphaned SNMP children for a device we no longer poll.
+		if c.metrics != nil {
+			c.metrics.ForgetDevice(deviceID)
+		}
 	}
 }
 

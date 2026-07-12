@@ -87,6 +87,12 @@ func (c *Collector) RemoveDevice(deviceID string) {
 		log.Info().Str("device", device.Hostname).Msg("Removed device from ICMP monitoring")
 		delete(c.devices, deviceID)
 		delete(c.lastPolled, deviceID)
+		// Drain the device's Prometheus series so /metrics (and RSS) don't retain
+		// orphaned children for a device we no longer poll. Without this a removed
+		// or edited device leaks its status/latency/loss series forever.
+		if c.metrics != nil {
+			c.metrics.ForgetDevice(deviceID)
+		}
 	}
 }
 

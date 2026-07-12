@@ -241,6 +241,7 @@ func (r *Registry) ForgetDevice(deviceID string) {
 	r.PacketLoss.DeletePartialMatch(sel)
 	r.SNMPValue.DeletePartialMatch(sel)
 	r.SNMPSuccess.DeletePartialMatch(sel)
+	r.SNMPSuccess.DeletePartialMatch(sel)
 	r.SNMPFailure.DeletePartialMatch(sel)
 
 	r.sampledMu.Lock()
